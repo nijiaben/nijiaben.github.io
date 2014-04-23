@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[一分耕耘，一分收获]]></title>
+  <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-04-23T23:14:26+08:00</updated>
+  <updated>2014-04-24T00:39:20+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -14,11 +14,42 @@
 
   
   <entry>
-    <title type="html"><![CDATA[Hello]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/04/23/hello/"/>
-    <updated>2014-04-23T19:50:55+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/04/23/hello</id>
-    <content type="html"><![CDATA[<p>大家好啊</p>
+    <title type="html"><![CDATA[Octopress新纪元]]></title>
+    <link href="http://nijiaben.github.io/blog/2014/04/23/new-begin/"/>
+    <updated>2014-04-23T23:47:00+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2014/04/23/new-begin</id>
+    <content type="html"><![CDATA[<p><img src="http://beyondvincent.com/images/2013/08/github_page_and-octopress.png" alt="Mou icon" /></p>
+
+<pre><code>    今天又做了一个尝试，从wordpress换到了octopress，放弃了pcduino，选择了免费的github。
+</code></pre>
+
+<ul>
+<li>octopress界面的清爽简洁</li>
+<li>octopress对markdown语法的天然支持
+
+<ul>
+<li>虽然wordpress也有markdown的插件，但是还是喜欢正统</li>
+<li>公司周报都用markdown写了，主要是排版非常舒服</li>
+</ul>
+</li>
+<li>octopress有程序员的思维，用官方话说“Octopress is a blogging framework for hackers”</li>
+<li>pcduino
+
+<ul>
+<li>于己写文章/发布都比较蛋疼，毕竟是一块价值仅300多的开发板，性能有限，有时间真的会影响写文章的心情</li>
+<li>于人访问速度犹如龟速，甚至有时候还经常打不开，实在对不住看客们</li>
+<li>域名访问不稳定，主要还是自己不想成为域名代理服务商付费用户，只得路由器上做端口映射，路由器重启域名还会重新指定A记录，实在是屌丝至极</li>
+</ul>
+</li>
+<li>转向github，大势所趋，公司内部都慢慢放弃svn，投入github托管，自己目前开发的项目也使用git，之前记得微博上有人招聘，提了几个要求，如果你连github账户都没一个，请不要投简历给我，可见github的未来非常美好啊
+
+<ul>
+<li>主要还是免费的，哈哈， 访问速度还可以，虽然偶尔会被墙一下，不过貌似问题不大</li>
+<li>还支持域名绑定</li>
+</ul>
+</li>
+</ul>
+
 ]]></content>
   </entry>
   
