@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-04-24T02:06:41+08:00</updated>
+  <updated>2014-05-19T15:21:58+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -50,6 +50,8 @@
 </li>
 </ul>
 
+
+<p>之前的部分博文请访问<a href="http://alipaymiddleware.com/">支付宝中间件官方博客</a></p>
 ]]></content>
   </entry>
   
