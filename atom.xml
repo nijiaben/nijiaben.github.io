@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-08T18:59:10+08:00</updated>
+  <updated>2014-07-08T19:00:34+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -641,7 +641,7 @@
 
 <p>于是我们展开<code>Thread-1</code>，看到<code>- waiting to lock &lt;0x71ae2ec0&gt; (a java.lang.Class for java.sql.DriverManager)</code>，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被<code>Thread-0</code>线程持有的，从<code>Thread-1</code>这个线程堆栈来看它其实也是在做Class.forName动作，并且通过<code>Thread-1</code>,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver</p>
 
-<h2><code>问题现场遐想:</code></h2>
+<p><code>问题现场遐想:</code></p>
 
 <p>于是我们大胆设想一个场景，<code>Thread-1</code>先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，<code>Thread-0</code>这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态</p>
 
