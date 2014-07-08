@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-08T18:39:26+08:00</updated>
+  <updated>2014-07-08T18:47:20+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -15,9 +15,9 @@
   
   <entry>
     <title type="html"><![CDATA[JDK的sql设计不合理导致的驱动类初始化死锁问题]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti/"/>
+    <link href="http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/"/>
     <updated>2014-07-08T16:39:46+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti</id>
+    <id>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock</id>
     <content type="html"><![CDATA[<p><img src="http://nijiaben.github.io/images/2014/07/lock.jpg"></p>
 
 <h2>问题描述</h2>
