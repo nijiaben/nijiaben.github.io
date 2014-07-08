@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-08T18:47:20+08:00</updated>
+  <updated>2014-07-08T18:59:10+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -589,30 +589,53 @@
 
 <p>因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
 
-<p><code>
- public:                                    
-  volatile JavaThreadState _thread_state;
- private:
-  ThreadSafepointState *_safepoint_state;        
-  address               _saved_exception_pc;    
-  volatile TerminatedTypes _terminated;
-</code>  <br/>
- <code>
- enum JavaThreadState {
-  _thread_uninitialized     =  0, // should never happen (missing initialization)
-  _thread_new               =  2, // just starting up, i.e., in process of being initialized
-  _thread_new_trans         =  3, // corresponding transition state (not used, included for completness)
-  _thread_in_native         =  4, // running in native code
-  _thread_in_native_trans   =  5, // corresponding transition state
-  _thread_in_vm             =  6, // running in VM
-  _thread_in_vm_trans       =  7, // corresponding transition state
-  _thread_in_Java           =  8, // running in Java or in stub code
-  _thread_in_Java_trans     =  9, // corresponding transition state (not used, included for completness)
-  _thread_blocked           = 10, // blocked in vm
-  _thread_blocked_trans     = 11, // corresponding transition state
-  _thread_max_state         = 12  // maximum thread state+1 - used for statistics allocation
-};
-</code></p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public:                                    
+</span><span class='line'>  volatile JavaThreadState _thread_state;
+</span><span class='line'> private:
+</span><span class='line'>  ThreadSafepointState *_safepoint_state;        
+</span><span class='line'>  address               _saved_exception_pc;    
+</span><span class='line'>  volatile TerminatedTypes _terminated;</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>JavaThreadState</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> enum JavaThreadState {
+</span><span class='line'>  _thread_uninitialized     =  0, 
+</span><span class='line'>  _thread_new               =  2, 
+</span><span class='line'>  _thread_new_trans         =  3, 
+</span><span class='line'>  _thread_in_native         =  4, 
+</span><span class='line'>  _thread_in_native_trans   =  5, 
+</span><span class='line'>  _thread_in_vm             =  6, 
+</span><span class='line'>  _thread_in_vm_trans       =  7, 
+</span><span class='line'>  _thread_in_Java           =  8, 
+</span><span class='line'>  _thread_in_Java_trans     =  9, 
+</span><span class='line'>  _thread_blocked           = 10, 
+</span><span class='line'>  _thread_blocked_trans     = 11, 
+</span><span class='line'>  _thread_max_state         = 12  
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p></p>
 
 <p>这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
 
