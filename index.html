@@ -9,8 +9,7 @@
   <meta name="author" content="你假笨">
 
   
-  <meta name="description" content="今天又做了一个尝试，从wordpress换到了octopress，放弃了pcduino，选择了免费的github。 octopress界面的清爽简洁
-octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件，但是还是喜欢正统 &hellip;">
+  <meta name="description" content="问题描述 当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -73,6 +72,57 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <!-- Now we're back to normal posts. Note the links used under href in both headers.-->
+        <h1 class="entry-title"><a href="/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
+      
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-07-08T16:39:46+08:00" pubdate data-updated="true">Jul 8<span>th</span>, 2014</time>
+        
+        
+          | <a href="/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti/#comments">Comments</a>
+         
+
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><img src="/images/2014/07/lock.jpg"></p>
+
+<h2>问题描述</h2>
+
+<p>当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
+
+</div>
+  
+  
+    <footer>
+      <a rel="full-article" href="/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti/">Read on &rarr;</a>
+    </footer>
+  
+
+
+    </article>
   
   
     <article>
@@ -173,6 +223,10 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
 </section><section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/07/08/jdkde-sqlshe-ji-bu-he-li-dao-zhi-de-qu-dong-lei-chu-shi-hua-si-suo-wen-ti/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a>
