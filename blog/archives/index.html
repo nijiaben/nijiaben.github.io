@@ -8,12 +8,10 @@
   <title>Blog Archive - 你假笨</title>
   <meta name="author" content="你假笨">
 
+   
+  <meta name="description" content="技术宅改变世界">
   
-  <meta name="description" content="Blog Archive 2014 从tcp原理角度理解Broken pipe和Connection reset by peer的区别
-Jul 14 2014 JVM Attach机制实现
-Jul 14 2014 JDK的sql设计不合理导致的驱动类初始化死锁问题
-Jul 08 2014 &hellip;">
-  
+  <meta name="keywords" content="">
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
@@ -21,14 +19,17 @@ Jul 08 2014 &hellip;">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://nijiaben.github.io/blog/archives/">
+  <link rel="canonical" href="http://nijiaben.github.io/blog/archives">
   <link href="/favicon.png" rel="icon">
+  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <script src="/javascripts/modernizr-2.0.js"></script>
-  <script src="/javascripts/ender.js"></script>
-  <script src="/javascripts/octopress.js" type="text/javascript"></script>
   <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href='http://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/bootstrap-collapse.js"></script>
+  <script src="/js/modernizr-2.0.js"></script>
+  <script src="/js/octopress.js" type="text/javascript"></script>
+  <script src="/js/application.js"></script>
   <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
 <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
 <link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
@@ -38,182 +39,175 @@ Jul 08 2014 &hellip;">
 </head>
 
 <body   >
-  <header role="banner"><hgroup>
-  <div id="logo">
-  	<div id="logoLeft">{</div>
-  	<div id="logoText">sihugh</div>
-  	<div id="logoRight">}</div>
-  	<div class="clear"></div>
+  <div class="navbar navbar-inverse navbar-static-top">
+  	<div class="navbar-inner">
+  	  <div class="container">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
+          <span class="fui-menu-24"></span>
+        </a>
+  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
+  	      <ul class="nav">
+    
+        <li ><a href="/index.html">Home</a></li>
+    
+</ul>
+
+<ul class="nav pull-right">
+    
+    
+    
+    
+    <li><a href="http://twitter.com/nijiaben" title="Twitter Profile"><i class="icon-twitter-sign social-navbar"></i></a></li>
+    
+    
+    
+    
+
+    
+</ul>
+
+  	    </div>
+  	  </div>
+  	</div>
   </div>
-  <h1><a href="/">你假笨</a></h1>
-  
-    <h2>...jvm，linux，tcp...</h2>
-  
-  <div class="clear"></div>
-</hgroup>
-
-</header>
-  <nav role="navigation"><ul class="subscription" data-subscription="rss">
-  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
-  
-</ul>
-  
-<form action="https://www.google.com/search" method="get">
-  <fieldset role="search">
-    <input type="hidden" name="q" value="site:nijiaben.github.io" />
-    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
-  </fieldset>
-</form>
-  
-<ul class="main-navigation">
-  <li><a href="/">Blog</a></li>
-  <li><a href="/blog/archives">Archives</a></li>
-</ul>
-
-</nav>
-  <div id="main">
-    <div id="content">
-      <div>
-<article role="article">
+  <div class="container" id="main">
+      <div class="row-fluid">
+        <div id="content">
+          <article role="article">
   
   <header>
-    <h1 class="entry-title">Blog Archive</h1>
+    <div class="jumbotron">
+      Blog Archive
+    </div>
     
   </header>
   
-  <div id="blog-archives">
-
-
+  <div clas id="blog-archives">
 
   
-  <h2>2014</h2>
+  <div class="row-fluid">
+	<div class="span1">
+	
+	  
+	    <h1>2014</h1>
+	
+	</div>
+	
+	<div class="span11">
+	
 
-<article>
-  
-<h1><a href="/blog/2014/07/14/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a></h1>
-<time datetime="2014-07-14T19:31:28+08:00" pubdate><span class='month'>Jul</span> <span class='day'>14</span> <span class='year'>2014</span></time>
-
-
-</article>
-
-
-
-<article>
-  
-<h1><a href="/blog/2014/07/14/jvm-attach/">JVM Attach机制实现</a></h1>
-<time datetime="2014-07-14T19:15:52+08:00" pubdate><span class='month'>Jul</span> <span class='day'>14</span> <span class='year'>2014</span></time>
-
-
-</article>
-
-
-
-<article>
-  
-<h1><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
-<time datetime="2014-07-08T16:39:46+08:00" pubdate><span class='month'>Jul</span> <span class='day'>08</span> <span class='year'>2014</span></time>
-
-
-</article>
-
-
-
-<article>
-  
-<h1><a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a></h1>
-<time datetime="2014-04-23T23:47:00+08:00" pubdate><span class='month'>Apr</span> <span class='day'>23</span> <span class='year'>2014</span></time>
-
-
-</article>
-
+	  <article>
+	  
+<div class="row-fluid">
+	<div class="span1">
+		<h1 class="date-time"><time datetime="2014-07-14T19:31:28+08:00" pubdate><span class='month'>Jul</span> <span class='day'>14</span><span class='year'><!--2014--></span></time></h1>
+	</div>
+	<div class="span10">
+		<h1><a href="/blog/2014/07/14/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a></h1>
+	</div>
 </div>
 
-  
-</article>
 
-
-</div>
-
-<aside class="sidebar">
-  
-    <section>
-  <h1>我的信息</h1>
-  <p>
-  	数码控<br/>
-    码农@Alipay中间件团队，花名寒泉子<br/><br/>
-    本博关注的技术领域：<br/>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;java虚拟机，linux操作系统，tcp/ip通信，中间件，框架容器等<br/><br/>
-    联系方式：<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;微博：<a href="http://weibo.com/u/1071312434" target="_blank">你假笨_泉子</a><br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;来往/微信：nijiaben<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;邮箱：nijiaben@gmail.com<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;欢迎各位发简历加入我们的团队
-  </p>
-</section><section>
-  <h1>Recent Posts</h1>
-  <ul id="recent_posts">
-    
-      <li class="post">
-        <a href="/blog/2014/07/14/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/07/14/jvm-attach/">JVM Attach机制实现</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a>
-      </li>
-    
-  </ul>
-</section>
-
-
-
-
-<section>
-<h1>Recent Comments</h1>
-<ul class="ds-recent-comments" data-num-items="10" data-show-avatars="1" data-show-time="1" data-show-title="1" data-show-admin="1" data-excerpt-length="18"></ul>
-
-</section><section>
-  <h1>友情链接</h1>
-  <ul>
-  	<li>
-      <a href="http://alipaymiddleware.com/" target="_blank">支付宝中间件团队</a>
-    </li>
-    <li>
-      <a href="http://nijiaben.iteye.com/" target="_blank">你假笨Iteye</a>
-    </li>
-    <li>
-      <a href="http://coolshell.cn/" target="_blank">酷壳CoolShell</a>
-    </li>
-    <li>
-      <a href="http://mindhacks.cn/" target="_blank">刘未鹏MIND HACKS</a>
-    </li>
-    <li>
-      <a href="http://blog.codingnow.com/" target="_blank">云风</a>
-    </li>
-    <li>
-      <a href="http://www.cnblogs.com/Solstice/" target="_blank">陈硕</a>
-    </li>
-  </ul>
-</section>
-  
-</aside>
-
-
-    </div>
+	  </article>
+	</div>
   </div>
-  <footer role="contentinfo"><p>
+
+  
+  <div class="row-fluid">
+	<div class="span1">
+	
+	</div>
+	
+	<div class="span11 border-top">
+	
+
+	  <article>
+	  
+<div class="row-fluid">
+	<div class="span1">
+		<h1 class="date-time"><time datetime="2014-07-14T19:15:52+08:00" pubdate><span class='month'>Jul</span> <span class='day'>14</span><span class='year'><!--2014--></span></time></h1>
+	</div>
+	<div class="span10">
+		<h1><a href="/blog/2014/07/14/jvm-attach/">JVM Attach机制实现</a></h1>
+	</div>
+</div>
+
+
+	  </article>
+	</div>
+  </div>
+
+  
+  <div class="row-fluid">
+	<div class="span1">
+	
+	</div>
+	
+	<div class="span11 border-top">
+	
+
+	  <article>
+	  
+<div class="row-fluid">
+	<div class="span1">
+		<h1 class="date-time"><time datetime="2014-07-08T16:39:46+08:00" pubdate><span class='month'>Jul</span> <span class='day'>08</span><span class='year'><!--2014--></span></time></h1>
+	</div>
+	<div class="span10">
+		<h1><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
+	</div>
+</div>
+
+
+	  </article>
+	</div>
+  </div>
+
+  
+  <div class="row-fluid">
+	<div class="span1">
+	
+	</div>
+	
+	<div class="span11 border-top">
+	
+
+	  <article>
+	  
+<div class="row-fluid">
+	<div class="span1">
+		<h1 class="date-time"><time datetime="2014-04-23T23:47:00+08:00" pubdate><span class='month'>Apr</span> <span class='day'>23</span><span class='year'><!--2014--></span></time></h1>
+	</div>
+	<div class="span10">
+		<h1><a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a></h1>
+	</div>
+</div>
+
+
+	  </article>
+	</div>
+  </div>
+
+</div>
+
+</article>
+
+
+
+
+
+        </div>
+      </div>
+      <div class="row-fluid">
+        <footer class="footer-page" role="contentinfo">
+          <p>
   Copyright &copy; 2014 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
 </p>
 
-</footer>
+
+        </footer>
+      </div>
+  </div>
   
 
 

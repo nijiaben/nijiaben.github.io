@@ -2,35 +2,43 @@
 <urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>
     <url>
         <loc>http://nijiaben.github.io/blog/2014/04/23/new-begin/</loc>
-        <lastmod>2014-07-14T19:06:04+08:00</lastmod>
+        <lastmod>2014-07-14T23:12:08+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/</loc>
-        <lastmod>2014-07-08T19:00:28+08:00</lastmod>
+        <lastmod>2014-07-14T23:12:08+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/blog/2014/07/14/jvm-attach/</loc>
-        <lastmod>2014-07-14T19:27:36+08:00</lastmod>
+        <lastmod>2014-07-14T23:12:08+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/blog/2014/07/14/tcp-broken-pipe/</loc>
-        <lastmod>2014-07-14T19:58:40+08:00</lastmod>
+        <lastmod>2014-07-14T23:12:08+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/404.html</loc>
-        <lastmod>2014-04-24T02:06:32+08:00</lastmod>
+        <lastmod>2014-07-14T23:13:07+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/about/</loc>
-        <lastmod>2014-04-24T02:06:32+08:00</lastmod>
+        <lastmod>2014-07-14T23:13:07+08:00</lastmod>
+    </url>
+    <url>
+        <loc>http://nijiaben.github.io/archives/</loc>
+        <lastmod>2014-07-14T23:08:10+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/blog/archives/</loc>
-        <lastmod>2014-07-14T19:58:40+08:00</lastmod>
+        <lastmod>2014-07-14T23:13:07+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/blog/categories/</loc>
-        <lastmod>2014-04-24T02:06:32+08:00</lastmod>
+        <lastmod>2014-07-14T23:13:07+08:00</lastmod>
+    </url>
+    <url>
+        <loc>http://nijiaben.github.io/blog/</loc>
+        <lastmod>2014-07-14T23:08:10+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/humans.txt</loc>
@@ -38,10 +46,14 @@
     </url>
     <url>
         <loc>http://nijiaben.github.io/</loc>
-        <lastmod>2014-07-14T19:58:40+08:00</lastmod>
+        <lastmod>2014-07-14T23:08:10+08:00</lastmod>
+    </url>
+    <url>
+        <loc>http://nijiaben.github.io/links.html</loc>
+        <lastmod>2014-07-14T23:08:10+08:00</lastmod>
     </url>
     <url>
         <loc>http://nijiaben.github.io/robots.txt</loc>
-        <lastmod>2014-04-23T23:28:05+08:00</lastmod>
+        <lastmod>2014-07-14T23:08:10+08:00</lastmod>
     </url>
 </urlset>

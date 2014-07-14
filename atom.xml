@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-14T19:58:46+08:00</updated>
+  <updated>2014-07-14T23:16:49+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -24,10 +24,10 @@
 
 <p>在讲具体的原因之前，我们有必要补充下tcp这块的一些基础知识，我们都知道tcp通信有三次握手和四次挥手，网上介绍的文章也一大堆，图我也懒得画了，直接网上找一个图给大家</p>
 
-<p><img src="http://nijiaben.github.io/images/2014/07/tcp_hank.jpg"></p>
-
 <!--more-->
 
+
+<p><img src="http://nijiaben.github.io/images/2014/07/tcp_hank.jpg"></p>
 
 <p>三次握手是最前面的三条线表示的过程，四次挥手是最后面的四条线表示的过程，里面涉及到几个关键词，SYN，ACK，FIN，MSS，其中SYN是主要用在三次握手过程中的，FIN用在四次挥手过程中，ACK在三次握手和四次挥手过程中的作用就是对收到的SYN和FIN做一个确认，SYN，FIN等存在于TCP头里(tcp报文图也给大家弄了个图，不用再去找啦)，0/1表示有无此标记，在tcp实现里后面还会跟一个依次递增的数字，比如上面的J，K等，确认就是递增这些数字(真正的数据报文的ack除外)，MSS是表示每一个tcp报文里数据字段的最大长度，不包括tcp头的大小噢
 相信大家看到这两个图会对这些概念有了一个清晰的认识了</p>
@@ -141,14 +141,14 @@
 
 <p>   在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
 
+<!--more-->
+
+
 <p><img src="http://nijiaben.github.io/images/2014/07/trd.png"></p>
 
 <p>   大家是否注意过上面圈起来的两个线程，”Attach Listener”和“Signal Dispatcher”，这两个线程是我们这次要讲的Attach机制的关键，先偷偷告诉各位，其实Attach Listener这个线程在jvm起来的时候可能并没有的，后面会细说。</p>
 
 <p>   那Attach机制是什么？说简单点就是jvm提供一种jvm进程间通信的能力，能让一个进程传命令给另外一个进程，并让它执行内部的一些操作，比如说我们为了让另外一个jvm进程把线程dump出来，那么我们跑了一个jstack的进程，然后传了个pid的参数，告诉它要哪个进程进行线程dump，既然是两个进程，那肯定涉及到进程间通信，以及传输协议的定义，比如要执行什么操作，传了什么参数等</p>
-
-<!--more-->
-
 
 <h2>Attach能做些什么</h2>
 
@@ -1164,9 +1164,7 @@ AttachListener::is_init_trigger()的执行，</p>
     <link href="http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/"/>
     <updated>2014-07-08T16:39:46+08:00</updated>
     <id>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock</id>
-    <content type="html"><![CDATA[<p><img src="http://nijiaben.github.io/images/2014/07/lock.jpg"></p>
-
-<h2>问题描述</h2>
+    <content type="html"><![CDATA[<h2>问题描述</h2>
 
 <p>当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
 

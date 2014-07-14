@@ -8,10 +8,10 @@
   <title>Octopress新纪元 - 你假笨</title>
   <meta name="author" content="你假笨">
 
+   
+  <meta name="description" content="技术宅改变世界">
   
-  <meta name="description" content="今天又做了一个尝试，从wordpress换到了octopress，放弃了pcduino，选择了免费的github。 octopress界面的清爽简洁
-octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件，但是还是喜欢正统 &hellip;">
-  
+  <meta name="keywords" content="">
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
@@ -19,14 +19,17 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://nijiaben.github.io/blog/2014/04/23/new-begin/">
+  <link rel="canonical" href="http://nijiaben.github.io/blog/2014/04/23/new-begin">
   <link href="/favicon.png" rel="icon">
+  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <script src="/javascripts/modernizr-2.0.js"></script>
-  <script src="/javascripts/ender.js"></script>
-  <script src="/javascripts/octopress.js" type="text/javascript"></script>
   <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href='http://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/bootstrap-collapse.js"></script>
+  <script src="/js/modernizr-2.0.js"></script>
+  <script src="/js/octopress.js" type="text/javascript"></script>
+  <script src="/js/application.js"></script>
   <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
 <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
 <link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
@@ -36,53 +39,48 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
 </head>
 
 <body   >
-  <header role="banner"><hgroup>
-  <div id="logo">
-  	<div id="logoLeft">{</div>
-  	<div id="logoText">sihugh</div>
-  	<div id="logoRight">}</div>
-  	<div class="clear"></div>
+  <div class="navbar navbar-inverse navbar-static-top">
+  	<div class="navbar-inner">
+  	  <div class="container">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
+          <span class="fui-menu-24"></span>
+        </a>
+  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
+  	      <ul class="nav">
+    
+        <li ><a href="/index.html">Home</a></li>
+    
+</ul>
+
+<ul class="nav pull-right">
+    
+    
+    
+    
+    <li><a href="http://twitter.com/nijiaben" title="Twitter Profile"><i class="icon-twitter-sign social-navbar"></i></a></li>
+    
+    
+    
+    
+
+    
+</ul>
+
+  	    </div>
+  	  </div>
+  	</div>
   </div>
-  <h1><a href="/">你假笨</a></h1>
-  
-    <h2>...jvm，linux，tcp...</h2>
-  
-  <div class="clear"></div>
-</hgroup>
-
-</header>
-  <nav role="navigation"><ul class="subscription" data-subscription="rss">
-  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
-  
-</ul>
-  
-<form action="https://www.google.com/search" method="get">
-  <fieldset role="search">
-    <input type="hidden" name="q" value="site:nijiaben.github.io" />
-    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
-  </fieldset>
-</form>
-  
-<ul class="main-navigation">
-  <li><a href="/">Blog</a></li>
-  <li><a href="/blog/archives">Archives</a></li>
-</ul>
-
-</nav>
-  <div id="main">
-    <div id="content">
-      <div>
+  <div class="container" id="main">
+      <div class="row-fluid">
+        <div id="content">
+          <div>
 <article class="hentry" role="article">
   
+
   <header>
-    
-      
-        <h1 class="entry-title">Octopress新纪元</h1>
-      
-    
-    
-      <p class="meta">
-        
+  <div class="jumbotron">
+    Octopress新纪元
+	<h5>
 
 
 
@@ -94,18 +92,12 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
   
 
 
-<time datetime="2014-04-23T23:47:00+08:00" pubdate data-updated="true">Apr 23<span>rd</span>, 2014</time>
-        
-        
-          | <a href="#comments">Comments</a>
-         
-
-      </p>
-    
-  </header>
-
-
-<div class="entry-content"><p><img src="/images/2014/04/github_page_and-octopress.png"></p>
+<i class="icon-calendar-empty"></i> <time datetime="2014-04-23T23:47:00+08:00" pubdate data-updated="true">Apr 23<span>rd</span>, 2014</time></h5>
+  </div>
+</header>
+  <div class="row-fluid">
+    <div class="span12">
+      <p><img src="/images/2014/04/github_page_and-octopress.png"></p>
 
 <pre><code>    今天又做了一个尝试，从wordpress换到了octopress，放弃了pcduino，选择了免费的github。
 </code></pre>
@@ -139,56 +131,61 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
 
 
 <p>之前的部分博文请访问<a href="http://alipaymiddleware.com/">支付宝中间件官方博客</a></p>
-</div>
+
+    </div>
+  </div>
+
 
 
   <footer>
-    <p class="meta">
-      
-  
-
-<span class="byline author vcard">Posted by <span class="fn">你假笨</span></span>
-
-      
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-04-23T23:47:00+08:00" pubdate data-updated="true">Apr 23<span>rd</span>, 2014</time>
-      
-
-
-    </p>
+    <hr>
     
-      <div class="sharing">
+    <div class="row-fluid">
+      
+      <div class="span6">
+        <p class="meta">
+        
+        
+
+
+        </p>
+      </div>
+      
+      <div class="span6 social-sharing">
+        <div class="sharing">
+  <div class="addthis_toolbox addthis_default_style ">
   
-  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://nijiaben.github.io/blog/2014/04/23/new-begin/" data-via="" data-counturl="http://nijiaben.github.io/blog/2014/04/23/new-begin/" >Tweet</a>
+  
+  <a class="addthis_button_tweet"></a>
   
   
-  
+  <a class="addthis_counter addthis_pill_style"></a>
+  </div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
 </div>
 
+      </div>
+      
+      
+    </div>
     
-    <p class="meta">
-      
-      
-        <a class="basic-alignment right articlenav" href="/blog/2014/07/08/jdk-sql-deadlock/" title="Next Post: JDK的sql设计不合理导致的驱动类初始化死锁问题">JDK的sql设计不合理导致的驱动类初始化死锁问题 &raquo;</a>
-      
-    </p>
+    <div class="row-fluid">
+      <div class="span12">
+        <p class="meta">
+          
+          
+            <a class="basic-alignment right" href="/blog/2014/07/08/jdk-sql-deadlock/" title="Next Post: JDK的sql设计不合理导致的驱动类初始化死锁问题">JDK的sql设计不合理导致的驱动类初始化死锁问题 &raquo;</a>
+          
+        </p>
+      </div>
+    </div>
   </footer>
 </article>
 
-
-  <section>
+ 
+   <section>
     <h1>Comments</h1>
-    <div id="comments" aria-live="polite"><!-- Duoshuo Comment BEGIN -->
+    <divid="comments"aria-live="polite"]]><!-- Duoshuo Comment BEGIN -->
 <div class="ds-thread" data-title=""></div>
 <script type="text/javascript">
   var duoshuoQuery = {short_name:"nijiaben"};
@@ -202,90 +199,25 @@ octopress对markdown语法的天然支持 虽然wordpress也有markdown的插件
   })();
 </script>
 <!-- Duoshuo Comment END --></div>
-  </section>
+   </section>
 
 </div>
 
-<aside class="sidebar">
-  
-    <section>
-  <h1>我的信息</h1>
-  <p>
-  	数码控<br/>
-    码农@Alipay中间件团队，花名寒泉子<br/><br/>
-    本博关注的技术领域：<br/>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;java虚拟机，linux操作系统，tcp/ip通信，中间件，框架容器等<br/><br/>
-    联系方式：<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;微博：<a href="http://weibo.com/u/1071312434" target="_blank">你假笨_泉子</a><br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;来往/微信：nijiaben<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;邮箱：nijiaben@gmail.com<br/>
-       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;欢迎各位发简历加入我们的团队
-  </p>
-</section><section>
-  <h1>Recent Posts</h1>
-  <ul id="recent_posts">
-    
-      <li class="post">
-        <a href="/blog/2014/07/14/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/07/14/jvm-attach/">JVM Attach机制实现</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a>
-      </li>
-    
-  </ul>
-</section>
 
 
-
-
-<section>
-<h1>Recent Comments</h1>
-<ul class="ds-recent-comments" data-num-items="10" data-show-avatars="1" data-show-time="1" data-show-title="1" data-show-admin="1" data-excerpt-length="18"></ul>
-
-</section><section>
-  <h1>友情链接</h1>
-  <ul>
-  	<li>
-      <a href="http://alipaymiddleware.com/" target="_blank">支付宝中间件团队</a>
-    </li>
-    <li>
-      <a href="http://nijiaben.iteye.com/" target="_blank">你假笨Iteye</a>
-    </li>
-    <li>
-      <a href="http://coolshell.cn/" target="_blank">酷壳CoolShell</a>
-    </li>
-    <li>
-      <a href="http://mindhacks.cn/" target="_blank">刘未鹏MIND HACKS</a>
-    </li>
-    <li>
-      <a href="http://blog.codingnow.com/" target="_blank">云风</a>
-    </li>
-    <li>
-      <a href="http://www.cnblogs.com/Solstice/" target="_blank">陈硕</a>
-    </li>
-  </ul>
-</section>
-  
-</aside>
-
-
-    </div>
-  </div>
-  <footer role="contentinfo"><p>
+        </div>
+      </div>
+      <div class="row-fluid">
+        <footer class="footer-page" role="contentinfo">
+          <p>
   Copyright &copy; 2014 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
 </p>
 
-</footer>
+
+        </footer>
+      </div>
+  </div>
   
 
 
