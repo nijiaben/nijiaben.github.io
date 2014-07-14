@@ -35,6 +35,18 @@
 <link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
 
   
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-52812422-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
 
 </head>
 
@@ -59,6 +71,8 @@
     
     <li><a href="http://twitter.com/nijiaben" title="Twitter Profile"><i class="icon-twitter-sign social-navbar"></i></a></li>
     
+    
+    <li><a href="http://plus.google.com/nijiaben@gmail.com" title="Google+ Profile"><i class="icon-google-plus-sign social-navbar"></i></a></li>
     
     
     
@@ -106,78 +120,44 @@
 
 
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import java.util.Iterator;
-</span><span class='line'>
-</span><span class='line'>import sun.misc.Service;
-</span><span class='line'>
-</span><span class='line'>public class Main {
-</span><span class='line'>    public static void main(String[] args) throws ClassNotFoundException {
-</span><span class='line'>        Thread1 thread1 = new Thread1();
-</span><span class='line'>        Thread2 thread2 = new Thread2();
-</span><span class='line'>        thread1.start();
-</span><span class='line'>        thread2.start();
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>class Thread1 extends Thread {
-</span><span class='line'>    public void run() {
-</span><span class='line'>        try {
-</span><span class='line'>            Class&lt;?&gt; clazz = Class.forName("com.mysql.jdbc.Driver", true, Thread.currentThread()
-</span><span class='line'>                .getContextClassLoader());
-</span><span class='line'>            System.out.println(clazz);
-</span><span class='line'>        } catch (ClassNotFoundException e) {
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>class Thread2 extends Thread {
-</span><span class='line'>    public void run() {
-</span><span class='line'>        Iterator ps = Service.providers(java.sql.Driver.class);
-</span><span class='line'>        try {
-</span><span class='line'>            while (ps.hasNext()) {
-</span><span class='line'>                System.out.println(ps.next());
-</span><span class='line'>            } 
-</span><span class='line'>        } catch (Throwable t) {
-</span><span class='line'>           
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<div>
+  <pre><code class='java'>import java.util.Iterator;
+
+import sun.misc.Service;
+
+public class Main {
+    public static void main(String[] args) throws ClassNotFoundException {
+        Thread1 thread1 = new Thread1();
+        Thread2 thread2 = new Thread2();
+        thread1.start();
+        thread2.start();
+    }
+}
+
+class Thread1 extends Thread {
+    public void run() {
+        try {
+            Class&lt;?&gt; clazz = Class.forName(&quot;com.mysql.jdbc.Driver&quot;, true, Thread.currentThread()
+                .getContextClassLoader());
+            System.out.println(clazz);
+        } catch (ClassNotFoundException e) {
+        }
+    }
+}
+
+class Thread2 extends Thread {
+    public void run() {
+        Iterator ps = Service.providers(java.sql.Driver.class);
+        try {
+            while (ps.hasNext()) {
+                System.out.println(ps.next());
+            } 
+        } catch (Throwable t) {
+           
+        }
+    }
+}</code></pre>
+</div>
 
 
 <p>如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
@@ -753,6 +733,8 @@
   <a class="addthis_button_tweet"></a>
   
   
+  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
+  
   <a class="addthis_counter addthis_pill_style"></a>
   </div>
   <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
@@ -819,6 +801,14 @@
 
 
 
+
+  <script type="text/javascript">
+    (function() {
+      var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
+      script.src = 'https://apis.google.com/js/plusone.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
+    })();
+  </script>
 
 
 
