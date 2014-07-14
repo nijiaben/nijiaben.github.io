@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-15T01:30:41+08:00</updated>
+  <updated>2014-07-15T02:13:07+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -60,39 +60,25 @@
 
 <p>做了这么些铺垫之后下面进入正题，那么<code>Broken pipe</code>或者<code>Connection reset by peer</code>分别代表什么意思呢，下面从glibc的源码里有对此的介绍</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#. TRANS Broken pipe; there is no process reading from the other end of a pipe.
-</span><span class='line'>#. TRANS Every library function that returns this error code also generates a
-</span><span class='line'>#. TRANS @code{SIGPIPE} signal; this signal terminates the program if not handled
-</span><span class='line'>#. TRANS or blocked.  Thus, your program will never actually see @code{EPIPE}
-</span><span class='line'>#. TRANS unless it has handled or blocked @code{SIGPIPE}.
-</span><span class='line'>#: sysdeps/generic/siglist.h:39 sysdeps/gnu/errlist.c:359
-</span><span class='line'>#: sysdeps/unix/siglist.c:39
-</span><span class='line'>msgid "Broken pipe"
-</span><span class='line'>msgstr "断开的管道"
-</span><span class='line'>
-</span><span class='line'>#. TRANS A network connection was closed for reasons outside the control of the
-</span><span class='line'>#. TRANS local host, such as by the remote machine rebooting or an unrecoverable
-</span><span class='line'>#. TRANS protocol violation.
-</span><span class='line'>#: sysdeps/gnu/errlist.c:614
-</span><span class='line'>msgid "Connection reset by peer"
-</span><span class='line'>msgstr ""
-</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+#. TRANS Broken pipe; there is no process reading from the other end of a pipe.
+#. TRANS Every library function that returns this error code also generates a
+#. TRANS @code{SIGPIPE} signal; this signal terminates the program if not handled
+#. TRANS or blocked.  Thus, your program will never actually see @code{EPIPE}
+#. TRANS unless it has handled or blocked @code{SIGPIPE}.
+#: sysdeps/generic/siglist.h:39 sysdeps/gnu/errlist.c:359
+#: sysdeps/unix/siglist.c:39
+msgid "Broken pipe"
+msgstr "断开的管道"
+
+#. TRANS A network connection was closed for reasons outside the control of the
+#. TRANS local host, such as by the remote machine rebooting or an unrecoverable
+#. TRANS protocol violation.
+#: sysdeps/gnu/errlist.c:614
+msgid "Connection reset by peer"
+msgstr ""
+
+</pre>
 
 
 <p>其实我们java异常里看到的<code>Broken pipe</code>或者<code>Connection reset by peer</code>信息不是jdk或者jvm里定义的，我看到这些关键字往往会首先搜索下jdk或者hotspot源码找到位置进行上下文分析，但是这次没找到，后面才想到应该是linux或者glibc里定义的，果然在glibc离看到了如上的描述和定义</p>
@@ -113,9 +99,9 @@
 <p>结果：</p>
 
 <ol>
-<li><p>会抛出Connection reset by peer
+<li><p>会抛出Connection reset by peer </br>
 <img src="http://nijiaben.github.io/images/2014/07/tcp_error_1.jpg"></p></li>
-<li><p>会抛出Broken pipe
+<li><p>会抛出Broken pipe</br>
 <img src="http://nijiaben.github.io/images/2014/07/tcp_error_2.jpg"></p></li>
 </ol>
 
@@ -154,32 +140,21 @@
 
 <p>   总结起来说，比如内存dump，线程dump，类信息统计(比如加载的类及大小以及实例个数等)，动态加载agent(使用过btrace的应该不陌生)，动态设置vm flag(但是并不是所有的flag都可以设置的，因为有些flag是在jvm启动过程中使用的，是一次性的)，打印vm flag，获取系统属性等，这些对应的源码(AttachListener.cpp)如下</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>static AttachOperationFunctionInfo funcs[] = {
-</span><span class='line'>  { "agentProperties",  get_agent_properties },
-</span><span class='line'>  { "datadump",         data_dump },
-</span><span class='line'>  { "dumpheap",         dump_heap },
-</span><span class='line'>  { "load",             JvmtiExport::load_agent_library },
-</span><span class='line'>  { "properties",       get_system_properties },
-</span><span class='line'>  { "threaddump",       thread_dump },
-</span><span class='line'>  { "inspectheap",      heap_inspection },
-</span><span class='line'>  { "setflag",          set_flag },
-</span><span class='line'>  { "printflag",        print_flag },
-</span><span class='line'>  { "jcmd",             jcmd },
-</span><span class='line'>  { NULL,               NULL }
-</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+static AttachOperationFunctionInfo funcs[] = {
+  { "agentProperties",  get_agent_properties },
+  { "datadump",         data_dump },
+  { "dumpheap",         dump_heap },
+  { "load",             JvmtiExport::load_agent_library },
+  { "properties",       get_system_properties },
+  { "threaddump",       thread_dump },
+  { "inspectheap",      heap_inspection },
+  { "setflag",          set_flag },
+  { "printflag",        print_flag },
+  { "jcmd",             jcmd },
+  { NULL,               NULL }
+};
+</pre>
 
 
 <p>后面是命令对应的处理函数。</p>
@@ -190,731 +165,404 @@
 
 <p> 前面也提到了，jvm在启动过程中可能并没有启动Attach Listener这个线程，可以通过jvm参数来启动，代码  （Threads::create_vm）如下：</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  if (!DisableAttachMechanism) {
-</span><span class='line'>    if (StartAttachListener || AttachListener::init_at_startup()) {
-</span><span class='line'>      AttachListener::init();
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>bool AttachListener::init_at_startup() {
-</span><span class='line'>  if (ReduceSignalUsage) {
-</span><span class='line'>    return true;
-</span><span class='line'>  } else {
-</span><span class='line'>    return false;
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint"> 
+  if (!DisableAttachMechanism) {
+    if (StartAttachListener || AttachListener::init_at_startup()) {
+      AttachListener::init();
+    }
+  }
+bool AttachListener::init_at_startup() {
+  if (ReduceSignalUsage) {
+    return true;
+  } else {
+    return false;
+  }
+}
+</pre>
 
 
 <p>其中DisableAttachMechanism，StartAttachListener ，ReduceSignalUsage均默认是false(globals.hpp)</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>product(bool, DisableAttachMechanism, false,                              \
-</span><span class='line'>         "Disable mechanism that allows tools to Attach to this VM”)   
-</span><span class='line'>product(bool, StartAttachListener, false,                                 \
-</span><span class='line'>          "Always start Attach Listener at VM startup")  
-</span><span class='line'>product(bool, ReduceSignalUsage, false,                                   \
-</span><span class='line'>          "Reduce the use of OS signals in Java and/or the VM”)  </span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+product(bool, DisableAttachMechanism, false,                              \
+         "Disable mechanism that allows tools to Attach to this VM”)   
+product(bool, StartAttachListener, false,                                 \
+          "Always start Attach Listener at VM startup")  
+product(bool, ReduceSignalUsage, false,                                   \
+          "Reduce the use of OS signals in Java and/or the VM”)  
+</pre>
 
 
 <p>因此AttachListener::init()并不会被执行，而Attach Listener线程正是在此方法里创建的</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Starts the Attach Listener thread
-</span><span class='line'>void AttachListener::init() {
-</span><span class='line'>  EXCEPTION_MARK;
-</span><span class='line'>  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-</span><span class='line'>  instanceKlassHandle klass (THREAD, k);
-</span><span class='line'>  instanceHandle thread_oop = klass-&gt;allocate_instance_handle(CHECK);
-</span><span class='line'>
-</span><span class='line'>  const char thread_name[] = "Attach Listener";
-</span><span class='line'>  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-</span><span class='line'>
-</span><span class='line'>  // Initialize thread_oop to put it into the system threadGroup
-</span><span class='line'>  Handle thread_group (THREAD, Universe::system_thread_group());
-</span><span class='line'>  JavaValue result(T_VOID);
-</span><span class='line'>  JavaCalls::call_special(&result, thread_oop,
-</span><span class='line'>                       klass,
-</span><span class='line'>                       vmSymbols::object_initializer_name(),
-</span><span class='line'>                       vmSymbols::threadgroup_string_void_signature(),
-</span><span class='line'>                       thread_group,
-</span><span class='line'>                       string,
-</span><span class='line'>                       CHECK);
-</span><span class='line'>
-</span><span class='line'>  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-</span><span class='line'>  JavaCalls::call_special(&result,
-</span><span class='line'>                        thread_group,
-</span><span class='line'>                        group,
-</span><span class='line'>                        vmSymbols::add_method_name(),
-</span><span class='line'>                        vmSymbols::thread_void_signature(),
-</span><span class='line'>                        thread_oop,             // ARG 1
-</span><span class='line'>                        CHECK);
-</span><span class='line'>
-</span><span class='line'>  { MutexLocker mu(Threads_lock);
-</span><span class='line'>    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-</span><span class='line'>
-</span><span class='line'>    // Check that thread and osthread were created
-</span><span class='line'>    if (listener_thread == NULL || listener_thread-&gt;osthread() == NULL) {
-</span><span class='line'>      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-</span><span class='line'>                                    "unable to create new native thread");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-</span><span class='line'>    java_lang_Thread::set_daemon(thread_oop());
-</span><span class='line'>
-</span><span class='line'>    listener_thread-&gt;set_threadObj(thread_oop());
-</span><span class='line'>    Threads::add(listener_thread);
-</span><span class='line'>    Thread::start(listener_thread);
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+// Starts the Attach Listener thread
+void AttachListener::init() {
+  EXCEPTION_MARK;
+  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
+  instanceKlassHandle klass (THREAD, k);
+  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
+
+  const char thread_name[] = "Attach Listener";
+  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
+
+  // Initialize thread_oop to put it into the system threadGroup
+  Handle thread_group (THREAD, Universe::system_thread_group());
+  JavaValue result(T_VOID);
+  JavaCalls::call_special(&result, thread_oop,
+                       klass,
+                       vmSymbols::object_initializer_name(),
+                       vmSymbols::threadgroup_string_void_signature(),
+                       thread_group,
+                       string,
+                       CHECK);
+
+  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
+  JavaCalls::call_special(&result,
+                        thread_group,
+                        group,
+                        vmSymbols::add_method_name(),
+                        vmSymbols::thread_void_signature(),
+                        thread_oop,             // ARG 1
+                        CHECK);
+
+  { MutexLocker mu(Threads_lock);
+    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
+
+    // Check that thread and osthread were created
+    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
+      vm_exit_during_initialization("java.lang.OutOfMemoryError",
+                                    "unable to create new native thread");
+    }
+
+    java_lang_Thread::set_thread(thread_oop(), listener_thread);
+    java_lang_Thread::set_daemon(thread_oop());
+
+    listener_thread->set_threadObj(thread_oop());
+    Threads::add(listener_thread);
+    Thread::start(listener_thread);
+  }
+}
+</pre>
 
 
 <p>既然在启动的时候不会创建这个线程，那么我们在上面看到的那个线程是怎么创建的呢，这个就要关注另外一个线程“Signal Dispatcher”了，顾名思义是处理信号的，这个线程是在jvm启动的时候就会创建的，具体代码就不说了。</p>
 
 <p>下面以jstack的实现来说明触发Attach这一机制进行的过程，jstack命令的实现其实是一个叫做JStack.java的类，查看jstack代码后会走到下面的方法里</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private static void runThreadDump(String pid, String args[]) throws Exception {
-</span><span class='line'>        VirtualMachine vm = null;
-</span><span class='line'>        try {
-</span><span class='line'>            vm = VirtualMachine.Attach(pid);
-</span><span class='line'>        } catch (Exception x) {
-</span><span class='line'>            String msg = x.getMessage();
-</span><span class='line'>            if (msg != null) {
-</span><span class='line'>                System.err.println(pid + ": " + msg);
-</span><span class='line'>            } else {
-</span><span class='line'>                x.printStackTrace();
-</span><span class='line'>            }
-</span><span class='line'>            if ((x instanceof AttachNotSupportedException) &&
-</span><span class='line'>                (loadSAClass() != null)) {
-</span><span class='line'>                System.err.println("The -F option can be used when the target " +
-</span><span class='line'>                    "process is not responding");
-</span><span class='line'>            }
-</span><span class='line'>            System.exit(1);
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // Cast to HotSpotVirtualMachine as this is implementation specific
-</span><span class='line'>        // method.
-</span><span class='line'>        InputStream in = ((HotSpotVirtualMachine)vm).remoteDataDump((Object[])args);
-</span><span class='line'>
-</span><span class='line'>        // read to EOF and just print output
-</span><span class='line'>        byte b[] = new byte[256];
-</span><span class='line'>        int n;
-</span><span class='line'>        do {
-</span><span class='line'>            n = in.read(b);
-</span><span class='line'>            if (n &gt; 0) {
-</span><span class='line'>                String s = new String(b, 0, n, "UTF-8");
-</span><span class='line'>                System.out.print(s);
-</span><span class='line'>            }
-</span><span class='line'>        } while (n &gt; 0);
-</span><span class='line'>        in.close();
-</span><span class='line'>        vm.detach();
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+private static void runThreadDump(String pid, String args[]) throws Exception {
+        VirtualMachine vm = null;
+        try {
+            vm = VirtualMachine.Attach(pid);
+        } catch (Exception x) {
+            String msg = x.getMessage();
+            if (msg != null) {
+                System.err.println(pid + ": " + msg);
+            } else {
+                x.printStackTrace();
+            }
+            if ((x instanceof AttachNotSupportedException) &&
+                (loadSAClass() != null)) {
+                System.err.println("The -F option can be used when the target " +
+                    "process is not responding");
+            }
+            System.exit(1);
+        }
+
+        // Cast to HotSpotVirtualMachine as this is implementation specific
+        // method.
+        InputStream in = ((HotSpotVirtualMachine)vm).remoteDataDump((Object[])args);
+
+        // read to EOF and just print output
+        byte b[] = new byte[256];
+        int n;
+        do {
+            n = in.read(b);
+            if (n > 0) {
+                String s = new String(b, 0, n, "UTF-8");
+                System.out.print(s);
+            }
+        } while (n > 0);
+        in.close();
+        vm.detach();
+    }
+</pre>
 
 
 <p>请注意VirtualMachine.Attach(pid);这行代码，触发Attach pid的关键，如果是在linux下会走到下面的构造函数</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>LinuxVirtualMachine(AttachProvider provider, String vmid)
-</span><span class='line'>        throws AttachNotSupportedException, IOException
-</span><span class='line'>    {
-</span><span class='line'>        super(provider, vmid);
-</span><span class='line'>
-</span><span class='line'>        // This provider only understands pids
-</span><span class='line'>        int pid;
-</span><span class='line'>        try {
-</span><span class='line'>            pid = Integer.parseInt(vmid);
-</span><span class='line'>        } catch (NumberFormatException x) {
-</span><span class='line'>            throw new AttachNotSupportedException("Invalid process identifier");
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // Find the socket file. If not found then we attempt to start the
-</span><span class='line'>        // Attach mechanism in the target VM by sending it a QUIT signal.
-</span><span class='line'>        // Then we attempt to find the socket file again.
-</span><span class='line'>        path = findSocketFile(pid);
-</span><span class='line'>        if (path == null) {
-</span><span class='line'>            File f = createAttachFile(pid);
-</span><span class='line'>            try {
-</span><span class='line'>                // On LinuxThreads each thread is a process and we don't have the
-</span><span class='line'>                // pid of the VMThread which has SIGQUIT unblocked. To workaround
-</span><span class='line'>                // this we get the pid of the "manager thread" that is created
-</span><span class='line'>                // by the first call to pthread_create. This is parent of all
-</span><span class='line'>                // threads (except the initial thread).
-</span><span class='line'>                if (isLinuxThreads) {
-</span><span class='line'>                    int mpid;
-</span><span class='line'>                    try {
-</span><span class='line'>                        mpid = getLinuxThreadsManager(pid);
-</span><span class='line'>                    } catch (IOException x) {
-</span><span class='line'>                        throw new AttachNotSupportedException(x.getMessage());
-</span><span class='line'>                    }
-</span><span class='line'>                    assert(mpid &gt;= 1);
-</span><span class='line'>                    sendQuitToChildrenOf(mpid);
-</span><span class='line'>                } else {
-</span><span class='line'>                    sendQuitTo(pid);
-</span><span class='line'>                }
-</span><span class='line'>
-</span><span class='line'>                // give the target VM time to start the Attach mechanism
-</span><span class='line'>                int i = 0;
-</span><span class='line'>                long delay = 200;
-</span><span class='line'>                int retries = (int)(AttachTimeout() / delay);
-</span><span class='line'>                do {
-</span><span class='line'>                    try {
-</span><span class='line'>                        Thread.sleep(delay);
-</span><span class='line'>                    } catch (InterruptedException x) { }
-</span><span class='line'>                    path = findSocketFile(pid);
-</span><span class='line'>                    i++;
-</span><span class='line'>                } while (i &lt;= retries && path == null);
-</span><span class='line'>                if (path == null) {
-</span><span class='line'>                    throw new AttachNotSupportedException(
-</span><span class='line'>                        "Unable to open socket file: target process not responding " +
-</span><span class='line'>                        "or HotSpot VM not loaded");
-</span><span class='line'>                }
-</span><span class='line'>            } finally {
-</span><span class='line'>                f.delete();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // Check that the file owner/permission to avoid Attaching to
-</span><span class='line'>        // bogus process
-</span><span class='line'>        checkPermissions(path);
-</span><span class='line'>
-</span><span class='line'>        // Check that we can connect to the process
-</span><span class='line'>        // - this ensures we throw the permission denied error now rather than
-</span><span class='line'>        // later when we attempt to enqueue a command.
-</span><span class='line'>        int s = socket();
-</span><span class='line'>        try {
-</span><span class='line'>            connect(s, path);
-</span><span class='line'>        } finally {
-</span><span class='line'>            close(s);
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+LinuxVirtualMachine(AttachProvider provider, String vmid)
+        throws AttachNotSupportedException, IOException
+    {
+        super(provider, vmid);
+
+        // This provider only understands pids
+        int pid;
+        try {
+            pid = Integer.parseInt(vmid);
+        } catch (NumberFormatException x) {
+            throw new AttachNotSupportedException("Invalid process identifier");
+        }
+
+        // Find the socket file. If not found then we attempt to start the
+        // Attach mechanism in the target VM by sending it a QUIT signal.
+        // Then we attempt to find the socket file again.
+        path = findSocketFile(pid);
+        if (path == null) {
+            File f = createAttachFile(pid);
+            try {
+                // On LinuxThreads each thread is a process and we don't have the
+                // pid of the VMThread which has SIGQUIT unblocked. To workaround
+                // this we get the pid of the "manager thread" that is created
+                // by the first call to pthread_create. This is parent of all
+                // threads (except the initial thread).
+                if (isLinuxThreads) {
+                    int mpid;
+                    try {
+                        mpid = getLinuxThreadsManager(pid);
+                    } catch (IOException x) {
+                        throw new AttachNotSupportedException(x.getMessage());
+                    }
+                    assert(mpid >= 1);
+                    sendQuitToChildrenOf(mpid);
+                } else {
+                    sendQuitTo(pid);
+                }
+
+                // give the target VM time to start the Attach mechanism
+                int i = 0;
+                long delay = 200;
+                int retries = (int)(AttachTimeout() / delay);
+                do {
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException x) { }
+                    path = findSocketFile(pid);
+                    i++;
+                } while (i <= retries && path == null);
+                if (path == null) {
+                    throw new AttachNotSupportedException(
+                        "Unable to open socket file: target process not responding " +
+                        "or HotSpot VM not loaded");
+                }
+            } finally {
+                f.delete();
+            }
+        }
+
+        // Check that the file owner/permission to avoid Attaching to
+        // bogus process
+        checkPermissions(path);
+
+        // Check that we can connect to the process
+        // - this ensures we throw the permission denied error now rather than
+        // later when we attempt to enqueue a command.
+        int s = socket();
+        try {
+            connect(s, path);
+        } finally {
+            close(s);
+        }
+    }
+</pre>
 
 
 <p>这里要解释下代码了，首先看到调用了createAttachFile方法在目标进程的cwd目录下创建了一个文件/proc/<pid>/cwd/.Attach_pid<pid>，这个在后面的信号处理过程中会取出来做判断(为了安全)，另外我们知道在linux下线程是用进程实现的，在jvm启动过程中会创建很多线程，比如我们上面的信号线程，也就是会看到很多的pid(应该是LWP)，那么如何找到这个信号处理线程呢，从上面实现来看是找到我们传进去的pid的父进程，然后给它的所有子进程都发送一个SIGQUIT信号，而jvm里除了信号线程，其他线程都设置了对此信号的屏蔽，因此收不到该信号，于是该信号就传给了“Signal Dispatcher”，在传完之后作轮询等待看目标进程是否创建了某个文件，AttachTimeout默认超时时间是5000ms，可通过设置系统变量sun.tools.Attach.AttachTimeout来指定，下面是Signal Dispatcher线程的entry实现</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>static void signal_thread_entry(JavaThread* thread, TRAPS) {
-</span><span class='line'>  os::set_priority(thread, NearMaxPriority);
-</span><span class='line'>  while (true) {
-</span><span class='line'>    int sig;
-</span><span class='line'>    {
-</span><span class='line'>      // FIXME : Currently we have not decieded what should be the status
-</span><span class='line'>      //         for this java thread blocked here. Once we decide about
-</span><span class='line'>      //         that we should fix this.
-</span><span class='line'>      sig = os::signal_wait();
-</span><span class='line'>    }
-</span><span class='line'>    if (sig == os::sigexitnum_pd()) {
-</span><span class='line'>       // Terminate the signal thread
-</span><span class='line'>       return;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    switch (sig) {
-</span><span class='line'>      case SIGBREAK: {
-</span><span class='line'>        // Check if the signal is a trigger to start the Attach Listener - in that
-</span><span class='line'>        // case don't print stack traces.
-</span><span class='line'>        if (!DisableAttachMechanism && AttachListener::is_init_trigger()) {
-</span><span class='line'>          continue;
-</span><span class='line'>        }
-</span><span class='line'>        // Print stack traces
-</span><span class='line'>        // Any SIGBREAK operations added here should make sure to flush
-</span><span class='line'>        // the output stream (e.g. tty-&gt;flush()) after output.  See 4803766.
-</span><span class='line'>        // Each module also prints an extra carriage return after its output.
-</span><span class='line'>        VM_PrintThreads op;
-</span><span class='line'>        VMThread::execute(&op);
-</span><span class='line'>        VM_PrintJNI jni_op;
-</span><span class='line'>        VMThread::execute(&jni_op);
-</span><span class='line'>        VM_FindDeadlocks op1(tty);
-</span><span class='line'>        VMThread::execute(&op1);
-</span><span class='line'>        Universe::print_heap_at_SIGBREAK();
-</span><span class='line'>        if (PrintClassHistogram) {
-</span><span class='line'>          VM_GC_HeapInspection op1(gclog_or_tty, true /* force full GC before heap inspection */,
-</span><span class='line'>                                   true /* need_prologue */);
-</span><span class='line'>          VMThread::execute(&op1);
-</span><span class='line'>        }
-</span><span class='line'>        if (JvmtiExport::should_post_data_dump()) {
-</span><span class='line'>          JvmtiExport::post_data_dump();
-</span><span class='line'>        }
-</span><span class='line'>        break;
-</span><span class='line'>      }
-</span><span class='line'>      ….
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+static void signal_thread_entry(JavaThread* thread, TRAPS) {
+  os::set_priority(thread, NearMaxPriority);
+  while (true) {
+    int sig;
+    {
+      // FIXME : Currently we have not decieded what should be the status
+      //         for this java thread blocked here. Once we decide about
+      //         that we should fix this.
+      sig = os::signal_wait();
+    }
+    if (sig == os::sigexitnum_pd()) {
+       // Terminate the signal thread
+       return;
+    }
+
+    switch (sig) {
+      case SIGBREAK: {
+        // Check if the signal is a trigger to start the Attach Listener - in that
+        // case don't print stack traces.
+        if (!DisableAttachMechanism && AttachListener::is_init_trigger()) {
+          continue;
+        }
+        // Print stack traces
+        // Any SIGBREAK operations added here should make sure to flush
+        // the output stream (e.g. tty->flush()) after output.  See 4803766.
+        // Each module also prints an extra carriage return after its output.
+        VM_PrintThreads op;
+        VMThread::execute(&op);
+        VM_PrintJNI jni_op;
+        VMThread::execute(&jni_op);
+        VM_FindDeadlocks op1(tty);
+        VMThread::execute(&op1);
+        Universe::print_heap_at_SIGBREAK();
+        if (PrintClassHistogram) {
+          VM_GC_HeapInspection op1(gclog_or_tty, true /* force full GC before heap inspection */,
+                                   true /* need_prologue */);
+          VMThread::execute(&op1);
+        }
+        if (JvmtiExport::should_post_data_dump()) {
+          JvmtiExport::post_data_dump();
+        }
+        break;
+      }
+      ….
+      }
+    }
+  }
+}
+</pre>
 
 
 <p>当信号是SIGBREAK(在jvm里做了#define，其实就是SIGQUIT)的时候，就会触发
 AttachListener::is_init_trigger()的执行，</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>bool AttachListener::is_init_trigger() {
-</span><span class='line'>  if (init_at_startup() || is_initialized()) {
-</span><span class='line'>    return false;               // initialized at startup or already initialized
-</span><span class='line'>  }
-</span><span class='line'>  char fn[PATH_MAX+1];
-</span><span class='line'>  sprintf(fn, ".Attach_pid%d", os::current_process_id());
-</span><span class='line'>  int ret;
-</span><span class='line'>  struct stat64 st;
-</span><span class='line'>  RESTARTABLE(::stat64(fn, &st), ret);
-</span><span class='line'>  if (ret == -1) {
-</span><span class='line'>    snprintf(fn, sizeof(fn), "%s/.Attach_pid%d",
-</span><span class='line'>             os::get_temp_directory(), os::current_process_id());
-</span><span class='line'>    RESTARTABLE(::stat64(fn, &st), ret);
-</span><span class='line'>  }
-</span><span class='line'>  if (ret == 0) {
-</span><span class='line'>    // simple check to avoid starting the Attach mechanism when
-</span><span class='line'>    // a bogus user creates the file
-</span><span class='line'>    if (st.st_uid == geteuid()) {
-</span><span class='line'>      init();
-</span><span class='line'>      return true;
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>  return false;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+bool AttachListener::is_init_trigger() {
+  if (init_at_startup() || is_initialized()) {
+    return false;               // initialized at startup or already initialized
+  }
+  char fn[PATH_MAX+1];
+  sprintf(fn, ".Attach_pid%d", os::current_process_id());
+  int ret;
+  struct stat64 st;
+  RESTARTABLE(::stat64(fn, &st), ret);
+  if (ret == -1) {
+    snprintf(fn, sizeof(fn), "%s/.Attach_pid%d",
+             os::get_temp_directory(), os::current_process_id());
+    RESTARTABLE(::stat64(fn, &st), ret);
+  }
+  if (ret == 0) {
+    // simple check to avoid starting the Attach mechanism when
+    // a bogus user creates the file
+    if (st.st_uid == geteuid()) {
+      init();
+      return true;
+    }
+  }
+  return false;
+}
+</pre>
 
 
 <p>一开始会判断当前进程目录下是否有个.Attach_pid<pid>文件（前面提到了），如果没有就会在/tmp下创建一个/tmp/.Attach_pid<pid>，当那个文件的uid和自己的uid是一致的情况下（为了安全）再调用init方法</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Starts the Attach Listener thread
-</span><span class='line'>void AttachListener::init() {
-</span><span class='line'>  EXCEPTION_MARK;
-</span><span class='line'>  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-</span><span class='line'>  instanceKlassHandle klass (THREAD, k);
-</span><span class='line'>  instanceHandle thread_oop = klass-&gt;allocate_instance_handle(CHECK);
-</span><span class='line'>
-</span><span class='line'>  const char thread_name[] = "Attach Listener";
-</span><span class='line'>  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-</span><span class='line'>
-</span><span class='line'>  // Initialize thread_oop to put it into the system threadGroup
-</span><span class='line'>  Handle thread_group (THREAD, Universe::system_thread_group());
-</span><span class='line'>  JavaValue result(T_VOID);
-</span><span class='line'>  JavaCalls::call_special(&result, thread_oop,
-</span><span class='line'>                       klass,
-</span><span class='line'>                       vmSymbols::object_initializer_name(),
-</span><span class='line'>                       vmSymbols::threadgroup_string_void_signature(),
-</span><span class='line'>                       thread_group,
-</span><span class='line'>                       string,
-</span><span class='line'>                       CHECK);
-</span><span class='line'>
-</span><span class='line'>  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-</span><span class='line'>  JavaCalls::call_special(&result,
-</span><span class='line'>                        thread_group,
-</span><span class='line'>                        group,
-</span><span class='line'>                        vmSymbols::add_method_name(),
-</span><span class='line'>                        vmSymbols::thread_void_signature(),
-</span><span class='line'>                        thread_oop,             // ARG 1
-</span><span class='line'>                        CHECK);
-</span><span class='line'>
-</span><span class='line'>  { MutexLocker mu(Threads_lock);
-</span><span class='line'>    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-</span><span class='line'>
-</span><span class='line'>    // Check that thread and osthread were created
-</span><span class='line'>    if (listener_thread == NULL || listener_thread-&gt;osthread() == NULL) {
-</span><span class='line'>      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-</span><span class='line'>                                    "unable to create new native thread");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-</span><span class='line'>    java_lang_Thread::set_daemon(thread_oop());
-</span><span class='line'>
-</span><span class='line'>    listener_thread-&gt;set_threadObj(thread_oop());
-</span><span class='line'>    Threads::add(listener_thread);
-</span><span class='line'>    Thread::start(listener_thread);
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+// Starts the Attach Listener thread
+void AttachListener::init() {
+  EXCEPTION_MARK;
+  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
+  instanceKlassHandle klass (THREAD, k);
+  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
+
+  const char thread_name[] = "Attach Listener";
+  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
+
+  // Initialize thread_oop to put it into the system threadGroup
+  Handle thread_group (THREAD, Universe::system_thread_group());
+  JavaValue result(T_VOID);
+  JavaCalls::call_special(&result, thread_oop,
+                       klass,
+                       vmSymbols::object_initializer_name(),
+                       vmSymbols::threadgroup_string_void_signature(),
+                       thread_group,
+                       string,
+                       CHECK);
+
+  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
+  JavaCalls::call_special(&result,
+                        thread_group,
+                        group,
+                        vmSymbols::add_method_name(),
+                        vmSymbols::thread_void_signature(),
+                        thread_oop,             // ARG 1
+                        CHECK);
+
+  { MutexLocker mu(Threads_lock);
+    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
+
+    // Check that thread and osthread were created
+    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
+      vm_exit_during_initialization("java.lang.OutOfMemoryError",
+                                    "unable to create new native thread");
+    }
+
+    java_lang_Thread::set_thread(thread_oop(), listener_thread);
+    java_lang_Thread::set_daemon(thread_oop());
+
+    listener_thread->set_threadObj(thread_oop());
+    Threads::add(listener_thread);
+    Thread::start(listener_thread);
+  }
+}
+</pre>
 
 
 <p>此时水落石出了，看到创建了一个线程，并且取名为Attach Listener。再看看其子类LinuxAttachListener的init方法</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>int LinuxAttachListener::init() {
-</span><span class='line'>  char path[UNIX_PATH_MAX];          // socket file
-</span><span class='line'>  char initial_path[UNIX_PATH_MAX];  // socket file during setup
-</span><span class='line'>  int listener;                      // listener socket (file descriptor)
-</span><span class='line'>
-</span><span class='line'>  // register function to cleanup
-</span><span class='line'>  ::atexit(listener_cleanup);
-</span><span class='line'>
-</span><span class='line'>  int n = snprintf(path, UNIX_PATH_MAX, "%s/.java_pid%d",
-</span><span class='line'>                   os::get_temp_directory(), os::current_process_id());
-</span><span class='line'>  if (n &lt; (int)UNIX_PATH_MAX) {
-</span><span class='line'>    n = snprintf(initial_path, UNIX_PATH_MAX, "%s.tmp", path);
-</span><span class='line'>  }
-</span><span class='line'>  if (n &gt;= (int)UNIX_PATH_MAX) {
-</span><span class='line'>    return -1;
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  // create the listener socket
-</span><span class='line'>  listener = ::socket(PF_UNIX, SOCK_STREAM, 0);
-</span><span class='line'>  if (listener == -1) {
-</span><span class='line'>    return -1;
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  // bind socket
-</span><span class='line'>  struct sockaddr_un addr;
-</span><span class='line'>  addr.sun_family = AF_UNIX;
-</span><span class='line'>  strcpy(addr.sun_path, initial_path);
-</span><span class='line'>  ::unlink(initial_path);
-</span><span class='line'>  int res = ::bind(listener, (struct sockaddr*)&addr, sizeof(addr));
-</span><span class='line'>  if (res == -1) {
-</span><span class='line'>    RESTARTABLE(::close(listener), res);
-</span><span class='line'>    return -1;
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  // put in listen mode, set permissions, and rename into place
-</span><span class='line'>  res = ::listen(listener, 5);
-</span><span class='line'>  if (res == 0) {
-</span><span class='line'>      RESTARTABLE(::chmod(initial_path, S_IREAD|S_IWRITE), res);
-</span><span class='line'>      if (res == 0) {
-</span><span class='line'>          res = ::rename(initial_path, path);
-</span><span class='line'>      }
-</span><span class='line'>  }
-</span><span class='line'>  if (res == -1) {
-</span><span class='line'>    RESTARTABLE(::close(listener), res);
-</span><span class='line'>    ::unlink(initial_path);
-</span><span class='line'>    return -1;
-</span><span class='line'>  }
-</span><span class='line'>  set_path(path);
-</span><span class='line'>  set_listener(listener);
-</span><span class='line'>
-</span><span class='line'>  return 0;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+int LinuxAttachListener::init() {
+  char path[UNIX_PATH_MAX];          // socket file
+  char initial_path[UNIX_PATH_MAX];  // socket file during setup
+  int listener;                      // listener socket (file descriptor)
+
+  // register function to cleanup
+  ::atexit(listener_cleanup);
+
+  int n = snprintf(path, UNIX_PATH_MAX, "%s/.java_pid%d",
+                   os::get_temp_directory(), os::current_process_id());
+  if (n < (int)UNIX_PATH_MAX) {
+    n = snprintf(initial_path, UNIX_PATH_MAX, "%s.tmp", path);
+  }
+  if (n >= (int)UNIX_PATH_MAX) {
+    return -1;
+  }
+
+  // create the listener socket
+  listener = ::socket(PF_UNIX, SOCK_STREAM, 0);
+  if (listener == -1) {
+    return -1;
+  }
+
+  // bind socket
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, initial_path);
+  ::unlink(initial_path);
+  int res = ::bind(listener, (struct sockaddr*)&addr, sizeof(addr));
+  if (res == -1) {
+    RESTARTABLE(::close(listener), res);
+    return -1;
+  }
+
+  // put in listen mode, set permissions, and rename into place
+  res = ::listen(listener, 5);
+  if (res == 0) {
+      RESTARTABLE(::chmod(initial_path, S_IREAD|S_IWRITE), res);
+      if (res == 0) {
+          res = ::rename(initial_path, path);
+      }
+  }
+  if (res == -1) {
+    RESTARTABLE(::close(listener), res);
+    ::unlink(initial_path);
+    return -1;
+  }
+  set_path(path);
+  set_listener(listener);
+
+  return 0;
+}
+</pre>
 
 
 <p>看到其创建了一个监听套接字，并创建了一个文件/tmp/.java_pid<pid>，这个文件就是客户端之前一直在轮询等待的文件，随着这个文件的生成，意味着Attach的过程圆满结束了。</p>
@@ -923,234 +571,131 @@ AttachListener::is_init_trigger()的执行，</p>
 
 <p>看看它的entry实现Attach_listener_thread_entry</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
-</span><span class='line'>  os::set_priority(thread, NearMaxPriority);
-</span><span class='line'>
-</span><span class='line'>  thread-&gt;record_stack_base_and_size();
-</span><span class='line'>
-</span><span class='line'>  if (AttachListener::pd_init() != 0) {
-</span><span class='line'>    return;
-</span><span class='line'>  }
-</span><span class='line'>  AttachListener::set_initialized();
-</span><span class='line'>
-</span><span class='line'>  for (;;) {
-</span><span class='line'>    AttachOperation* op = AttachListener::dequeue();
-</span><span class='line'>    if (op == NULL) {
-</span><span class='line'>      return;   // dequeue failed or shutdown
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    ResourceMark rm;
-</span><span class='line'>    bufferedStream st;
-</span><span class='line'>    jint res = JNI_OK;
-</span><span class='line'>
-</span><span class='line'>    // handle special detachall operation
-</span><span class='line'>    if (strcmp(op-&gt;name(), AttachOperation::detachall_operation_name()) == 0) {
-</span><span class='line'>      AttachListener::detachall();
-</span><span class='line'>    } else {
-</span><span class='line'>      // find the function to dispatch too
-</span><span class='line'>      AttachOperationFunctionInfo* info = NULL;
-</span><span class='line'>      for (int i=0; funcs[i].name != NULL; i++) {
-</span><span class='line'>        const char* name = funcs[i].name;
-</span><span class='line'>        assert(strlen(name) &lt;= AttachOperation::name_length_max, "operation &lt;= name_length_max");
-</span><span class='line'>        if (strcmp(op-&gt;name(), name) == 0) {
-</span><span class='line'>          info = &(funcs[i]);
-</span><span class='line'>          break;
-</span><span class='line'>        }
-</span><span class='line'>      }
-</span><span class='line'>
-</span><span class='line'>      // check for platform dependent Attach operation
-</span><span class='line'>      if (info == NULL) {
-</span><span class='line'>        info = AttachListener::pd_find_operation(op-&gt;name());
-</span><span class='line'>      }
-</span><span class='line'>
-</span><span class='line'>      if (info != NULL) {
-</span><span class='line'>        // dispatch to the function that implements this operation
-</span><span class='line'>        res = (info-&gt;func)(op, &st);
-</span><span class='line'>      } else {
-</span><span class='line'>        st.print("Operation %s not recognized!", op-&gt;name());
-</span><span class='line'>        res = JNI_ERR;
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // operation complete - send result and output to client
-</span><span class='line'>    op-&gt;complete(res, &st);
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
+  os::set_priority(thread, NearMaxPriority);
+
+  thread->record_stack_base_and_size();
+
+  if (AttachListener::pd_init() != 0) {
+    return;
+  }
+  AttachListener::set_initialized();
+
+  for (;;) {
+    AttachOperation* op = AttachListener::dequeue();
+    if (op == NULL) {
+      return;   // dequeue failed or shutdown
+    }
+
+    ResourceMark rm;
+    bufferedStream st;
+    jint res = JNI_OK;
+
+    // handle special detachall operation
+    if (strcmp(op->name(), AttachOperation::detachall_operation_name()) == 0) {
+      AttachListener::detachall();
+    } else {
+      // find the function to dispatch too
+      AttachOperationFunctionInfo* info = NULL;
+      for (int i=0; funcs[i].name != NULL; i++) {
+        const char* name = funcs[i].name;
+        assert(strlen(name) <= AttachOperation::name_length_max, "operation <= name_length_max");
+        if (strcmp(op->name(), name) == 0) {
+          info = &(funcs[i]);
+          break;
+        }
+      }
+
+      // check for platform dependent Attach operation
+      if (info == NULL) {
+        info = AttachListener::pd_find_operation(op->name());
+      }
+
+      if (info != NULL) {
+        // dispatch to the function that implements this operation
+        res = (info->func)(op, &st);
+      } else {
+        st.print("Operation %s not recognized!", op->name());
+        res = JNI_ERR;
+      }
+    }
+
+    // operation complete - send result and output to client
+    op->complete(res, &st);
+  }
+}
+</pre>
 
 
 <p>从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { &#8220;threaddump&#8221;,       thread_dump }的映射关系，然后执行thread_dump方法</p>
 
 <p>再来看看其要调用的AttachListener::dequeue()，</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>AttachOperation* AttachListener::dequeue() {
-</span><span class='line'>  JavaThread* thread = JavaThread::current();
-</span><span class='line'>  ThreadBlockInVM tbivm(thread);
-</span><span class='line'>
-</span><span class='line'>  thread-&gt;set_suspend_equivalent();
-</span><span class='line'>  // cleared by handle_special_suspend_equivalent_condition() or
-</span><span class='line'>  // java_suspend_self() via check_and_wait_while_suspended()
-</span><span class='line'>
-</span><span class='line'>  AttachOperation* op = LinuxAttachListener::dequeue();
-</span><span class='line'>
-</span><span class='line'>  // were we externally suspended while we were waiting?
-</span><span class='line'>  thread-&gt;check_and_wait_while_suspended();
-</span><span class='line'>
-</span><span class='line'>  return op;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+AttachOperation* AttachListener::dequeue() {
+  JavaThread* thread = JavaThread::current();
+  ThreadBlockInVM tbivm(thread);
+
+  thread->set_suspend_equivalent();
+  // cleared by handle_special_suspend_equivalent_condition() or
+  // java_suspend_self() via check_and_wait_while_suspended()
+
+  AttachOperation* op = LinuxAttachListener::dequeue();
+
+  // were we externally suspended while we were waiting?
+  thread->check_and_wait_while_suspended();
+
+  return op;
+}
+</pre>
 
 
 <p>最终调用的是LinuxAttachListener::dequeue()，</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>LinuxAttachOperation* LinuxAttachListener::dequeue() {
-</span><span class='line'>  for (;;) {
-</span><span class='line'>    int s;
-</span><span class='line'>
-</span><span class='line'>    // wait for client to connect
-</span><span class='line'>    struct sockaddr addr;
-</span><span class='line'>    socklen_t len = sizeof(addr);
-</span><span class='line'>    RESTARTABLE(::accept(listener(), &addr, &len), s);
-</span><span class='line'>    if (s == -1) {
-</span><span class='line'>      return NULL;      // log a warning?
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // get the credentials of the peer and check the effective uid/guid
-</span><span class='line'>    // - check with jeff on this.
-</span><span class='line'>    struct ucred cred_info;
-</span><span class='line'>    socklen_t optlen = sizeof(cred_info);
-</span><span class='line'>    if (::getsockopt(s, SOL_SOCKET, SO_PEERCRED, (void*)&cred_info, &optlen) == -1) {
-</span><span class='line'>      int res;
-</span><span class='line'>      RESTARTABLE(::close(s), res);
-</span><span class='line'>      continue;
-</span><span class='line'>    }
-</span><span class='line'>    uid_t euid = geteuid();
-</span><span class='line'>    gid_t egid = getegid();
-</span><span class='line'>
-</span><span class='line'>    if (cred_info.uid != euid || cred_info.gid != egid) {
-</span><span class='line'>      int res;
-</span><span class='line'>      RESTARTABLE(::close(s), res);
-</span><span class='line'>      continue;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // peer credential look okay so we read the request
-</span><span class='line'>    LinuxAttachOperation* op = read_request(s);
-</span><span class='line'>    if (op == NULL) {
-</span><span class='line'>      int res;
-</span><span class='line'>      RESTARTABLE(::close(s), res);
-</span><span class='line'>      continue;
-</span><span class='line'>    } else {
-</span><span class='line'>      return op;
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+LinuxAttachOperation* LinuxAttachListener::dequeue() {
+  for (;;) {
+    int s;
+
+    // wait for client to connect
+    struct sockaddr addr;
+    socklen_t len = sizeof(addr);
+    RESTARTABLE(::accept(listener(), &addr, &len), s);
+    if (s == -1) {
+      return NULL;      // log a warning?
+    }
+
+    // get the credentials of the peer and check the effective uid/guid
+    // - check with jeff on this.
+    struct ucred cred_info;
+    socklen_t optlen = sizeof(cred_info);
+    if (::getsockopt(s, SOL_SOCKET, SO_PEERCRED, (void*)&cred_info, &optlen) == -1) {
+      int res;
+      RESTARTABLE(::close(s), res);
+      continue;
+    }
+    uid_t euid = geteuid();
+    gid_t egid = getegid();
+
+    if (cred_info.uid != euid || cred_info.gid != egid) {
+      int res;
+      RESTARTABLE(::close(s), res);
+      continue;
+    }
+
+    // peer credential look okay so we read the request
+    LinuxAttachOperation* op = read_request(s);
+    if (op == NULL) {
+      int res;
+      RESTARTABLE(::close(s), res);
+      continue;
+    } else {
+      return op;
+    }
+  }
+}
+</pre>
 
 
 <p>我们看到如果没有请求的话，会一直accept在那里，当来了请求，然后就会创建一个套接字，并读取数据，构建出LinuxAttachOperation返回并执行。</p>
@@ -1173,8 +718,9 @@ AttachListener::is_init_trigger()的执行，</p>
 
 
 
-<div>
-  <pre><code class='java'>import java.util.Iterator;
+<pre class="prettyPrint">
+
+import java.util.Iterator;
 
 import sun.misc.Service;
 
@@ -1190,7 +736,7 @@ public class Main {
 class Thread1 extends Thread {
     public void run() {
         try {
-            Class&lt;?&gt; clazz = Class.forName(&quot;com.mysql.jdbc.Driver&quot;, true, Thread.currentThread()
+            Class<?> clazz = Class.forName("com.mysql.jdbc.Driver", true, Thread.currentThread()
                 .getContextClassLoader());
             System.out.println(clazz);
         } catch (ClassNotFoundException e) {
@@ -1209,8 +755,8 @@ class Thread2 extends Thread {
            
         }
     }
-}</code></pre>
-</div>
+}
+</pre>
 
 
 <p>如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
@@ -1253,205 +799,112 @@ class Thread2 extends Thread {
 
 <p>现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>----------------- 5738 -----------------
-</span><span class='line'>0x003f67a2      _dl_sysinfo_int80 + 0x2
-</span><span class='line'>0xb79a71ae      _ZN2os13PlatformEvent4parkEv + 0xee
-</span><span class='line'>0xb7997acb      _ZN13ObjectMonitor4waitExbP6Thread + 0x5fb
-</span><span class='line'>0xb7a73c53      _ZN18ObjectSynchronizer19waitUninterruptiblyE6HandlexP6Thread + 0x53
-</span><span class='line'>0xb777eb34      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x74
-</span><span class='line'>0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
-</span><span class='line'>0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
-</span><span class='line'>0xb7807d99      JVM_FindClassFromClassLoader + 0x269
-</span><span class='line'>0xb734c236      Java_java_lang_Class_forName0 + 0x116
-</span><span class='line'>0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
-</span><span class='line'>0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
-</span><span class='line'>0xb4328fa7      * sun.misc.Service$LazyIterator.next() bci:31 line:271 (Interpreted frame)
-</span><span class='line'>0xb4329483      * java.sql.DriverService.run() bci:26 line:664 (Interpreted frame)
-</span><span class='line'>0xb43263e6      &lt;StubRoutines&gt;
-</span><span class='line'>0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
-</span><span class='line'>0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
-</span><span class='line'>0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
-</span><span class='line'>0xb780aace      JVM_DoPrivileged + 0x40e
-</span><span class='line'>0xb734b95d      Java_java_security_AccessController_doPrivileged__Ljava_security_PrivilegedAction_2 + 0x3d
-</span><span class='line'>0xb433064a      * java.security.AccessController.doPrivileged(java.security.PrivilegedAction) bci:0 (Interpreted frame)
-</span><span class='line'>0xb4328fa7      * java.sql.DriverManager.loadInitialDrivers() bci:31 line:506 (Interpreted frame)
-</span><span class='line'>0xb432910d      * java.sql.DriverManager.initialize() bci:11 line:612 (Interpreted frame)
-</span><span class='line'>0xb432910d      * java.sql.DriverManager.registerDriver(java.sql.Driver) bci:6 line:281 (Interpreted frame)
-</span><span class='line'>0xb432910d      * com.mysql.jdbc.Driver.&lt;clinit&gt;() bci:7 line:65 (Interpreted frame)
-</span><span class='line'>0xb43263e6      &lt;StubRoutines&gt;
-</span><span class='line'>0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
-</span><span class='line'>0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
-</span><span class='line'>0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
-</span><span class='line'>0xb77800c1      _ZN13instanceKlass27call_class_initializer_implE19instanceKlassHandleP6Thread + 0xa1
-</span><span class='line'>0xb777ed8e      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x2ce
-</span><span class='line'>0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
-</span><span class='line'>0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
-</span><span class='line'>0xb7807d99      JVM_FindClassFromClassLoader + 0x269
-</span><span class='line'>0xb734c236      Java_java_lang_Class_forName0 + 0x116
-</span><span class='line'>0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
-</span><span class='line'>0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
-</span><span class='line'>0xb4328fa7      * Thread1.run() bci:9 line:17 (Interpreted frame)
-</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+----------------- 5738 -----------------
+0x003f67a2      _dl_sysinfo_int80 + 0x2
+0xb79a71ae      _ZN2os13PlatformEvent4parkEv + 0xee
+0xb7997acb      _ZN13ObjectMonitor4waitExbP6Thread + 0x5fb
+0xb7a73c53      _ZN18ObjectSynchronizer19waitUninterruptiblyE6HandlexP6Thread + 0x53
+0xb777eb34      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x74
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * sun.misc.Service$LazyIterator.next() bci:31 line:271 (Interpreted frame)
+0xb4329483      * java.sql.DriverService.run() bci:26 line:664 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb780aace      JVM_DoPrivileged + 0x40e
+0xb734b95d      Java_java_security_AccessController_doPrivileged__Ljava_security_PrivilegedAction_2 + 0x3d
+0xb433064a      * java.security.AccessController.doPrivileged(java.security.PrivilegedAction) bci:0 (Interpreted frame)
+0xb4328fa7      * java.sql.DriverManager.loadInitialDrivers() bci:31 line:506 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.initialize() bci:11 line:612 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.registerDriver(java.sql.Driver) bci:6 line:281 (Interpreted frame)
+0xb432910d      * com.mysql.jdbc.Driver.<clinit>() bci:7 line:65 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb77800c1      _ZN13instanceKlass27call_class_initializer_implE19instanceKlassHandleP6Thread + 0xa1
+0xb777ed8e      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x2ce
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * Thread1.run() bci:9 line:17 (Interpreted frame)
+
+</pre>
 
 
 <p>我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
-</span><span class='line'>  // Make sure klass is linked (verified) before initialization
-</span><span class='line'>  // A class could already be verified, since it has been reflected upon.
-</span><span class='line'>  this_oop-&gt;link_class(CHECK);
-</span><span class='line'>
-</span><span class='line'>  DTRACE_CLASSINIT_PROBE(required, instanceKlass::cast(this_oop()), -1);
-</span><span class='line'>
-</span><span class='line'>  bool wait = false;
-</span><span class='line'>
-</span><span class='line'>  // refer to the JVM book page 47 for description of steps
-</span><span class='line'>  // Step 1
-</span><span class='line'>  { ObjectLocker ol(this_oop, THREAD);
-</span><span class='line'>
-</span><span class='line'>    Thread *self = THREAD; // it's passed the current thread
-</span><span class='line'>
-</span><span class='line'>    // Step 2
-</span><span class='line'>    // If we were to use wait() instead of waitInterruptibly() then
-</span><span class='line'>    // we might end up throwing IE from link/symbol resolution sites
-</span><span class='line'>    // that aren't expected to throw.  This would wreak havoc.  See 6320309.
-</span><span class='line'>    while(this_oop-&gt;is_being_initialized() && !this_oop-&gt;is_reentrant_initialization(self)) {
-</span><span class='line'>        wait = true;
-</span><span class='line'>      ol.waitUninterruptibly(CHECK);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Step 3
-</span><span class='line'>    if (this_oop-&gt;is_being_initialized() && this_oop-&gt;is_reentrant_initialization(self)) {
-</span><span class='line'>      DTRACE_CLASSINIT_PROBE_WAIT(recursive, instanceKlass::cast(this_oop()), -1,wait);
-</span><span class='line'>      return;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Step 4
-</span><span class='line'>    if (this_oop-&gt;is_initialized()) {
-</span><span class='line'>      DTRACE_CLASSINIT_PROBE_WAIT(concurrent, instanceKlass::cast(this_oop()), -1,wait);
-</span><span class='line'>      return;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Step 5
-</span><span class='line'>    if (this_oop-&gt;is_in_error_state()) {
-</span><span class='line'>      DTRACE_CLASSINIT_PROBE_WAIT(erroneous, instanceKlass::cast(this_oop()), -1,wait);
-</span><span class='line'>      ResourceMark rm(THREAD);
-</span><span class='line'>      const char* desc = "Could not initialize class ";
-</span><span class='line'>      const char* className = this_oop-&gt;external_name();
-</span><span class='line'>      size_t msglen = strlen(desc) + strlen(className) + 1;
-</span><span class='line'>      char* message = NEW_RESOURCE_ARRAY(char, msglen);
-</span><span class='line'>      if (NULL == message) {
-</span><span class='line'>        // Out of memory: can't create detailed error message
-</span><span class='line'>        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), className);
-</span><span class='line'>      } else {
-</span><span class='line'>        jio_snprintf(message, msglen, "%s%s", desc, className);
-</span><span class='line'>        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), message);
-</span><span class='line'>      }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    // Step 6
-</span><span class='line'>    this_oop-&gt;set_init_state(being_initialized);
-</span><span class='line'>    this_oop-&gt;set_init_thread(self);
-</span><span class='line'>  }
-</span><span class='line'>  ...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
+  // Make sure klass is linked (verified) before initialization
+  // A class could already be verified, since it has been reflected upon.
+  this_oop->link_class(CHECK);
+
+  DTRACE_CLASSINIT_PROBE(required, instanceKlass::cast(this_oop()), -1);
+
+  bool wait = false;
+
+  // refer to the JVM book page 47 for description of steps
+  // Step 1
+  { ObjectLocker ol(this_oop, THREAD);
+
+    Thread *self = THREAD; // it's passed the current thread
+
+    // Step 2
+    // If we were to use wait() instead of waitInterruptibly() then
+    // we might end up throwing IE from link/symbol resolution sites
+    // that aren't expected to throw.  This would wreak havoc.  See 6320309.
+    while(this_oop->is_being_initialized() && !this_oop->is_reentrant_initialization(self)) {
+        wait = true;
+      ol.waitUninterruptibly(CHECK);
+    }
+
+    // Step 3
+    if (this_oop->is_being_initialized() && this_oop->is_reentrant_initialization(self)) {
+      DTRACE_CLASSINIT_PROBE_WAIT(recursive, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 4
+    if (this_oop->is_initialized()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(concurrent, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 5
+    if (this_oop->is_in_error_state()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(erroneous, instanceKlass::cast(this_oop()), -1,wait);
+      ResourceMark rm(THREAD);
+      const char* desc = "Could not initialize class ";
+      const char* className = this_oop->external_name();
+      size_t msglen = strlen(desc) + strlen(className) + 1;
+      char* message = NEW_RESOURCE_ARRAY(char, msglen);
+      if (NULL == message) {
+        // Out of memory: can't create detailed error message
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), className);
+      } else {
+        jio_snprintf(message, msglen, "%s%s", desc, className);
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), message);
+      }
+    }
+
+    // Step 6
+    this_oop->set_init_state(being_initialized);
+    this_oop->set_init_thread(self);
+  }
+  ...
+}
+</pre>
 
 
 <p><code>类的初始化过程:</code></p>
@@ -1474,168 +927,106 @@ class Thread2 extends Thread {
 
 <p>我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) info threads
-</span><span class='line'>  17 process 5724  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  16 process 6878  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  15 process 5739  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  14 process 5738  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  13 process 5737  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  12 process 5736  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  11 process 5735  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  10 process 5734  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  9 process 5733  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  8 process 5732  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  7 process 5731  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  6 process 5730  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  5 process 5729  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  4 process 5728  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  3 process 5727  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  2 process 5726  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>  1 process 5725  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+(gdb) info threads
+  17 process 5724  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  16 process 6878  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  15 process 5739  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  14 process 5738  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  13 process 5737  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  12 process 5736  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  11 process 5735  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  10 process 5734  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  9 process 5733  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  8 process 5732  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  7 process 5731  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  6 process 5730  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  5 process 5729  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  4 process 5728  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  3 process 5727  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  2 process 5726  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  1 process 5725  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+</pre>
 
 
-<p>     <br/>
+<p>
 然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) thread 14
-</span><span class='line'>[Switching to thread 14 (process 5738)]#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>(gdb) bt
-</span><span class='line'>#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</span><span class='line'>#1  0x005e0d76 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib/tls/i686/nosegneg/libpthread.so.0
-</span><span class='line'>#2  0x005e13ee in pthread_cond_wait@GLIBC_2.0 () from /lib/tls/i686/nosegneg/libpthread.so.0
-</span><span class='line'>#3  0xb79a71ae in os::PlatformEvent::park () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#4  0xb7997acb in ObjectMonitor::wait () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#5  0xb7a73c53 in ObjectSynchronizer::waitUninterruptibly () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#6  0xb777eb34 in instanceKlass::initialize_impl () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#7  0xb777e288 in instanceKlass::initialize () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#8  0xb7821ad9 in find_class_from_class_loader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#9  0xb7807d99 in JVM_FindClassFromClassLoader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-</span><span class='line'>#10 0xb734c236 in Java_java_lang_Class_forName0 () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/libjava.so
-</span><span class='line'>#11 0xb433064a in ?? ()
-</span><span class='line'>#12 0x0813b120 in ?? ()
-</span><span class='line'>#13 0x70aaa690 in ?? ()
-</span><span class='line'>#14 0x70aaa6a0 in ?? ()
-</span><span class='line'>#15 0x00000001 in ?? ()
-</span><span class='line'>#16 0x70aaa698 in ?? ()
-</span><span class='line'>#17 0x00000000 in ?? ()
-</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+(gdb) thread 14
+[Switching to thread 14 (process 5738)]#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+(gdb) bt
+#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+#1  0x005e0d76 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#2  0x005e13ee in pthread_cond_wait@GLIBC_2.0 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#3  0xb79a71ae in os::PlatformEvent::park () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#4  0xb7997acb in ObjectMonitor::wait () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#5  0xb7a73c53 in ObjectSynchronizer::waitUninterruptibly () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#6  0xb777eb34 in instanceKlass::initialize_impl () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#7  0xb777e288 in instanceKlass::initialize () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#8  0xb7821ad9 in find_class_from_class_loader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#9  0xb7807d99 in JVM_FindClassFromClassLoader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#10 0xb734c236 in Java_java_lang_Class_forName0 () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/libjava.so
+#11 0xb433064a in ?? ()
+#12 0x0813b120 in ?? ()
+#13 0x70aaa690 in ?? ()
+#14 0x70aaa6a0 in ?? ()
+#15 0x00000001 in ?? ()
+#16 0x70aaa698 in ?? ()
+#17 0x00000000 in ?? ()
+
+</pre>
 
 
 <p>我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>0xb777eaed &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45&gt;: lea    0xfffffff4(%ebp),%esp    //将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
-</span><span class='line'>0xb777eaf0 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+48&gt;:  pop    %ebx
-</span><span class='line'>0xb777eaf1 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+49&gt;:  pop    %esi
-</span><span class='line'>0xb777eaf2 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+50&gt;:  pop    %edi
-</span><span class='line'>0xb777eaf3 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+51&gt;:  pop    %ebp
-</span><span class='line'>0xb777eaf4 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+52&gt;:  ret
-</span><span class='line'>0xb777eaf5 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+53&gt;:  push   $0x1
-</span><span class='line'>0xb777eaf7 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+55&gt;:  lea    0xffffffd8(%ebp),%edx
-</span><span class='line'>0xb777eafa &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+58&gt;:  push   %esi
-</span><span class='line'>0xb777eafb &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+59&gt;:  push   %ebx
-</span><span class='line'>0xb777eafc &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+60&gt;:  push   %edx
-</span><span class='line'>0xb777eafd &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+61&gt;:  call   0xb7a73a80 &lt;_ZN12ObjectLockerC1E6HandleP6Threadb&gt;
-</span><span class='line'>0xb777eb02 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+66&gt;:  add    $0x10,%esp
-</span><span class='line'>0xb777eb05 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+69&gt;:  xor    %eax,%eax
-</span><span class='line'>0xb777eb07 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+71&gt;:  test   %ebx,%ebx
-</span><span class='line'>0xb777eb09 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+73&gt;:  je     0xb777eb0d &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77&gt;
-</span><span class='line'>0xb777eb0b &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+75&gt;:  mov    (%ebx),%eax      //将%ebx的值移到%eax
-</span><span class='line'>0xb777eb0d &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77&gt;:  cmpl   $0x4,0xe0(%eax)  //对比%eax偏移0xe0位置的值和0x4(这个值其实就是上面提到的being_initialized状态，这就说明了%eax偏移0xe0位置其实存的就是初始化类的初始化状态)
-</span><span class='line'>0xb777eb14 &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+84&gt;:  jne    0xb777eb4f &lt;_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+143&gt;</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+0xb777eaed <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45>:  lea    0xfffffff4(%ebp),%esp    //将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
+0xb777eaf0 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+48>:  pop    %ebx
+0xb777eaf1 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+49>:  pop    %esi
+0xb777eaf2 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+50>:  pop    %edi
+0xb777eaf3 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+51>:  pop    %ebp
+0xb777eaf4 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+52>:  ret
+0xb777eaf5 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+53>:  push   $0x1
+0xb777eaf7 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+55>:  lea    0xffffffd8(%ebp),%edx
+0xb777eafa <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+58>:  push   %esi
+0xb777eafb <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+59>:  push   %ebx
+0xb777eafc <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+60>:  push   %edx
+0xb777eafd <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+61>:  call   0xb7a73a80 <_ZN12ObjectLockerC1E6HandleP6Threadb>
+0xb777eb02 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+66>:  add    $0x10,%esp
+0xb777eb05 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+69>:  xor    %eax,%eax
+0xb777eb07 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+71>:  test   %ebx,%ebx
+0xb777eb09 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+73>:  je     0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>
+0xb777eb0b <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+75>:  mov    (%ebx),%eax      //将%ebx的值移到%eax
+0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>:  cmpl   $0x4,0xe0(%eax)  //对比%eax偏移0xe0位置的值和0x4(这个值其实就是上面提到的being_initialized状态，这就说明了%eax偏移0xe0位置其实存的就是初始化类的初始化状态)
+0xb777eb14 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+84>:  jne    0xb777eb4f <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+143>
+</pre>
 
 
-<p>
-从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
+<p>从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x $ebp + 0xfffffff4
-</span><span class='line'>0x70aaa45c:   0x71af2180
-</span><span class='line'>(gdb) x/3w 0x71af2180 + 0xe0
-</span><span class='line'>0x71af2260:   0x00000004  0x0813c800  0x0000001a</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+(gdb) x $ebp + 0xfffffff4
+0x70aaa45c: 0x71af2180
+(gdb) x/3w 0x71af2180 + 0xe0
+0x71af2260: 0x00000004  0x0813c800  0x0000001a
+</pre>
 
 
-<p>     <br/>
+<p>    <br/>
 而4其实代表的就是being_initialized这个状态，代码如下</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  enum ClassState {
-</span><span class='line'>    unparsable_by_gc = 0,               
-</span><span class='line'>    allocated,                          
-</span><span class='line'>    loaded,                             
-</span><span class='line'>    linked,                             
-</span><span class='line'>    being_initialized,                  
-</span><span class='line'>    fully_initialized,                  
-</span><span class='line'>    initialization_error                
-</span><span class='line'>  };</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+  enum ClassState {
+    unparsable_by_gc = 0,               
+    allocated,                          
+    loaded,                             
+    linked,                             
+    being_initialized,                  
+    fully_initialized,                  
+    initialization_error                
+  };
+</pre>
 
 
 <p>
@@ -1643,109 +1034,67 @@ class Thread2 extends Thread {
 
 <p>突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x/100w 0x0813c800
-</span><span class='line'>0x813c800:    0xb7bc06e8  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x813c810:    0x0813c488  0x0813d2c8  0x00000000  0x00000000
-</span><span class='line'>0x813c820:    0x080f9bf8  0x080f8b50  0x70a59b60  0x00000000
-</span><span class='line'>0x813c830:    0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x813c840:    0x00014148  0x00000505  0x00000000  0x00000000
-</span><span class='line'>0x813c850:    0x00000000  0x00000000  0x00000000  0x3f800021
-</span><span class='line'>0x813c860:    0x00000001  0x00000023  0x3f800021  0x0001b530
-</span><span class='line'>0x813c870:    0x00000000  0x00000000  0x00000000  0x080ffdc0
-</span><span class='line'>0x813c880:    0x00000001  0x00000000  0x080ffe24  0x00000014
-</span><span class='line'>0x813c890:    0x00000031  0x00000000  0x00000000  0x0813dab0
-</span><span class='line'>0x813c8a0:    0x0813c428  0x0813ce98  0x70a5b000  0x00051000
-</span><span class='line'>0x813c8b0:    0x00000000  0xffffffff  0x00000000  0x080ffdc0
-</span><span class='line'>0x813c8c0:    0x00002bad  0x0813d400  0x0813d500  0x0813d700
-</span><span class='line'>0x813c8d0:    0x0813d800  0x00000000  0x00000000  0x104aa1ad
-</span><span class='line'>0x813c8e0:    0x544a5ab2  0x32378fc7  0x00008767  0x00000000
-</span><span class='line'>0x813c8f0:    0x00000000  0x00000000  0x0ee9547d  0x00000000
-</span><span class='line'>0x813c900:    0x00000000  0x00000000  0x0813b000  0x75878760
-</span><span class='line'>0x813c910:    0x70a59a94  0x00000000  0x70a59abc  0xb7829020
-</span><span class='line'>0x813c920:    0xb7bb7100  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x813c930:    0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x813c940:    0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x813c950:    0x00000000  0x00000000  0x00000000  0x0000000a
-</span><span class='line'>0x813c960:    0x0813da98  0x00000000  0x0000deab  0x00000001
-</span><span class='line'>0x813c970:    0x00000000  0x00000000  0x00000002  0x00000000
-</span><span class='line'>0x813c980:    0x00000000  0x00000000  0x00000000  0x00000000</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+(gdb) x/100w 0x0813c800
+0x813c800:  0xb7bc06e8  0x00000000  0x00000000  0x00000000
+0x813c810:  0x0813c488  0x0813d2c8  0x00000000  0x00000000
+0x813c820:  0x080f9bf8  0x080f8b50  0x70a59b60  0x00000000
+0x813c830:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c840:  0x00014148  0x00000505  0x00000000  0x00000000
+0x813c850:  0x00000000  0x00000000  0x00000000  0x3f800021
+0x813c860:  0x00000001  0x00000023  0x3f800021  0x0001b530
+0x813c870:  0x00000000  0x00000000  0x00000000  0x080ffdc0
+0x813c880:  0x00000001  0x00000000  0x080ffe24  0x00000014
+0x813c890:  0x00000031  0x00000000  0x00000000  0x0813dab0
+0x813c8a0:  0x0813c428  0x0813ce98  0x70a5b000  0x00051000
+0x813c8b0:  0x00000000  0xffffffff  0x00000000  0x080ffdc0
+0x813c8c0:  0x00002bad  0x0813d400  0x0813d500  0x0813d700
+0x813c8d0:  0x0813d800  0x00000000  0x00000000  0x104aa1ad
+0x813c8e0:  0x544a5ab2  0x32378fc7  0x00008767  0x00000000
+0x813c8f0:  0x00000000  0x00000000  0x0ee9547d  0x00000000
+0x813c900:  0x00000000  0x00000000  0x0813b000  0x75878760
+0x813c910:  0x70a59a94  0x00000000  0x70a59abc  0xb7829020
+0x813c920:  0xb7bb7100  0x00000000  0x00000000  0x00000000
+0x813c930:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c940:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c950:  0x00000000  0x00000000  0x00000000  0x0000000a
+0x813c960:  0x0813da98  0x00000000  0x0000deab  0x00000001
+0x813c970:  0x00000000  0x00000000  0x00000002  0x00000000
+0x813c980:  0x00000000  0x00000000  0x00000000  0x00000000
+</pre>
 
 
 <p>因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> public:                                    
-</span><span class='line'>  volatile JavaThreadState _thread_state;
-</span><span class='line'> private:
-</span><span class='line'>  ThreadSafepointState *_safepoint_state;        
-</span><span class='line'>  address               _saved_exception_pc;    
-</span><span class='line'>  volatile TerminatedTypes _terminated;</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+ public:                                    
+  volatile JavaThreadState _thread_state;
+ private:
+  ThreadSafepointState *_safepoint_state;        
+  address               _saved_exception_pc;    
+  volatile TerminatedTypes _terminated;
+</pre>
 
 
 <p><code>JavaThreadState</code></p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> enum JavaThreadState {
-</span><span class='line'>  _thread_uninitialized     =  0, 
-</span><span class='line'>  _thread_new               =  2, 
-</span><span class='line'>  _thread_new_trans         =  3, 
-</span><span class='line'>  _thread_in_native         =  4, 
-</span><span class='line'>  _thread_in_native_trans   =  5, 
-</span><span class='line'>  _thread_in_vm             =  6, 
-</span><span class='line'>  _thread_in_vm_trans       =  7, 
-</span><span class='line'>  _thread_in_Java           =  8, 
-</span><span class='line'>  _thread_in_Java_trans     =  9, 
-</span><span class='line'>  _thread_blocked           = 10, 
-</span><span class='line'>  _thread_blocked_trans     = 11, 
-</span><span class='line'>  _thread_max_state         = 12  
-</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+ enum JavaThreadState {
+  _thread_uninitialized     =  0, 
+  _thread_new               =  2, 
+  _thread_new_trans         =  3, 
+  _thread_in_native         =  4, 
+  _thread_in_native_trans   =  5, 
+  _thread_in_vm             =  6, 
+  _thread_in_vm_trans       =  7, 
+  _thread_in_Java           =  8, 
+  _thread_in_Java_trans     =  9, 
+  _thread_blocked           = 10, 
+  _thread_blocked_trans     = 11, 
+  _thread_max_state         = 12  
+};
+</pre>
 
-
-<p></p>
 
 <p>这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
 

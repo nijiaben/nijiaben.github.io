@@ -25,11 +25,15 @@
   <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+
+  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css">
+
   <script src="/js/jquery.js"></script>
   <script src="/js/bootstrap-collapse.js"></script>
   <script src="/js/modernizr-2.0.js"></script>
   <script src="/js/octopress.js" type="text/javascript"></script>
   <script src="/js/application.js"></script>
+  <script src="/js/google-code-prettify/prettify.js"></script>
   <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
 <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
 <link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
@@ -48,6 +52,14 @@
   </script>
 
 
+
+<script type="text/javascript" >
+ $(function() {
+      $('pre').addClass('prettyprint').attr('style', 'overflow:auto');
+      window.prettyPrint && prettyPrint();
+      $('table').addClass('table');
+});
+</script>
 </head>
 
 <body   >
@@ -156,39 +168,25 @@
 
 <p>做了这么些铺垫之后下面进入正题，那么<code>Broken pipe</code>或者<code>Connection reset by peer</code>分别代表什么意思呢，下面从glibc的源码里有对此的介绍</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#. TRANS Broken pipe; there is no process reading from the other end of a pipe.
-</span><span class='line'>#. TRANS Every library function that returns this error code also generates a
-</span><span class='line'>#. TRANS @code{SIGPIPE} signal; this signal terminates the program if not handled
-</span><span class='line'>#. TRANS or blocked.  Thus, your program will never actually see @code{EPIPE}
-</span><span class='line'>#. TRANS unless it has handled or blocked @code{SIGPIPE}.
-</span><span class='line'>#: sysdeps/generic/siglist.h:39 sysdeps/gnu/errlist.c:359
-</span><span class='line'>#: sysdeps/unix/siglist.c:39
-</span><span class='line'>msgid "Broken pipe"
-</span><span class='line'>msgstr "断开的管道"
-</span><span class='line'>
-</span><span class='line'>#. TRANS A network connection was closed for reasons outside the control of the
-</span><span class='line'>#. TRANS local host, such as by the remote machine rebooting or an unrecoverable
-</span><span class='line'>#. TRANS protocol violation.
-</span><span class='line'>#: sysdeps/gnu/errlist.c:614
-</span><span class='line'>msgid "Connection reset by peer"
-</span><span class='line'>msgstr ""
-</span></code></pre></td></tr></table></div></figure>
+<pre class="prettyPrint">
+#. TRANS Broken pipe; there is no process reading from the other end of a pipe.
+#. TRANS Every library function that returns this error code also generates a
+#. TRANS @code{SIGPIPE} signal; this signal terminates the program if not handled
+#. TRANS or blocked.  Thus, your program will never actually see @code{EPIPE}
+#. TRANS unless it has handled or blocked @code{SIGPIPE}.
+#: sysdeps/generic/siglist.h:39 sysdeps/gnu/errlist.c:359
+#: sysdeps/unix/siglist.c:39
+msgid "Broken pipe"
+msgstr "断开的管道"
+
+#. TRANS A network connection was closed for reasons outside the control of the
+#. TRANS local host, such as by the remote machine rebooting or an unrecoverable
+#. TRANS protocol violation.
+#: sysdeps/gnu/errlist.c:614
+msgid "Connection reset by peer"
+msgstr ""
+
+</pre>
 
 
 <p>其实我们java异常里看到的<code>Broken pipe</code>或者<code>Connection reset by peer</code>信息不是jdk或者jvm里定义的，我看到这些关键字往往会首先搜索下jdk或者hotspot源码找到位置进行上下文分析，但是这次没找到，后面才想到应该是linux或者glibc里定义的，果然在glibc离看到了如上的描述和定义</p>
@@ -209,9 +207,9 @@
 <p>结果：</p>
 
 <ol>
-<li><p>会抛出Connection reset by peer
+<li><p>会抛出Connection reset by peer </br>
 <img src="/images/2014/07/tcp_error_1.jpg"></p></li>
-<li><p>会抛出Broken pipe
+<li><p>会抛出Broken pipe</br>
 <img src="/images/2014/07/tcp_error_2.jpg"></p></li>
 </ol>
 
