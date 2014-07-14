@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-14T19:55:33+08:00</updated>
+  <updated>2014-07-14T19:58:46+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -18,7 +18,7 @@
     <link href="http://nijiaben.github.io/blog/2014/07/14/tcp-broken-pipe/"/>
     <updated>2014-07-14T19:31:28+08:00</updated>
     <id>http://nijiaben.github.io/blog/2014/07/14/tcp-broken-pipe</id>
-    <content type="html"><![CDATA[<p>以前我们经常会碰到Broken pipe或者Connection reset by peer之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
+    <content type="html"><![CDATA[<p>以前我们经常会碰到<code>Broken pipe</code>或者<code>Connection reset by peer</code>之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
 
 <h3>三次握手和四次挥手过程</h3>
 
@@ -58,7 +58,7 @@
 
 <h3>Broken pipe以及Connection reset by peer</h3>
 
-<p>做了这么些铺垫之后下面进入正题，那么Broken pipe或者Connection reset by peer分别代表什么意思呢，下面从glibc的源码里有对此的介绍</p>
+<p>做了这么些铺垫之后下面进入正题，那么<code>Broken pipe</code>或者<code>Connection reset by peer</code>分别代表什么意思呢，下面从glibc的源码里有对此的介绍</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -95,9 +95,9 @@
 </span></code></pre></td></tr></table></div></figure>
 
 
-<p>其实我们java异常里看到的Broken pipe或者Connection reset by peer信息不是jdk或者jvm里定义的，我看到这些关键字往往会首先搜索下jdk或者hotspot源码找到位置进行上下文分析，但是这次没找到，后面才想到应该是linux或者glibc里定义的，果然在glibc离看到了如上的描述和定义</p>
+<p>其实我们java异常里看到的<code>Broken pipe</code>或者<code>Connection reset by peer</code>信息不是jdk或者jvm里定义的，我看到这些关键字往往会首先搜索下jdk或者hotspot源码找到位置进行上下文分析，但是这次没找到，后面才想到应该是linux或者glibc里定义的，果然在glibc离看到了如上的描述和定义</p>
 
-<p>对于Broken pipe在管道的另外一端没有进程再读的时候就会抛出此异常，Connection reset by peer的描述其实不是很正确，从我的实践来看只描述了一方面，其实在某一端正常close之后，也是可能会有此异常的。</p>
+<p>对于<code>Broken pipe</code>在管道的另外一端没有进程再读的时候就会抛出此异常，<code>Connection reset by peer</code>的描述其实不是很正确，从我的实践来看只描述了一方面，其实在某一端正常close之后，也是可能会有此异常的。</p>
 
 <h3>异常模拟</h3>
 
@@ -123,9 +123,9 @@
 <p>分析：</p>
 
 <ol>
-<li><p>当我们往一个对端已经close的通道写数据的时候，对方的tcp会收到这个报文，并且反馈一个reset报文，tcpdump的结果如下所示,当收到reset报文的时候，继续做select读数据的时候就会抛出Connect reset by peer的异常，从堆栈可以看得出
+<li><p>当我们往一个对端已经close的通道写数据的时候，对方的tcp会收到这个报文，并且反馈一个reset报文，tcpdump的结果如下所示,当收到reset报文的时候，继续做select读数据的时候就会抛出<code>Connect reset by peer</code>的异常，从堆栈可以看得出
 <img src="http://nijiaben.github.io/images/2014/07/tcpdump_2.jpg"></p></li>
-<li><p>当第一次往一个对端已经close的通道写数据的时候会和上面的情况一样，会收到reset报文，当再次往这个socket写数据的时候，就会抛出Broken pipe了
+<li><p>当第一次往一个对端已经close的通道写数据的时候会和上面的情况一样，会收到reset报文，当再次往这个socket写数据的时候，就会抛出<code>Broken pipe</code>了
 ，根据tcp的约定，当收到reset包的时候，上层必须要做出处理，调用将socket文件描述符进行关闭，其实也意味着pipe会关闭，因此会抛出这个顾名思义的异常</p></li>
 </ol>
 
