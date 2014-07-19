@@ -4,7 +4,7 @@
   <title><![CDATA[Category: debug | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/debug/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-19T10:31:14+08:00</updated>
+  <updated>2014-07-19T10:37:32+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -40,7 +40,29 @@
 
 <p>&#8195;&#8195;这就是关键了，熟悉agent的人应该都知道这是加载了一个叫做jdwp的agent，也就是说vm会去找一个叫做<code>libjdwp.so/libjdwp.dylib</code>的动态库，于是通过nm看看里面究竟有些什么方法？</p>
 
-<p><img src="/images/2014/07/nm.jpg"></p>
+<pre class="prettyPrint">
+nijiaben@nijiaben : ~/Developer/open_source/openjdk/jdk7u/build/macosx-x86_64-debug/lib
+[0] % nm libjdwp.dylib
+00000000000152b0 T _Agent_OnLoad
+0000000000016520 T _Agent_OnUnload
+00000000000531c0 D _ArrayReference_Cmds
+00000000000531e0 D _ArrayType_Cmds
+0000000000053230 D _ClassLoaderReference_Cmds
+0000000000053240 D _ClassObjectReference_Cmds
+0000000000053200 D _ClassType_Cmds
+0000000000053260 D _EventRequest_Cmds
+0000000000053f88 S _Field_Cmds
+0000000000053280 D _Method_Cmds
+0000000000053668 b _NullString
+00000000000532c0 D _ObjectReference_Cmds
+0000000000053320 D _ReferenceType_Cmds
+00000000000533c0 D _StackFrame_Cmds
+00000000000533f0 D _StringReference_Cmds
+0000000000053400 D _ThreadGroupReference_Cmds
+0000000000053420 D _ThreadReference_Cmds
+00000000000534c0 D _VirtualMachine_Cmds
+</pre>
+
 
 <p>&#8195;&#8195;赫然看到了Agent的几个方法，<em>Agent_OnLoad和</em>Agent_OnUnLoad，于是更加肯定这个动态库就是一个agent实例了。
 有了它自然想看看这个Agent加载的时候干了些什么事。先不急于看里面的实现，一个好的模块或者应用，往往通过详细的日志就可以知道它的大致情况，其实jdwp也是有详细的日志可看的，在上面的-agentlib:jdwp后面再加上一个参数logflags=0xfff，即-agentlib:jdwp=transport=dt_socket,suspend=y,logflags=0xfff，然后再次执行java命令，你将会在你的当前目录下生成一个类似jdwp.log.297的文件，297其实是进程的ID，那当我们仅仅是启动，还没有做任何操作的时候jdwp都干了些什么？</p>
