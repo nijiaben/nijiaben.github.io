@@ -4,7 +4,7 @@
   <title><![CDATA[Category: jdwp | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jdwp/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-19T10:26:14+08:00</updated>
+  <updated>2014-07-19T10:27:30+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -14,7 +14,7 @@
 
   
   <entry>
-    <title type="html"><![CDATA[从日志上理解java调试机制]]></title>
+    <title type="html"><![CDATA[从日志上理解JAVA调试机制]]></title>
     <link href="http://nijiaben.github.io/blog/2014/07/19/java-debug-log/"/>
     <updated>2014-07-19T09:58:49+08:00</updated>
     <id>http://nijiaben.github.io/blog/2014/07/19/java-debug-log</id>
