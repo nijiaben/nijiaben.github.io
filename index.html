@@ -141,6 +141,59 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2014-07-19T09:58:49+08:00" pubdate data-updated="true">Jul 19<span>th</span>, 2014</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2014/07/19/java-debug-log/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/debug/"><span class="badge">debug</span></a>
+          
+          <a href="/blog/categories/jdwp/"><span class="badge">jdwp</span></a>
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2014/07/19/java-debug-log/">从日志上理解java调试机制</a></h1>
+      <p>&#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。</p>
+
+
+      
+       <a href="/blog/2014/07/19/java-debug-log/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+
+    </article>
+    
+    <hr>
+    
+  
+  
+    <article>
+      
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2014-07-08T16:39:46+08:00" pubdate data-updated="true">Jul 8<span>th</span>, 2014</time></h5>
           <div class="row-fluid">
           
@@ -163,7 +216,7 @@
       <h1 class="link"><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
       <h2>问题描述</h2>
 
-<p>当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
+<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
 
 
       
@@ -216,7 +269,7 @@
       <h1 class="link"><a href="/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a></h1>
       <h2>Attach是什么</h2>
 
-<p>   在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
+<p>   &#8195;&#8195;在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
 
 
       
@@ -265,11 +318,11 @@
     </div>
     <div class="span10 post-container">
       <h1 class="link"><a href="/blog/2014/05/20/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a></h1>
-      <p>以前我们经常会碰到<code>Broken pipe</code>或者<code>Connection reset by peer</code>之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
+      <p>&#8195;&#8195;以前我们经常会碰到<code>Broken pipe</code>或者<code>Connection reset by peer</code>之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
 
 <h2>三次握手和四次挥手过程</h2>
 
-<p>在讲具体的原因之前，我们有必要补充下tcp这块的一些基础知识，我们都知道tcp通信有三次握手和四次挥手，网上介绍的文章也一大堆，图我也懒得画了，直接网上找一个图给大家</p>
+<p>&#8195;&#8195;在讲具体的原因之前，我们有必要补充下tcp这块的一些基础知识，我们都知道tcp通信有三次握手和四次挥手，网上介绍的文章也一大堆，图我也懒得画了，直接网上找一个图给大家</p>
 
 
       

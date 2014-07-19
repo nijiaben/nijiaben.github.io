@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: jvm | 你假笨]]></title>
-  <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
+  <title><![CDATA[Category: jdwp | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/jdwp/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
   <updated>2014-07-19T10:26:14+08:00</updated>
   <id>http://nijiaben.github.io/</id>

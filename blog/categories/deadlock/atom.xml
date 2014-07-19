@@ -4,7 +4,7 @@
   <title><![CDATA[Category: DeadLock | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/deadlock/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-17T21:14:57+08:00</updated>
+  <updated>2014-07-19T10:26:14+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -20,7 +20,7 @@
     <id>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock</id>
     <content type="html"><![CDATA[<h2>问题描述</h2>
 
-<p>当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
+<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
 
 <!--more-->
 
@@ -68,9 +68,9 @@ class Thread2 extends Thread {
 </pre>
 
 
-<p>如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
+<p>&#8195;&#8195;如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
 
-<p>先上两张图</p>
+<p>&#8195;&#8195;先上两张图</p>
 
 <p><code>内存态线程堆栈</code></p>
 
@@ -82,7 +82,7 @@ class Thread2 extends Thread {
 
 <h2>存疑点</h2>
 
-<p>仔细看看上面的线程dump分析和内存dump分析里的线程分析模块，您可能会有如下两个疑惑：</p>
+<p>&#8195;&#8195;仔细看看上面的线程dump分析和内存dump分析里的线程分析模块，您可能会有如下两个疑惑：</p>
 
 <ul>
 <li><p>【为什么线程[Thread-0]一直卡在Class.forName的位置】：这有点出乎意料，做一个类加载要么找不到抛出ClassNotFoundException，要么找到直接返回，为什么会一直卡在这个位置呢？</p></li>
@@ -94,19 +94,19 @@ class Thread2 extends Thread {
 
 <h3>疑惑二：</h3>
 
-<p>第一个疑惑我们先留着，先解释下第二个疑惑，大家可以对照堆栈通过反编译rt.jar还有ojdbc6-11.2.0.3.0.jar看具体的代码</p>
+<p>&#8195;&#8195;第一个疑惑我们先留着，先解释下第二个疑惑，大家可以对照堆栈通过反编译rt.jar还有ojdbc6-11.2.0.3.0.jar看具体的代码</p>
 
 <p><code>驱动类加载过程简要介绍:</code></p>
 
-<p>当要注册某个sql驱动的时候是通过调用java.sql.DriverManager.registerDriver来实现的(注意这个方法加了synchronized关键字，后面解释第一个疑惑的时候是关键)，而这个方法在第一次执行过程中，会在当前线程classloader的classpath下寻找所有/META-INF/services/java.sql.Driver文件，这个文件在mysql和oracle驱动jar里都有，里面写的是对应的驱动实现类名，这种机制是jdk提供的spi实现，找到这些文件之后，依次使用Class.forName(driverClassName, true, this.loader)来对这些驱动类进行加载，其中第二个参数是true，意味着不仅仅做一次loadClass的动作，还会初始化该类，即调用包含静态块的&lt; clinit >方法，执行完之后才会返回，这样就解释了第二个疑惑，在mysql驱动注册过程中还会对odbc驱动类进行加载并初始化</p>
+<p>&#8195;&#8195;当要注册某个sql驱动的时候是通过调用java.sql.DriverManager.registerDriver来实现的(注意这个方法加了synchronized关键字，后面解释第一个疑惑的时候是关键)，而这个方法在第一次执行过程中，会在当前线程classloader的classpath下寻找所有/META-INF/services/java.sql.Driver文件，这个文件在mysql和oracle驱动jar里都有，里面写的是对应的驱动实现类名，这种机制是jdk提供的spi实现，找到这些文件之后，依次使用Class.forName(driverClassName, true, this.loader)来对这些驱动类进行加载，其中第二个参数是true，意味着不仅仅做一次loadClass的动作，还会初始化该类，即调用包含静态块的&lt; clinit >方法，执行完之后才会返回，这样就解释了第二个疑惑，在mysql驱动注册过程中还会对odbc驱动类进行加载并初始化</p>
 
 <p><code>感想:</code></p>
 
-<p>其实我觉得这种设计有点傻，为什么要干和自己不相关的事情呢，画蛇添足的设计，首先类初始化的开销是否放到一起做并没有多大区别，其次正由于这种设计导致了今天这个死锁的发生</p>
+<p>&#8195;&#8195;其实我觉得这种设计有点傻，为什么要干和自己不相关的事情呢，画蛇添足的设计，首先类初始化的开销是否放到一起做并没有多大区别，其次正由于这种设计导致了今天这个死锁的发生</p>
 
 <h3>疑惑一：</h3>
 
-<p>现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示</p>
+<p>&#8195;&#8195;现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示</p>
 
 <pre class="prettyPrint">
 ----------------- 5738 -----------------
@@ -151,7 +151,7 @@ class Thread2 extends Thread {
 </pre>
 
 
-<p>我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：</p>
+<p>&#8195;&#8195;我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：</p>
 
 <pre class="prettyPrint">
 void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
@@ -218,11 +218,11 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 
 <p><code>类的初始化过程:</code></p>
 
-<p>当某个线程获得机会对某个类进行初始化的时候(请看上面的Step 6)，会设置这个类的init_state属性为being_initialized(如果初始化好了会设置为fully_initialized，异常的话会设置为initialization_error)，还会设置init_thread属性为当前线程，在这个设置过程中是有针对这个类提供了一把互斥锁的，因此当有别的线程进来的时候会被拦截在外面，如果设置完了，这把互斥锁也释放了，但是因为这个类的状态被设置了，因此并发问题也得到了解决，当另外一个线程也尝试初始化这个类的时候会判断这个类的状态是不是being_initialized，并且其init_thread不是当前线程，那么就会一直卡在那里，也就是此次线程dump的线程所处的状态，正在初始化类的线程会调用&lt; clinit >方法，如果正常结束了，那么就设置其状态为fully_initialized，并且通知之前卡在那里等待初始化完成的线程，然他们继续往下走(下一个动作就是再判断下状态，发现完成了就直接return了)</p>
+<p>&#8195;&#8195;当某个线程获得机会对某个类进行初始化的时候(请看上面的Step 6)，会设置这个类的init_state属性为being_initialized(如果初始化好了会设置为fully_initialized，异常的话会设置为initialization_error)，还会设置init_thread属性为当前线程，在这个设置过程中是有针对这个类提供了一把互斥锁的，因此当有别的线程进来的时候会被拦截在外面，如果设置完了，这把互斥锁也释放了，但是因为这个类的状态被设置了，因此并发问题也得到了解决，当另外一个线程也尝试初始化这个类的时候会判断这个类的状态是不是being_initialized，并且其init_thread不是当前线程，那么就会一直卡在那里，也就是此次线程dump的线程所处的状态，正在初始化类的线程会调用&lt; clinit >方法，如果正常结束了，那么就设置其状态为fully_initialized，并且通知之前卡在那里等待初始化完成的线程，然他们继续往下走(下一个动作就是再判断下状态，发现完成了就直接return了)</p>
 
 <p><code>猜想:</code></p>
 
-<p>在了解了上面的过程之后，于是我们猜测两种可能</p>
+<p>&#8195;&#8195;在了解了上面的过程之后，于是我们猜测两种可能</p>
 
 <ul>
 <li>第一，这个类的状态还是being_intialized，还在while循环里没有跳出来</li>
@@ -230,11 +230,11 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 </ul>
 
 
-<p>不过第二种可能性非常小，比较linux久经考验了，那接下来我们验证其实是第一个猜想</p>
+<p>&#8195;&#8195;不过第二种可能性非常小，比较linux久经考验了，那接下来我们验证其实是第一个猜想</p>
 
 <p><code>验证：</code></p>
 
-<p>我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14</p>
+<p>&#8195;&#8195;我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14</p>
 
 <pre class="prettyPrint">
 (gdb) info threads
@@ -259,7 +259,7 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 
 
 <p>
-然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里</p>
+&#8195;&#8195;然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里</p>
 
 <pre class="prettyPrint">
 (gdb) thread 14
@@ -287,7 +287,7 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 </pre>
 
 
-<p>我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编</p>
+<p>&#8195;&#8195;我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编</p>
 
 <pre class="prettyPrint">
 0xb777eaed <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45>:  lea    0xfffffff4(%ebp),%esp    //将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
@@ -312,7 +312,7 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 </pre>
 
 
-<p>从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
+<p>&#8195;&#8195;从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
 
 <pre class="prettyPrint">
 (gdb) x $ebp + 0xfffffff4
@@ -323,7 +323,7 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 
 
 <p>    <br/>
-而4其实代表的就是being_initialized这个状态，代码如下</p>
+&#8195;&#8195;而4其实代表的就是being_initialized这个状态，代码如下</p>
 
 <pre class="prettyPrint">
   enum ClassState {
@@ -339,9 +339,9 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 
 
 <p>
-从这于是我们验证了第一个猜想，其实是状态一直没有变更，因此一直卡在那里，为了更进一步确认这个问题，要是我们能找到该类的init_thread线程id就更清楚了，拿到这个ID我们就能看到这个线程栈，就知道它在干什么了，但是很遗憾，这个很难获取到，至少我一直没有找到办法，因为线程ID在线程对象里一直没有存，都是调用的os函数来获取的，得换个思路。</p>
+&#8195;&#8195;从这于是我们验证了第一个猜想，其实是状态一直没有变更，因此一直卡在那里，为了更进一步确认这个问题，要是我们能找到该类的init_thread线程id就更清楚了，拿到这个ID我们就能看到这个线程栈，就知道它在干什么了，但是很遗憾，这个很难获取到，至少我一直没有找到办法，因为线程ID在线程对象里一直没有存，都是调用的os函数来获取的，得换个思路。</p>
 
-<p>突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB</p>
+<p>&#8195;&#8195;突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB</p>
 
 <pre class="prettyPrint">
 (gdb) x/100w 0x0813c800
@@ -373,7 +373,7 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 </pre>
 
 
-<p>因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
+<p>&#8195;&#8195;因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
 
 <pre class="prettyPrint">
  public:                                    
@@ -405,17 +405,17 @@ void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
 </pre>
 
 
-<p>这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
+<p>&#8195;&#8195;这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
 
-<p>于是我们展开<code>Thread-1</code>，看到<code>- waiting to lock &lt;0x71ae2ec0&gt; (a java.lang.Class for java.sql.DriverManager)</code>，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被<code>Thread-0</code>线程持有的，从<code>Thread-1</code>这个线程堆栈来看它其实也是在做Class.forName动作，并且通过<code>Thread-1</code>,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver</p>
+<p>&#8195;&#8195;于是我们展开<code>Thread-1</code>，看到<code>- waiting to lock &lt;0x71ae2ec0&gt; (a java.lang.Class for java.sql.DriverManager)</code>，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被<code>Thread-0</code>线程持有的，从<code>Thread-1</code>这个线程堆栈来看它其实也是在做Class.forName动作，并且通过<code>Thread-1</code>,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver</p>
 
 <p><code>问题现场遐想:</code></p>
 
-<p>于是我们大胆设想一个场景，<code>Thread-1</code>先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，<code>Thread-0</code>这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态</p>
+<p>&#8195;&#8195;于是我们大胆设想一个场景，<code>Thread-1</code>先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，<code>Thread-0</code>这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态</p>
 
 <h3>解决方案</h3>
 
-<p>解决方案目前想到的是将驱动类的加载过程变成单线程加载，不存在并发情况就没问题了</p>
+<p>&#8195;&#8195;解决方案目前想到的是将驱动类的加载过程变成单线程加载，不存在并发情况就没问题了</p>
 ]]></content>
   </entry>
   

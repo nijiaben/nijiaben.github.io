@@ -131,7 +131,7 @@
     <div class="span12">
       <h2>Attach是什么</h2>
 
-<p>   在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
+<p>   &#8195;&#8195;在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
 
 <!--more-->
 
@@ -202,13 +202,13 @@ Full thread dump Java HotSpot(TM) 64-Bit Server VM (24.51-b03 mixed mode):
 </pre>
 
 
-<p>   大家是否注意过上面圈起来的两个线程，”Attach Listener”和“Signal Dispatcher”，这两个线程是我们这次要讲的Attach机制的关键，先偷偷告诉各位，其实Attach Listener这个线程在jvm起来的时候可能并没有的，后面会细说。</p>
+<p>   &#8195;&#8195;大家是否注意过上面圈起来的两个线程，”Attach Listener”和“Signal Dispatcher”，这两个线程是我们这次要讲的Attach机制的关键，先偷偷告诉各位，其实Attach Listener这个线程在jvm起来的时候可能并没有的，后面会细说。</p>
 
-<p>   那Attach机制是什么？说简单点就是jvm提供一种jvm进程间通信的能力，能让一个进程传命令给另外一个进程，并让它执行内部的一些操作，比如说我们为了让另外一个jvm进程把线程dump出来，那么我们跑了一个jstack的进程，然后传了个pid的参数，告诉它要哪个进程进行线程dump，既然是两个进程，那肯定涉及到进程间通信，以及传输协议的定义，比如要执行什么操作，传了什么参数等</p>
+<p>   &#8195;&#8195;那Attach机制是什么？说简单点就是jvm提供一种jvm进程间通信的能力，能让一个进程传命令给另外一个进程，并让它执行内部的一些操作，比如说我们为了让另外一个jvm进程把线程dump出来，那么我们跑了一个jstack的进程，然后传了个pid的参数，告诉它要哪个进程进行线程dump，既然是两个进程，那肯定涉及到进程间通信，以及传输协议的定义，比如要执行什么操作，传了什么参数等</p>
 
 <h2>Attach能做些什么</h2>
 
-<p>   总结起来说，比如内存dump，线程dump，类信息统计(比如加载的类及大小以及实例个数等)，动态加载agent(使用过btrace的应该不陌生)，动态设置vm flag(但是并不是所有的flag都可以设置的，因为有些flag是在jvm启动过程中使用的，是一次性的)，打印vm flag，获取系统属性等，这些对应的源码(AttachListener.cpp)如下</p>
+<p>   &#8195;&#8195;总结起来说，比如内存dump，线程dump，类信息统计(比如加载的类及大小以及实例个数等)，动态加载agent(使用过btrace的应该不陌生)，动态设置vm flag(但是并不是所有的flag都可以设置的，因为有些flag是在jvm启动过程中使用的，是一次性的)，打印vm flag，获取系统属性等，这些对应的源码(AttachListener.cpp)如下</p>
 
 <pre class="prettyPrint">
 static AttachOperationFunctionInfo funcs[] = {
@@ -227,13 +227,13 @@ static AttachOperationFunctionInfo funcs[] = {
 </pre>
 
 
-<p>后面是命令对应的处理函数。</p>
+<p>&#8195;&#8195;后面是命令对应的处理函数。</p>
 
 <h2>Attach在jvm里如何实现的</h2>
 
 <h3>Attach Listener线程的创建</h3>
 
-<p> 前面也提到了，jvm在启动过程中可能并没有启动Attach Listener这个线程，可以通过jvm参数来启动，代码  （Threads::create_vm）如下：</p>
+<p> &#8195;&#8195;前面也提到了，jvm在启动过程中可能并没有启动Attach Listener这个线程，可以通过jvm参数来启动，代码  （Threads::create_vm）如下：</p>
 
 <pre class="prettyPrint"> 
   if (!DisableAttachMechanism) {
@@ -251,7 +251,7 @@ bool AttachListener::init_at_startup() {
 </pre>
 
 
-<p>其中DisableAttachMechanism，StartAttachListener ，ReduceSignalUsage均默认是false(globals.hpp)</p>
+<p>&#8195;&#8195;其中DisableAttachMechanism，StartAttachListener ，ReduceSignalUsage均默认是false(globals.hpp)</p>
 
 <pre class="prettyPrint">
 product(bool, DisableAttachMechanism, false,                              \
@@ -263,7 +263,7 @@ product(bool, ReduceSignalUsage, false,                                   \
 </pre>
 
 
-<p>因此AttachListener::init()并不会被执行，而Attach Listener线程正是在此方法里创建的</p>
+<p>&#8195;&#8195;因此AttachListener::init()并不会被执行，而Attach Listener线程正是在此方法里创建的</p>
 
 <pre class="prettyPrint">
 // Starts the Attach Listener thread
@@ -316,9 +316,9 @@ void AttachListener::init() {
 </pre>
 
 
-<p>既然在启动的时候不会创建这个线程，那么我们在上面看到的那个线程是怎么创建的呢，这个就要关注另外一个线程“Signal Dispatcher”了，顾名思义是处理信号的，这个线程是在jvm启动的时候就会创建的，具体代码就不说了。</p>
+<p>&#8195;&#8195;既然在启动的时候不会创建这个线程，那么我们在上面看到的那个线程是怎么创建的呢，这个就要关注另外一个线程“Signal Dispatcher”了，顾名思义是处理信号的，这个线程是在jvm启动的时候就会创建的，具体代码就不说了。</p>
 
-<p>下面以jstack的实现来说明触发Attach这一机制进行的过程，jstack命令的实现其实是一个叫做JStack.java的类，查看jstack代码后会走到下面的方法里</p>
+<p>&#8195;&#8195;下面以jstack的实现来说明触发Attach这一机制进行的过程，jstack命令的实现其实是一个叫做JStack.java的类，查看jstack代码后会走到下面的方法里</p>
 
 <pre class="prettyPrint">
 private static void runThreadDump(String pid, String args[]) throws Exception {
@@ -360,7 +360,7 @@ private static void runThreadDump(String pid, String args[]) throws Exception {
 </pre>
 
 
-<p>请注意VirtualMachine.Attach(pid);这行代码，触发Attach pid的关键，如果是在linux下会走到下面的构造函数</p>
+<p>&#8195;&#8195;请注意VirtualMachine.Attach(pid);这行代码，触发Attach pid的关键，如果是在linux下会走到下面的构造函数</p>
 
 <pre class="prettyPrint">
 LinuxVirtualMachine(AttachProvider provider, String vmid)
@@ -439,7 +439,7 @@ LinuxVirtualMachine(AttachProvider provider, String vmid)
 </pre>
 
 
-<p>这里要解释下代码了，首先看到调用了createAttachFile方法在目标进程的cwd目录下创建了一个文件/proc/<pid>/cwd/.Attach_pid<pid>，这个在后面的信号处理过程中会取出来做判断(为了安全)，另外我们知道在linux下线程是用进程实现的，在jvm启动过程中会创建很多线程，比如我们上面的信号线程，也就是会看到很多的pid(应该是LWP)，那么如何找到这个信号处理线程呢，从上面实现来看是找到我们传进去的pid的父进程，然后给它的所有子进程都发送一个SIGQUIT信号，而jvm里除了信号线程，其他线程都设置了对此信号的屏蔽，因此收不到该信号，于是该信号就传给了“Signal Dispatcher”，在传完之后作轮询等待看目标进程是否创建了某个文件，AttachTimeout默认超时时间是5000ms，可通过设置系统变量sun.tools.Attach.AttachTimeout来指定，下面是Signal Dispatcher线程的entry实现</p>
+<p>&#8195;&#8195;这里要解释下代码了，首先看到调用了createAttachFile方法在目标进程的cwd目录下创建了一个文件/proc/<pid>/cwd/.Attach_pid<pid>，这个在后面的信号处理过程中会取出来做判断(为了安全)，另外我们知道在linux下线程是用进程实现的，在jvm启动过程中会创建很多线程，比如我们上面的信号线程，也就是会看到很多的pid(应该是LWP)，那么如何找到这个信号处理线程呢，从上面实现来看是找到我们传进去的pid的父进程，然后给它的所有子进程都发送一个SIGQUIT信号，而jvm里除了信号线程，其他线程都设置了对此信号的屏蔽，因此收不到该信号，于是该信号就传给了“Signal Dispatcher”，在传完之后作轮询等待看目标进程是否创建了某个文件，AttachTimeout默认超时时间是5000ms，可通过设置系统变量sun.tools.Attach.AttachTimeout来指定，下面是Signal Dispatcher线程的entry实现</p>
 
 <pre class="prettyPrint">
 static void signal_thread_entry(JavaThread* thread, TRAPS) {
@@ -493,7 +493,7 @@ static void signal_thread_entry(JavaThread* thread, TRAPS) {
 </pre>
 
 
-<p>当信号是SIGBREAK(在jvm里做了#define，其实就是SIGQUIT)的时候，就会触发
+<p>&#8195;&#8195;当信号是SIGBREAK(在jvm里做了#define，其实就是SIGQUIT)的时候，就会触发
 AttachListener::is_init_trigger()的执行，</p>
 
 <pre class="prettyPrint">
@@ -524,7 +524,7 @@ bool AttachListener::is_init_trigger() {
 </pre>
 
 
-<p>一开始会判断当前进程目录下是否有个.Attach_pid<pid>文件（前面提到了），如果没有就会在/tmp下创建一个/tmp/.Attach_pid<pid>，当那个文件的uid和自己的uid是一致的情况下（为了安全）再调用init方法</p>
+<p>&#8195;&#8195;一开始会判断当前进程目录下是否有个.Attach_pid<pid>文件（前面提到了），如果没有就会在/tmp下创建一个/tmp/.Attach_pid<pid>，当那个文件的uid和自己的uid是一致的情况下（为了安全）再调用init方法</p>
 
 <pre class="prettyPrint">
 // Starts the Attach Listener thread
@@ -577,7 +577,7 @@ void AttachListener::init() {
 </pre>
 
 
-<p>此时水落石出了，看到创建了一个线程，并且取名为Attach Listener。再看看其子类LinuxAttachListener的init方法</p>
+<p>&#8195;&#8195;此时水落石出了，看到创建了一个线程，并且取名为Attach Listener。再看看其子类LinuxAttachListener的init方法</p>
 
 <pre class="prettyPrint">
 int LinuxAttachListener::init() {
@@ -635,11 +635,11 @@ int LinuxAttachListener::init() {
 </pre>
 
 
-<p>看到其创建了一个监听套接字，并创建了一个文件/tmp/.java_pid<pid>，这个文件就是客户端之前一直在轮询等待的文件，随着这个文件的生成，意味着Attach的过程圆满结束了。</p>
+<p>&#8195;&#8195;看到其创建了一个监听套接字，并创建了一个文件/tmp/.java_pid<pid>，这个文件就是客户端之前一直在轮询等待的文件，随着这个文件的生成，意味着Attach的过程圆满结束了。</p>
 
 <h3>Attach listener接收请求</h3>
 
-<p>看看它的entry实现Attach_listener_thread_entry</p>
+<p>&#8195;&#8195;看看它的entry实现Attach_listener_thread_entry</p>
 
 <pre class="prettyPrint">
 static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
@@ -698,9 +698,9 @@ static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
 </pre>
 
 
-<p>从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { &#8220;threaddump&#8221;,       thread_dump }的映射关系，然后执行thread_dump方法</p>
+<p>&#8195;&#8195;从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { &#8220;threaddump&#8221;,       thread_dump }的映射关系，然后执行thread_dump方法</p>
 
-<p>再来看看其要调用的AttachListener::dequeue()，</p>
+<p>&#8195;&#8195;再来看看其要调用的AttachListener::dequeue()，</p>
 
 <pre class="prettyPrint">
 AttachOperation* AttachListener::dequeue() {
@@ -721,7 +721,7 @@ AttachOperation* AttachListener::dequeue() {
 </pre>
 
 
-<p>最终调用的是LinuxAttachListener::dequeue()，</p>
+<p>&#8195;&#8195;最终调用的是LinuxAttachListener::dequeue()，</p>
 
 <pre class="prettyPrint">
 LinuxAttachOperation* LinuxAttachListener::dequeue() {
@@ -768,9 +768,9 @@ LinuxAttachOperation* LinuxAttachListener::dequeue() {
 </pre>
 
 
-<p>我们看到如果没有请求的话，会一直accept在那里，当来了请求，然后就会创建一个套接字，并读取数据，构建出LinuxAttachOperation返回并执行。</p>
+<p>&#8195;&#8195;我们看到如果没有请求的话，会一直accept在那里，当来了请求，然后就会创建一个套接字，并读取数据，构建出LinuxAttachOperation返回并执行。</p>
 
-<p>整个过程就这样了，从Attach线程创建到接收请求，处理请求。</p>
+<p>&#8195;&#8195;整个过程就这样了，从Attach线程创建到接收请求，处理请求。</p>
 
     </div>
   </div>
