@@ -124,6 +124,56 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2014-07-24T14:10:26+08:00" pubdate data-updated="true">Jul 24<span>th</span>, 2014</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2014/07/24/jvm-thread-dump-bug/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+          
+          <a href="/blog/categories/thread/"><span class="badge">Thread</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2014/07/24/jvm-thread-dump-bug/">JVM Bug:多个线程持有一把锁?</a></h1>
+      <p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
+
+<h2>JVM线程dump Bug描述</h2>
+
+<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
+
+
+      
+       <a href="/blog/2014/07/24/jvm-thread-dump-bug/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+</article>
+
+
+    <article class="post">
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2014-07-19T09:58:49+08:00" pubdate data-updated="true">Jul 19<span>th</span>, 2014</time></h5>
           <div class="row-fluid">
           
