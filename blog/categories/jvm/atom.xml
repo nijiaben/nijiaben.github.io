@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JVM | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-05-07T20:16:16+08:00</updated>
+  <updated>2015-05-07T20:18:49+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,213 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之SystemGC完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2015/05/07/system-gc/"/>
+    <updated>2015-05-07T20:02:51+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2015/05/07/system-gc</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>JVM的GC一般情况下是JVM本身根据一定的条件触发的，不过我们还是可以做一些人为的触发，比如通过jvmti做强制GC，通过System.gc触发，还可以通过jmap来触发等，针对每个场景其实我们都可以写篇文章来做一个介绍，本文重点介绍下System.gc的原理</p>
+
+<!--more-->
+
+
+<p>或许大家已经知道如下相关的知识
+* system.gc其实是做一次full gc
+* system.gc会暂停整个进程
+* system.gc一般情况下我们要禁掉，使用-XX:+DisableExplicitGC
+* system.gc在cms gc下我们通过-XX:+ExplicitGCInvokesConcurrent来做一次稍微高效点的GC(效果比Full GC要好些)
+* system.gc最常见的场景是RMI/NIO下的堆外内存分配等</p>
+
+<p>如果你已经知道上面这些了其实也说明你对System.gc有过一定的了解，至少踩过一些坑，但是你是否更深层次地了解过它，比如
+* 为什么CMS GC下-XX:+ExplicitGCInvokesConcurrent这个参数加了之后会比真正的Full GC好？
+* 它如何做到暂停整个进程？
+* 堆外内存分配为什么有时候要配合System.gc？</p>
+
+<p>如果你上面这些疑惑也都知道，那说明你很懂System.gc了，那么接下来的文字你可以不用看啦</p>
+
+<h2>JDK里的System.gc的实现</h2>
+
+<p>先贴段代码吧（java.lang.System）</p>
+
+<p>```</p>
+
+<pre><code>/**
+ * Runs the garbage collector.
+ * &lt;p&gt;
+ * Calling the &lt;code&gt;gc&lt;/code&gt; method suggests that the Java Virtual
+ * Machine expend effort toward recycling unused objects in order to
+ * make the memory they currently occupy available for quick reuse.
+ * When control returns from the method call, the Java Virtual
+ * Machine has made a best effort to reclaim space from all discarded
+ * objects.
+ * &lt;p&gt;
+ * The call &lt;code&gt;System.gc()&lt;/code&gt; is effectively equivalent to the
+ * call:
+ * &lt;blockquote&gt;&lt;pre&gt;
+ * Runtime.getRuntime().gc()
+ * &lt;/pre&gt;&lt;/blockquote&gt;
+ *
+ * @see     java.lang.Runtime#gc()
+ */
+public static void gc() {
+    Runtime.getRuntime().gc();
+}
+</code></pre>
+
+<p>```
+发现主要调用的是Runtime里的gc方法（java.lang.Runtime）</p>
+
+<p>```</p>
+
+<pre><code>/**
+ * Runs the garbage collector.
+ * Calling this method suggests that the Java virtual machine expend
+ * effort toward recycling unused objects in order to make the memory
+ * they currently occupy available for quick reuse. When control
+ * returns from the method call, the virtual machine has made
+ * its best effort to recycle all discarded objects.
+ * &lt;p&gt;
+ * The name &lt;code&gt;gc&lt;/code&gt; stands for "garbage
+ * collector". The virtual machine performs this recycling
+ * process automatically as needed, in a separate thread, even if the
+ * &lt;code&gt;gc&lt;/code&gt; method is not invoked explicitly.
+ * &lt;p&gt;
+ * The method {@link System#gc()} is the conventional and convenient
+ * means of invoking this method.
+ */
+public native void gc();
+</code></pre>
+
+<p>```
+这里看到gc方法是native的，在java层面只能到此结束了，代码只有这么多，要了解更多，可以看方法上面的注释，不过我们需要更深层次地来了解其实现，那还是准备好进入到jvm里去看看</p>
+
+<h2>Hotspot里System.gc的实现</h2>
+
+<h3>如何找到native里的实现</h3>
+
+<p>上面提到了Runtime.gc是一个本地方法，那需要先在jvm里找到对应的实现，这里稍微提一下jvm里native方法最常见的也是最简单的查找，jdk里一般含有native方法的类，一般都会有一个对应的c文件，比如上面的java.lang.Runtime这个类，会有一个Runtime.c的文件和它对应，native方法的具体实现都在里面了，如果你有source，可能会猜到和下面的方法对应</p>
+
+<p>```
+JNIEXPORT void JNICALL
+Java_java_lang_Runtime_gc(JNIEnv *env, jobject this)
+{</p>
+
+<pre><code>JVM_GC();
+</code></pre>
+
+<p>}
+```
+其实没错的，就是这个方法，jvm要查找到这个native方法其实很简单的，看方法名可能也猜到规则了，Java_pkgName_className_methodName，其中pkgName里的"."替换成"_"，这样就能找到了，当然规则不仅仅只有这么一个，还有其他的，这里不细说了，有机会写篇文章详细介绍下其中细节</p>
+
+<h3>DisableExplicitGC参数</h3>
+
+<p>上面的方法里是调用JVM_GC()，实现如下</p>
+
+<p>```
+JVM_ENTRY_NO_ENV(void, JVM_GC(void))
+  JVMWrapper("JVM_GC");
+  if (!DisableExplicitGC) {</p>
+
+<pre><code>Universe::heap()-&gt;collect(GCCause::_java_lang_system_gc);
+</code></pre>
+
+<p>  }
+JVM_END
+<code>``
+看到这里我们已经解释其中一个疑惑了，就是</code>DisableExplicitGC`这个参数是在哪里生效的，起的什么作用，如果这个参数设置为true的话，那么将直接跳过下面的逻辑，我们通过-XX:+ DisableExplicitGC就是将这个属性设置为true，而这个属性默认情况下是true还是false呢</p>
+
+<p>```
+product(bool, DisableExplicitGC, false,                                   \</p>
+
+<pre><code>      "Tells whether calling System.gc() does a full GC")    
+</code></pre>
+
+<p>```</p>
+
+<h3>ExplicitGCInvokesConcurrent参数</h3>
+
+<p>这里主要针对CMSGC下来做分析，所以我们上面看到调用了heap的collect方法，我们找到对应的逻辑</p>
+
+<p>```
+void GenCollectedHeap::collect(GCCause::Cause cause) {
+  if (should_do_concurrent_full_gc(cause)) {</p>
+
+<h1>ifndef SERIALGC</h1>
+
+<pre><code>// mostly concurrent full collection
+collect_mostly_concurrent(cause);
+</code></pre>
+
+<h1>else  // SERIALGC</h1>
+
+<pre><code>ShouldNotReachHere();
+</code></pre>
+
+<h1>endif // SERIALGC</h1>
+
+<p>  } else {</p>
+
+<h1>ifdef ASSERT</h1>
+
+<pre><code>if (cause == GCCause::_scavenge_alot) {
+  // minor collection only
+  collect(cause, 0);
+} else {
+  // Stop-the-world full collection
+  collect(cause, n_gens() - 1);
+}
+</code></pre>
+
+<h1>else</h1>
+
+<pre><code>// Stop-the-world full collection
+collect(cause, n_gens() - 1);
+</code></pre>
+
+<h1>endif</h1>
+
+<p>  }
+}</p>
+
+<p>bool GenCollectedHeap::should_do_concurrent_full_gc(GCCause::Cause cause) {
+  return UseConcMarkSweepGC &amp;&amp;</p>
+
+<pre><code>     ((cause == GCCause::_gc_locker &amp;&amp; GCLockerInvokesConcurrent) ||
+      (cause == GCCause::_java_lang_system_gc &amp;&amp; ExplicitGCInvokesConcurrent));
+</code></pre>
+
+<p>}
+```
+collect里一开头就有个判断，如果should_do_concurrent_full_gc返回true，那会执行collect_mostly_concurrent做并行的回收</p>
+
+<p>其中should_do_concurrent_full_gc中的逻辑是如果使用CMS GC，并且是system gc且ExplicitGCInvokesConcurrent==true，那就做并行full gc，当我们设置-XX:+ ExplicitGCInvokesConcurrent的时候，就意味着应该做并行Full GC了，不过要注意千万不要设置-XX:+DisableExplicitGC，不然走不到这个逻辑里来了</p>
+
+<h2>并行Full GC相对正常的Full GC效率高在哪里</h2>
+
+<h3>stop the world</h3>
+
+<p>说到GC，这里要先提到VMThread，在jvm里有这么一个线程不断轮询它的队列，这个队列里主要是存一些VM_operation的动作，比如最常见的就是内存分配失败要求做GC操作的请求等，在对gc这些操作执行的时候会先将其他业务线程都进入到安全点，也就是这些线程从此不再执行任何字节码指令，只有当出了安全点的时候才让他们继续执行原来的指令，因此这其实就是我们说的stop the world(STW)，整个进程相当于静止了</p>
+
+<h3>CMS GC</h3>
+
+<p>这里必须提到CMS GC，因为这是解释并行Full GC和正常Full GC的关键所在，CMS GC我们分为两种模式background和foreground，其中background顾名思义是在后台做的，也就是可以不影响正常的业务线程跑，触发条件比如说old的内存占比超过多少的时候就可能触发一次background式的cms gc，这个过程会经历CMS GC的所有阶段，该暂停的暂停，该并行的并行，效率相对来说还比较高，毕竟有和业务线程并行的gc阶段；而foreground则不然，它发生的场景比如业务线程请求分配内存，但是内存不够了，于是可能触发一次cms gc，这个过程就必须是要等内存分配到了线程才能继续往下面走的，因此整个过程必须是STW的，因此CMS GC整个过程都是暂停应用的，但是为了提高效率，它并不是每个阶段都会走的，只走其中一些阶段，这些省下来的阶段主要是并行阶段，Precleaning、AbortablePreclean，Resizing这几个阶段都不会经历，其中sweep阶段是同步的，但不管怎么说如果走了类似foreground的cms gc，那么整个过程业务线程都是不可用的，效率会影响挺大。CMS GC具体的过程后面再写文章详细说，其过程确实非常复杂的</p>
+
+<h3>正常的Full GC</h3>
+
+<p>正常的Full GC其实是整个gc过程包括ygc和cms gc(这里说的是真正意义上的Full GC，还有些场景虽然调用Full GC的接口，但是并不会都做，有些时候只做ygc，有些时候只做cms gc)都是由VMThread来执行的，因此整个时间是ygc+cms gc的时间之和，其中CMS GC是上面提到的foreground式的，因此整个过程会比较长，也是我们要避免的</p>
+
+<h3>并行的Full GC</h3>
+
+<p>并行Full GC也通样会做YGC和CMS GC，但是效率高就搞在CMS GC是走的background的，整个暂停的过程主要是YGC+CMS_initMark+CMS_remark几个阶段</p>
+
+<h2>堆外内存常配合使用System GC</h2>
+
+<p>这里说的堆外内存主要针对java.nio.DirectByteBuffer，这些对象的创建过程会通过Unsafe接口直接通过os::malloc来分配内存，然后将内存的起始地址和大小存到java.nio.DirectByteBuffer对象里，这样就可以直接操作这些内存。这些内存只有在DirectByteBuffer回收掉之后才有机会被回收，因此如果这些对象大部分都移到了old，但是一直没有触发CMS GC或者Full GC，那么悲剧将会发生，因为你的物理内存被他们耗尽了，因此为了避免这种悲剧的发生，通过-XX:MaxDirectMemorySize来指定最大的堆外内存大小，当使用达到了阈值的时候将调用System.gc来做一次full gc，以此来回收掉没有被使用的堆外内存，具体堆外内存是如何回收的，其原理机制又是怎样的，还是后面写篇详细的文章吧</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM Bug:多个线程持有一把锁?]]></title>
@@ -1361,656 +1568,6 @@ public class StringTest {
 </code></pre>
 
 <p>注：以上结论都是在centos系统jdk6上进行验证的，jdk7可能有所不一样.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM Attach机制实现]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/06/18/jvm-attach/"/>
-    <updated>2014-06-18T19:15:52+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/06/18/jvm-attach</id>
-    <content type="html"><![CDATA[<h2>Attach是什么</h2>
-
-<p>   &#8195;&#8195;在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
-
-<!--more-->
-
-
-
-
-<pre class="prettyPrint">
-2014-06-18 12:56:14
-Full thread dump Java HotSpot(TM) 64-Bit Server VM (24.51-b03 mixed mode):
-
-"Attach Listener" daemon prio=5 tid=0x00007fb0c6800800 nid=0x440b waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Service Thread" daemon prio=5 tid=0x00007fb0c584d800 nid=0x5303 runnable [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"C2 CompilerThread1" daemon prio=5 tid=0x00007fb0c482e000 nid=0x5103 waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"C2 CompilerThread0" daemon prio=5 tid=0x00007fb0c482c800 nid=0x4f03 waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Signal Dispatcher" daemon prio=5 tid=0x00007fb0c4815800 nid=0x4d03 runnable [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Finalizer" daemon prio=5 tid=0x00007fb0c4813800 nid=0x3903 in Object.wait() [0x00000001187d2000]
-   java.lang.Thread.State: WAITING (on object monitor)
-    at java.lang.Object.wait(Native Method)
-    - waiting on <0x00000007aaa85568> (a java.lang.ref.ReferenceQueue$Lock)
-    at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
-    - locked <0x00000007aaa85568> (a java.lang.ref.ReferenceQueue$Lock)
-    at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:151)
-    at java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:189)
-
-"Reference Handler" daemon prio=5 tid=0x00007fb0c4800000 nid=0x3703 in Object.wait() [0x00000001186cf000]
-   java.lang.Thread.State: WAITING (on object monitor)
-    at java.lang.Object.wait(Native Method)
-    - waiting on <0x00000007aaa850f0> (a java.lang.ref.Reference$Lock)
-    at java.lang.Object.wait(Object.java:503)
-    at java.lang.ref.Reference$ReferenceHandler.run(Reference.java:133)
-    - locked <0x00000007aaa850f0> (a java.lang.ref.Reference$Lock)
-
-"main" prio=5 tid=0x00007fb0c5800800 nid=0x1903 waiting on condition [0x0000000107962000]
-   java.lang.Thread.State: TIMED_WAITING (sleeping)
-    at java.lang.Thread.sleep(Native Method)
-    at Test.main(Test.java:5)
-
-"VM Thread" prio=5 tid=0x00007fb0c583d800 nid=0x3503 runnable
-
-"GC task thread#0 (ParallelGC)" prio=5 tid=0x00007fb0c401e000 nid=0x2503 runnable
-
-"GC task thread#1 (ParallelGC)" prio=5 tid=0x00007fb0c401e800 nid=0x2703 runnable
-
-"GC task thread#2 (ParallelGC)" prio=5 tid=0x00007fb0c401f800 nid=0x2903 runnable
-
-"GC task thread#3 (ParallelGC)" prio=5 tid=0x00007fb0c4020000 nid=0x2b03 runnable
-
-"GC task thread#4 (ParallelGC)" prio=5 tid=0x00007fb0c4020800 nid=0x2d03 runnable
-
-"GC task thread#5 (ParallelGC)" prio=5 tid=0x00007fb0c4021000 nid=0x2f03 runnable
-
-"GC task thread#6 (ParallelGC)" prio=5 tid=0x00007fb0c4022000 nid=0x3103 runnable
-
-"GC task thread#7 (ParallelGC)" prio=5 tid=0x00007fb0c4022800 nid=0x3303 runnable
-
-"VM Periodic Task Thread" prio=5 tid=0x00007fb0c5845000 nid=0x5503 waiting on condition
-
-</pre>
-
-
-<p>   &#8195;&#8195;大家是否注意过上面圈起来的两个线程，”Attach Listener”和“Signal Dispatcher”，这两个线程是我们这次要讲的Attach机制的关键，先偷偷告诉各位，其实Attach Listener这个线程在jvm起来的时候可能并没有的，后面会细说。</p>
-
-<p>   &#8195;&#8195;那Attach机制是什么？说简单点就是jvm提供一种jvm进程间通信的能力，能让一个进程传命令给另外一个进程，并让它执行内部的一些操作，比如说我们为了让另外一个jvm进程把线程dump出来，那么我们跑了一个jstack的进程，然后传了个pid的参数，告诉它要哪个进程进行线程dump，既然是两个进程，那肯定涉及到进程间通信，以及传输协议的定义，比如要执行什么操作，传了什么参数等</p>
-
-<h2>Attach能做些什么</h2>
-
-<p>   &#8195;&#8195;总结起来说，比如内存dump，线程dump，类信息统计(比如加载的类及大小以及实例个数等)，动态加载agent(使用过btrace的应该不陌生)，动态设置vm flag(但是并不是所有的flag都可以设置的，因为有些flag是在jvm启动过程中使用的，是一次性的)，打印vm flag，获取系统属性等，这些对应的源码(AttachListener.cpp)如下</p>
-
-<pre class="prettyPrint">
-static AttachOperationFunctionInfo funcs[] = {
-  { "agentProperties",  get_agent_properties },
-  { "datadump",         data_dump },
-  { "dumpheap",         dump_heap },
-  { "load",             JvmtiExport::load_agent_library },
-  { "properties",       get_system_properties },
-  { "threaddump",       thread_dump },
-  { "inspectheap",      heap_inspection },
-  { "setflag",          set_flag },
-  { "printflag",        print_flag },
-  { "jcmd",             jcmd },
-  { NULL,               NULL }
-};
-</pre>
-
-
-<p>&#8195;&#8195;后面是命令对应的处理函数。</p>
-
-<h2>Attach在jvm里如何实现的</h2>
-
-<h3>Attach Listener线程的创建</h3>
-
-<p> &#8195;&#8195;前面也提到了，jvm在启动过程中可能并没有启动Attach Listener这个线程，可以通过jvm参数来启动，代码  （Threads::create_vm）如下：</p>
-
-<pre class="prettyPrint"> 
-  if (!DisableAttachMechanism) {
-    if (StartAttachListener || AttachListener::init_at_startup()) {
-      AttachListener::init();
-    }
-  }
-bool AttachListener::init_at_startup() {
-  if (ReduceSignalUsage) {
-    return true;
-  } else {
-    return false;
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;其中DisableAttachMechanism，StartAttachListener ，ReduceSignalUsage均默认是false(globals.hpp)</p>
-
-<pre class="prettyPrint">
-product(bool, DisableAttachMechanism, false,                              \
-         "Disable mechanism that allows tools to Attach to this VM”)   
-product(bool, StartAttachListener, false,                                 \
-          "Always start Attach Listener at VM startup")  
-product(bool, ReduceSignalUsage, false,                                   \
-          "Reduce the use of OS signals in Java and/or the VM”)  
-</pre>
-
-
-<p>&#8195;&#8195;因此AttachListener::init()并不会被执行，而Attach Listener线程正是在此方法里创建的</p>
-
-<pre class="prettyPrint">
-// Starts the Attach Listener thread
-void AttachListener::init() {
-  EXCEPTION_MARK;
-  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-  instanceKlassHandle klass (THREAD, k);
-  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
-
-  const char thread_name[] = "Attach Listener";
-  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-
-  // Initialize thread_oop to put it into the system threadGroup
-  Handle thread_group (THREAD, Universe::system_thread_group());
-  JavaValue result(T_VOID);
-  JavaCalls::call_special(&result, thread_oop,
-                       klass,
-                       vmSymbols::object_initializer_name(),
-                       vmSymbols::threadgroup_string_void_signature(),
-                       thread_group,
-                       string,
-                       CHECK);
-
-  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-  JavaCalls::call_special(&result,
-                        thread_group,
-                        group,
-                        vmSymbols::add_method_name(),
-                        vmSymbols::thread_void_signature(),
-                        thread_oop,             // ARG 1
-                        CHECK);
-
-  { MutexLocker mu(Threads_lock);
-    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-
-    // Check that thread and osthread were created
-    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
-      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-                                    "unable to create new native thread");
-    }
-
-    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-    java_lang_Thread::set_daemon(thread_oop());
-
-    listener_thread->set_threadObj(thread_oop());
-    Threads::add(listener_thread);
-    Thread::start(listener_thread);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;既然在启动的时候不会创建这个线程，那么我们在上面看到的那个线程是怎么创建的呢，这个就要关注另外一个线程“Signal Dispatcher”了，顾名思义是处理信号的，这个线程是在jvm启动的时候就会创建的，具体代码就不说了。</p>
-
-<p>&#8195;&#8195;下面以jstack的实现来说明触发Attach这一机制进行的过程，jstack命令的实现其实是一个叫做JStack.java的类，查看jstack代码后会走到下面的方法里</p>
-
-<pre class="prettyPrint">
-private static void runThreadDump(String pid, String args[]) throws Exception {
-        VirtualMachine vm = null;
-        try {
-            vm = VirtualMachine.Attach(pid);
-        } catch (Exception x) {
-            String msg = x.getMessage();
-            if (msg != null) {
-                System.err.println(pid + ": " + msg);
-            } else {
-                x.printStackTrace();
-            }
-            if ((x instanceof AttachNotSupportedException) &&
-                (loadSAClass() != null)) {
-                System.err.println("The -F option can be used when the target " +
-                    "process is not responding");
-            }
-            System.exit(1);
-        }
-
-        // Cast to HotSpotVirtualMachine as this is implementation specific
-        // method.
-        InputStream in = ((HotSpotVirtualMachine)vm).remoteDataDump((Object[])args);
-
-        // read to EOF and just print output
-        byte b[] = new byte[256];
-        int n;
-        do {
-            n = in.read(b);
-            if (n > 0) {
-                String s = new String(b, 0, n, "UTF-8");
-                System.out.print(s);
-            }
-        } while (n > 0);
-        in.close();
-        vm.detach();
-    }
-</pre>
-
-
-<p>&#8195;&#8195;请注意VirtualMachine.Attach(pid);这行代码，触发Attach pid的关键，如果是在linux下会走到下面的构造函数</p>
-
-<pre class="prettyPrint">
-LinuxVirtualMachine(AttachProvider provider, String vmid)
-        throws AttachNotSupportedException, IOException
-    {
-        super(provider, vmid);
-
-        // This provider only understands pids
-        int pid;
-        try {
-            pid = Integer.parseInt(vmid);
-        } catch (NumberFormatException x) {
-            throw new AttachNotSupportedException("Invalid process identifier");
-        }
-
-        // Find the socket file. If not found then we attempt to start the
-        // Attach mechanism in the target VM by sending it a QUIT signal.
-        // Then we attempt to find the socket file again.
-        path = findSocketFile(pid);
-        if (path == null) {
-            File f = createAttachFile(pid);
-            try {
-                // On LinuxThreads each thread is a process and we don't have the
-                // pid of the VMThread which has SIGQUIT unblocked. To workaround
-                // this we get the pid of the "manager thread" that is created
-                // by the first call to pthread_create. This is parent of all
-                // threads (except the initial thread).
-                if (isLinuxThreads) {
-                    int mpid;
-                    try {
-                        mpid = getLinuxThreadsManager(pid);
-                    } catch (IOException x) {
-                        throw new AttachNotSupportedException(x.getMessage());
-                    }
-                    assert(mpid >= 1);
-                    sendQuitToChildrenOf(mpid);
-                } else {
-                    sendQuitTo(pid);
-                }
-
-                // give the target VM time to start the Attach mechanism
-                int i = 0;
-                long delay = 200;
-                int retries = (int)(AttachTimeout() / delay);
-                do {
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException x) { }
-                    path = findSocketFile(pid);
-                    i++;
-                } while (i <= retries && path == null);
-                if (path == null) {
-                    throw new AttachNotSupportedException(
-                        "Unable to open socket file: target process not responding " +
-                        "or HotSpot VM not loaded");
-                }
-            } finally {
-                f.delete();
-            }
-        }
-
-        // Check that the file owner/permission to avoid Attaching to
-        // bogus process
-        checkPermissions(path);
-
-        // Check that we can connect to the process
-        // - this ensures we throw the permission denied error now rather than
-        // later when we attempt to enqueue a command.
-        int s = socket();
-        try {
-            connect(s, path);
-        } finally {
-            close(s);
-        }
-    }
-</pre>
-
-
-<p>&#8195;&#8195;这里要解释下代码了，首先看到调用了createAttachFile方法在目标进程的cwd目录下创建了一个文件/proc/<pid>/cwd/.Attach_pid<pid>，这个在后面的信号处理过程中会取出来做判断(为了安全)，另外我们知道在linux下线程是用进程实现的，在jvm启动过程中会创建很多线程，比如我们上面的信号线程，也就是会看到很多的pid(应该是LWP)，那么如何找到这个信号处理线程呢，从上面实现来看是找到我们传进去的pid的父进程，然后给它的所有子进程都发送一个SIGQUIT信号，而jvm里除了信号线程，其他线程都设置了对此信号的屏蔽，因此收不到该信号，于是该信号就传给了“Signal Dispatcher”，在传完之后作轮询等待看目标进程是否创建了某个文件，AttachTimeout默认超时时间是5000ms，可通过设置系统变量sun.tools.Attach.AttachTimeout来指定，下面是Signal Dispatcher线程的entry实现</p>
-
-<pre class="prettyPrint">
-static void signal_thread_entry(JavaThread* thread, TRAPS) {
-  os::set_priority(thread, NearMaxPriority);
-  while (true) {
-    int sig;
-    {
-      // FIXME : Currently we have not decieded what should be the status
-      //         for this java thread blocked here. Once we decide about
-      //         that we should fix this.
-      sig = os::signal_wait();
-    }
-    if (sig == os::sigexitnum_pd()) {
-       // Terminate the signal thread
-       return;
-    }
-
-    switch (sig) {
-      case SIGBREAK: {
-        // Check if the signal is a trigger to start the Attach Listener - in that
-        // case don't print stack traces.
-        if (!DisableAttachMechanism && AttachListener::is_init_trigger()) {
-          continue;
-        }
-        // Print stack traces
-        // Any SIGBREAK operations added here should make sure to flush
-        // the output stream (e.g. tty->flush()) after output.  See 4803766.
-        // Each module also prints an extra carriage return after its output.
-        VM_PrintThreads op;
-        VMThread::execute(&op);
-        VM_PrintJNI jni_op;
-        VMThread::execute(&jni_op);
-        VM_FindDeadlocks op1(tty);
-        VMThread::execute(&op1);
-        Universe::print_heap_at_SIGBREAK();
-        if (PrintClassHistogram) {
-          VM_GC_HeapInspection op1(gclog_or_tty, true /* force full GC before heap inspection */,
-                                   true /* need_prologue */);
-          VMThread::execute(&op1);
-        }
-        if (JvmtiExport::should_post_data_dump()) {
-          JvmtiExport::post_data_dump();
-        }
-        break;
-      }
-      ….
-      }
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;当信号是SIGBREAK(在jvm里做了#define，其实就是SIGQUIT)的时候，就会触发
-AttachListener::is_init_trigger()的执行，</p>
-
-<pre class="prettyPrint">
-bool AttachListener::is_init_trigger() {
-  if (init_at_startup() || is_initialized()) {
-    return false;               // initialized at startup or already initialized
-  }
-  char fn[PATH_MAX+1];
-  sprintf(fn, ".Attach_pid%d", os::current_process_id());
-  int ret;
-  struct stat64 st;
-  RESTARTABLE(::stat64(fn, &st), ret);
-  if (ret == -1) {
-    snprintf(fn, sizeof(fn), "%s/.Attach_pid%d",
-             os::get_temp_directory(), os::current_process_id());
-    RESTARTABLE(::stat64(fn, &st), ret);
-  }
-  if (ret == 0) {
-    // simple check to avoid starting the Attach mechanism when
-    // a bogus user creates the file
-    if (st.st_uid == geteuid()) {
-      init();
-      return true;
-    }
-  }
-  return false;
-}
-</pre>
-
-
-<p>&#8195;&#8195;一开始会判断当前进程目录下是否有个.Attach_pid<pid>文件（前面提到了），如果没有就会在/tmp下创建一个/tmp/.Attach_pid<pid>，当那个文件的uid和自己的uid是一致的情况下（为了安全）再调用init方法</p>
-
-<pre class="prettyPrint">
-// Starts the Attach Listener thread
-void AttachListener::init() {
-  EXCEPTION_MARK;
-  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-  instanceKlassHandle klass (THREAD, k);
-  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
-
-  const char thread_name[] = "Attach Listener";
-  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-
-  // Initialize thread_oop to put it into the system threadGroup
-  Handle thread_group (THREAD, Universe::system_thread_group());
-  JavaValue result(T_VOID);
-  JavaCalls::call_special(&result, thread_oop,
-                       klass,
-                       vmSymbols::object_initializer_name(),
-                       vmSymbols::threadgroup_string_void_signature(),
-                       thread_group,
-                       string,
-                       CHECK);
-
-  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-  JavaCalls::call_special(&result,
-                        thread_group,
-                        group,
-                        vmSymbols::add_method_name(),
-                        vmSymbols::thread_void_signature(),
-                        thread_oop,             // ARG 1
-                        CHECK);
-
-  { MutexLocker mu(Threads_lock);
-    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-
-    // Check that thread and osthread were created
-    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
-      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-                                    "unable to create new native thread");
-    }
-
-    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-    java_lang_Thread::set_daemon(thread_oop());
-
-    listener_thread->set_threadObj(thread_oop());
-    Threads::add(listener_thread);
-    Thread::start(listener_thread);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;此时水落石出了，看到创建了一个线程，并且取名为Attach Listener。再看看其子类LinuxAttachListener的init方法</p>
-
-<pre class="prettyPrint">
-int LinuxAttachListener::init() {
-  char path[UNIX_PATH_MAX];          // socket file
-  char initial_path[UNIX_PATH_MAX];  // socket file during setup
-  int listener;                      // listener socket (file descriptor)
-
-  // register function to cleanup
-  ::atexit(listener_cleanup);
-
-  int n = snprintf(path, UNIX_PATH_MAX, "%s/.java_pid%d",
-                   os::get_temp_directory(), os::current_process_id());
-  if (n < (int)UNIX_PATH_MAX) {
-    n = snprintf(initial_path, UNIX_PATH_MAX, "%s.tmp", path);
-  }
-  if (n >= (int)UNIX_PATH_MAX) {
-    return -1;
-  }
-
-  // create the listener socket
-  listener = ::socket(PF_UNIX, SOCK_STREAM, 0);
-  if (listener == -1) {
-    return -1;
-  }
-
-  // bind socket
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  strcpy(addr.sun_path, initial_path);
-  ::unlink(initial_path);
-  int res = ::bind(listener, (struct sockaddr*)&addr, sizeof(addr));
-  if (res == -1) {
-    RESTARTABLE(::close(listener), res);
-    return -1;
-  }
-
-  // put in listen mode, set permissions, and rename into place
-  res = ::listen(listener, 5);
-  if (res == 0) {
-      RESTARTABLE(::chmod(initial_path, S_IREAD|S_IWRITE), res);
-      if (res == 0) {
-          res = ::rename(initial_path, path);
-      }
-  }
-  if (res == -1) {
-    RESTARTABLE(::close(listener), res);
-    ::unlink(initial_path);
-    return -1;
-  }
-  set_path(path);
-  set_listener(listener);
-
-  return 0;
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到其创建了一个监听套接字，并创建了一个文件/tmp/.java_pid<pid>，这个文件就是客户端之前一直在轮询等待的文件，随着这个文件的生成，意味着Attach的过程圆满结束了。</p>
-
-<h3>Attach listener接收请求</h3>
-
-<p>&#8195;&#8195;看看它的entry实现Attach_listener_thread_entry</p>
-
-<pre class="prettyPrint">
-static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
-  os::set_priority(thread, NearMaxPriority);
-
-  thread->record_stack_base_and_size();
-
-  if (AttachListener::pd_init() != 0) {
-    return;
-  }
-  AttachListener::set_initialized();
-
-  for (;;) {
-    AttachOperation* op = AttachListener::dequeue();
-    if (op == NULL) {
-      return;   // dequeue failed or shutdown
-    }
-
-    ResourceMark rm;
-    bufferedStream st;
-    jint res = JNI_OK;
-
-    // handle special detachall operation
-    if (strcmp(op->name(), AttachOperation::detachall_operation_name()) == 0) {
-      AttachListener::detachall();
-    } else {
-      // find the function to dispatch too
-      AttachOperationFunctionInfo* info = NULL;
-      for (int i=0; funcs[i].name != NULL; i++) {
-        const char* name = funcs[i].name;
-        assert(strlen(name) <= AttachOperation::name_length_max, "operation <= name_length_max");
-        if (strcmp(op->name(), name) == 0) {
-          info = &(funcs[i]);
-          break;
-        }
-      }
-
-      // check for platform dependent Attach operation
-      if (info == NULL) {
-        info = AttachListener::pd_find_operation(op->name());
-      }
-
-      if (info != NULL) {
-        // dispatch to the function that implements this operation
-        res = (info->func)(op, &st);
-      } else {
-        st.print("Operation %s not recognized!", op->name());
-        res = JNI_ERR;
-      }
-    }
-
-    // operation complete - send result and output to client
-    op->complete(res, &st);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { "threaddump",       thread_dump }的映射关系，然后执行thread_dump方法</p>
-
-<p>&#8195;&#8195;再来看看其要调用的AttachListener::dequeue()，</p>
-
-<pre class="prettyPrint">
-AttachOperation* AttachListener::dequeue() {
-  JavaThread* thread = JavaThread::current();
-  ThreadBlockInVM tbivm(thread);
-
-  thread->set_suspend_equivalent();
-  // cleared by handle_special_suspend_equivalent_condition() or
-  // java_suspend_self() via check_and_wait_while_suspended()
-
-  AttachOperation* op = LinuxAttachListener::dequeue();
-
-  // were we externally suspended while we were waiting?
-  thread->check_and_wait_while_suspended();
-
-  return op;
-}
-</pre>
-
-
-<p>&#8195;&#8195;最终调用的是LinuxAttachListener::dequeue()，</p>
-
-<pre class="prettyPrint">
-LinuxAttachOperation* LinuxAttachListener::dequeue() {
-  for (;;) {
-    int s;
-
-    // wait for client to connect
-    struct sockaddr addr;
-    socklen_t len = sizeof(addr);
-    RESTARTABLE(::accept(listener(), &addr, &len), s);
-    if (s == -1) {
-      return NULL;      // log a warning?
-    }
-
-    // get the credentials of the peer and check the effective uid/guid
-    // - check with jeff on this.
-    struct ucred cred_info;
-    socklen_t optlen = sizeof(cred_info);
-    if (::getsockopt(s, SOL_SOCKET, SO_PEERCRED, (void*)&cred_info, &optlen) == -1) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    }
-    uid_t euid = geteuid();
-    gid_t egid = getegid();
-
-    if (cred_info.uid != euid || cred_info.gid != egid) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    }
-
-    // peer credential look okay so we read the request
-    LinuxAttachOperation* op = read_request(s);
-    if (op == NULL) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    } else {
-      return op;
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;我们看到如果没有请求的话，会一直accept在那里，当来了请求，然后就会创建一个套接字，并读取数据，构建出LinuxAttachOperation返回并执行。</p>
-
-<p>&#8195;&#8195;整个过程就这样了，从Attach线程创建到接收请求，处理请求。</p>
 ]]></content>
   </entry>
   
