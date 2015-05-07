@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2014-07-25T00:48:52+08:00</updated>
+  <updated>2015-05-07T20:11:47+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,255 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之SystemGC完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2015/05/07/system-gc/"/>
+    <updated>2015-05-07T20:02:51+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2015/05/07/system-gc</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>JVM的GC一般情况下是JVM本身根据一定的条件触发的，不过我们还是可以做一些人为的触发，比如通过jvmti做强制GC，通过System.gc触发，还可以通过jmap来触发等，针对每个场景其实我们都可以写篇文章来做一个介绍，本文重点介绍下System.gc的原理</p>
+
+<p>或许大家已经知道如下相关的知识
+* system.gc其实是做一次full gc
+* system.gc会暂停整个进程
+* system.gc一般情况下我们要禁掉，使用-XX:+DisableExplicitGC
+* system.gc在cms gc下我们通过-XX:+ExplicitGCInvokesConcurrent来做一次稍微高效点的GC(效果比Full GC要好些)
+* system.gc最常见的场景是RMI/NIO下的堆外内存分配等</p>
+
+<p>如果你已经知道上面这些了其实也说明你对System.gc有过一定的了解，至少踩过一些坑，但是你是否更深层次地了解过它，比如
+* 为什么CMS GC下-XX:+ExplicitGCInvokesConcurrent这个参数加了之后会比真正的Full GC好？
+* 它如何做到暂停整个进程？
+* 堆外内存分配为什么有时候要配合System.gc？</p>
+
+<p>如果你上面这些疑惑也都知道，那说明你很懂System.gc了，那么接下来的文字你可以不用看啦</p>
+
+<h2>JDK里的System.gc的实现</h2>
+
+<p>先贴段代码吧（java.lang.System）</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Runs the garbage collector.
+</span><span class='line'> * &lt;p&gt;
+</span><span class='line'> * Calling the &lt;code&gt;gc&lt;/code&gt; method suggests that the Java Virtual
+</span><span class='line'> * Machine expend effort toward recycling unused objects in order to
+</span><span class='line'> * make the memory they currently occupy available for quick reuse.
+</span><span class='line'> * When control returns from the method call, the Java Virtual
+</span><span class='line'> * Machine has made a best effort to reclaim space from all discarded
+</span><span class='line'> * objects.
+</span><span class='line'> * &lt;p&gt;
+</span><span class='line'> * The call &lt;code&gt;System.gc()&lt;/code&gt; is effectively equivalent to the
+</span><span class='line'> * call:
+</span><span class='line'> * &lt;blockquote&gt;&lt;pre&gt;
+</span><span class='line'> * Runtime.getRuntime().gc()
+</span><span class='line'> * &lt;/pre&gt;&lt;/blockquote&gt;
+</span><span class='line'> *
+</span><span class='line'> * @see     java.lang.Runtime#gc()
+</span><span class='line'> */
+</span><span class='line'>public static void gc() {
+</span><span class='line'>    Runtime.getRuntime().gc();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>发现主要调用的是Runtime里的gc方法（java.lang.Runtime）</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Runs the garbage collector.
+</span><span class='line'> * Calling this method suggests that the Java virtual machine expend
+</span><span class='line'> * effort toward recycling unused objects in order to make the memory
+</span><span class='line'> * they currently occupy available for quick reuse. When control
+</span><span class='line'> * returns from the method call, the virtual machine has made
+</span><span class='line'> * its best effort to recycle all discarded objects.
+</span><span class='line'> * &lt;p&gt;
+</span><span class='line'> * The name &lt;code&gt;gc&lt;/code&gt; stands for "garbage
+</span><span class='line'> * collector". The virtual machine performs this recycling
+</span><span class='line'> * process automatically as needed, in a separate thread, even if the
+</span><span class='line'> * &lt;code&gt;gc&lt;/code&gt; method is not invoked explicitly.
+</span><span class='line'> * &lt;p&gt;
+</span><span class='line'> * The method {@link System#gc()} is the conventional and convenient
+</span><span class='line'> * means of invoking this method.
+</span><span class='line'> */
+</span><span class='line'>public native void gc();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里看到gc方法是native的，在java层面只能到此结束了，代码只有这么多，要了解更多，可以看方法上面的注释，不过我们需要更深层次地来了解其实现，那还是准备好进入到jvm里去看看</p>
+
+<h2>Hotspot里System.gc的实现</h2>
+
+<h3>如何找到native里的实现</h3>
+
+<p>上面提到了Runtime.gc是一个本地方法，那需要先在jvm里找到对应的实现，这里稍微提一下jvm里native方法最常见的也是最简单的查找，jdk里一般含有native方法的类，一般都会有一个对应的c文件，比如上面的java.lang.Runtime这个类，会有一个Runtime.c的文件和它对应，native方法的具体实现都在里面了，如果你有source，可能会猜到和下面的方法对应</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>JNIEXPORT void JNICALL
+</span><span class='line'>Java_java_lang_Runtime_gc(JNIEnv *env, jobject this)
+</span><span class='line'>{
+</span><span class='line'>    JVM_GC();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实没错的，就是这个方法，jvm要查找到这个native方法其实很简单的，看方法名可能也猜到规则了，Java_pkgName_className_methodName，其中pkgName里的&#8221;.&#8221;替换成&#8221;_&#8221;，这样就能找到了，当然规则不仅仅只有这么一个，还有其他的，这里不细说了，有机会写篇文章详细介绍下其中细节</p>
+
+<h3>DisableExplicitGC参数</h3>
+
+<p>上面的方法里是调用JVM_GC()，实现如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>JVM_ENTRY_NO_ENV(void, JVM_GC(void))
+</span><span class='line'>  JVMWrapper("JVM_GC");
+</span><span class='line'>  if (!DisableExplicitGC) {
+</span><span class='line'>    Universe::heap()-&gt;collect(GCCause::_java_lang_system_gc);
+</span><span class='line'>  }
+</span><span class='line'>JVM_END</span></code></pre></td></tr></table></div></figure>
+
+
+<p>看到这里我们已经解释其中一个疑惑了，就是<code>DisableExplicitGC</code>这个参数是在哪里生效的，起的什么作用，如果这个参数设置为true的话，那么将直接跳过下面的逻辑，我们通过-XX:+ DisableExplicitGC就是将这个属性设置为true，而这个属性默认情况下是true还是false呢</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>product(bool, DisableExplicitGC, false,                                   \
+</span><span class='line'>          "Tells whether calling System.gc() does a full GC")    </span></code></pre></td></tr></table></div></figure>
+
+
+<h3>ExplicitGCInvokesConcurrent参数</h3>
+
+<p>这里主要针对CMSGC下来做分析，所以我们上面看到调用了heap的collect方法，我们找到对应的逻辑</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void GenCollectedHeap::collect(GCCause::Cause cause) {
+</span><span class='line'>  if (should_do_concurrent_full_gc(cause)) {
+</span><span class='line'>#ifndef SERIALGC
+</span><span class='line'>    // mostly concurrent full collection
+</span><span class='line'>    collect_mostly_concurrent(cause);
+</span><span class='line'>#else  // SERIALGC
+</span><span class='line'>    ShouldNotReachHere();
+</span><span class='line'>#endif // SERIALGC
+</span><span class='line'>  } else {
+</span><span class='line'>#ifdef ASSERT
+</span><span class='line'>    if (cause == GCCause::_scavenge_alot) {
+</span><span class='line'>      // minor collection only
+</span><span class='line'>      collect(cause, 0);
+</span><span class='line'>    } else {
+</span><span class='line'>      // Stop-the-world full collection
+</span><span class='line'>      collect(cause, n_gens() - 1);
+</span><span class='line'>    }
+</span><span class='line'>#else
+</span><span class='line'>    // Stop-the-world full collection
+</span><span class='line'>    collect(cause, n_gens() - 1);
+</span><span class='line'>#endif
+</span><span class='line'>  }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>bool GenCollectedHeap::should_do_concurrent_full_gc(GCCause::Cause cause) {
+</span><span class='line'>  return UseConcMarkSweepGC &&
+</span><span class='line'>         ((cause == GCCause::_gc_locker && GCLockerInvokesConcurrent) ||
+</span><span class='line'>          (cause == GCCause::_java_lang_system_gc && ExplicitGCInvokesConcurrent));
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>collect里一开头就有个判断，如果should_do_concurrent_full_gc返回true，那会执行collect_mostly_concurrent做并行的回收</p>
+
+<p>其中should_do_concurrent_full_gc中的逻辑是如果使用CMS GC，并且是system gc且ExplicitGCInvokesConcurrent==true，那就做并行full gc，当我们设置-XX:+ ExplicitGCInvokesConcurrent的时候，就意味着应该做并行Full GC了，不过要注意千万不要设置-XX:+DisableExplicitGC，不然走不到这个逻辑里来了</p>
+
+<h2>并行Full GC相对正常的Full GC效率高在哪里</h2>
+
+<h3>stop the world</h3>
+
+<p>说到GC，这里要先提到VMThread，在jvm里有这么一个线程不断轮询它的队列，这个队列里主要是存一些VM_operation的动作，比如最常见的就是内存分配失败要求做GC操作的请求等，在对gc这些操作执行的时候会先将其他业务线程都进入到安全点，也就是这些线程从此不再执行任何字节码指令，只有当出了安全点的时候才让他们继续执行原来的指令，因此这其实就是我们说的stop the world(STW)，整个进程相当于静止了</p>
+
+<h3>CMS GC</h3>
+
+<p>这里必须提到CMS GC，因为这是解释并行Full GC和正常Full GC的关键所在，CMS GC我们分为两种模式background和foreground，其中background顾名思义是在后台做的，也就是可以不影响正常的业务线程跑，触发条件比如说old的内存占比超过多少的时候就可能触发一次background式的cms gc，这个过程会经历CMS GC的所有阶段，该暂停的暂停，该并行的并行，效率相对来说还比较高，毕竟有和业务线程并行的gc阶段；而foreground则不然，它发生的场景比如业务线程请求分配内存，但是内存不够了，于是可能触发一次cms gc，这个过程就必须是要等内存分配到了线程才能继续往下面走的，因此整个过程必须是STW的，因此CMS GC整个过程都是暂停应用的，但是为了提高效率，它并不是每个阶段都会走的，只走其中一些阶段，这些省下来的阶段主要是并行阶段，Precleaning、AbortablePreclean，Resizing这几个阶段都不会经历，其中sweep阶段是同步的，但不管怎么说如果走了类似foreground的cms gc，那么整个过程业务线程都是不可用的，效率会影响挺大。CMS GC具体的过程后面再写文章详细说，其过程确实非常复杂的</p>
+
+<h3>正常的Full GC</h3>
+
+<p>正常的Full GC其实是整个gc过程包括ygc和cms gc(这里说的是真正意义上的Full GC，还有些场景虽然调用Full GC的接口，但是并不会都做，有些时候只做ygc，有些时候只做cms gc)都是由VMThread来执行的，因此整个时间是ygc+cms gc的时间之和，其中CMS GC是上面提到的foreground式的，因此整个过程会比较长，也是我们要避免的</p>
+
+<h3>并行的Full GC</h3>
+
+<p>并行Full GC也通样会做YGC和CMS GC，但是效率高就搞在CMS GC是走的background的，整个暂停的过程主要是YGC+CMS_initMark+CMS_remark几个阶段</p>
+
+<h2>堆外内存常配合使用System GC</h2>
+
+<p>这里说的堆外内存主要针对java.nio.DirectByteBuffer，这些对象的创建过程会通过Unsafe接口直接通过os::malloc来分配内存，然后将内存的起始地址和大小存到java.nio.DirectByteBuffer对象里，这样就可以直接操作这些内存。这些内存只有在DirectByteBuffer回收掉之后才有机会被回收，因此如果这些对象大部分都移到了old，但是一直没有触发CMS GC或者Full GC，那么悲剧将会发生，因为你的物理内存被他们耗尽了，因此为了避免这种悲剧的发生，通过-XX:MaxDirectMemorySize来指定最大的堆外内存大小，当使用达到了阈值的时候将调用System.gc来做一次full gc，以此来回收掉没有被使用的堆外内存，具体堆外内存是如何回收的，其原理机制又是怎样的，还是后面写篇详细的文章吧</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM Bug:多个线程持有一把锁?]]></title>
