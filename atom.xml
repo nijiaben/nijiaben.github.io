@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-05-07T20:13:48+08:00</updated>
+  <updated>2015-05-07T20:16:16+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -21,6 +21,9 @@
     <content type="html"><![CDATA[<h2>概述</h2>
 
 <p>JVM的GC一般情况下是JVM本身根据一定的条件触发的，不过我们还是可以做一些人为的触发，比如通过jvmti做强制GC，通过System.gc触发，还可以通过jmap来触发等，针对每个场景其实我们都可以写篇文章来做一个介绍，本文重点介绍下System.gc的原理</p>
+
+<!--more-->
+
 
 <p>或许大家已经知道如下相关的知识
 * system.gc其实是做一次full gc
