@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-05-07T20:18:49+08:00</updated>
+  <updated>2015-05-07T20:24:11+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -25,17 +25,25 @@
 <!--more-->
 
 
-<p>或许大家已经知道如下相关的知识
-* system.gc其实是做一次full gc
-* system.gc会暂停整个进程
-* system.gc一般情况下我们要禁掉，使用-XX:+DisableExplicitGC
-* system.gc在cms gc下我们通过-XX:+ExplicitGCInvokesConcurrent来做一次稍微高效点的GC(效果比Full GC要好些)
-* system.gc最常见的场景是RMI/NIO下的堆外内存分配等</p>
+<p>或许大家已经知道如下相关的知识</p>
 
-<p>如果你已经知道上面这些了其实也说明你对System.gc有过一定的了解，至少踩过一些坑，但是你是否更深层次地了解过它，比如
-* 为什么CMS GC下-XX:+ExplicitGCInvokesConcurrent这个参数加了之后会比真正的Full GC好？
-* 它如何做到暂停整个进程？
-* 堆外内存分配为什么有时候要配合System.gc？</p>
+<ul>
+<li>system.gc其实是做一次full gc</li>
+<li>system.gc会暂停整个进程</li>
+<li>system.gc一般情况下我们要禁掉，使用-XX:+DisableExplicitGC</li>
+<li>system.gc在cms gc下我们通过-XX:+ExplicitGCInvokesConcurrent来做一次稍微高效点的GC(效果比Full GC要好些)</li>
+<li>system.gc最常见的场景是RMI/NIO下的堆外内存分配等</li>
+</ul>
+
+
+<p>如果你已经知道上面这些了其实也说明你对System.gc有过一定的了解，至少踩过一些坑，但是你是否更深层次地了解过它，比如</p>
+
+<ul>
+<li>为什么CMS GC下-XX:+ExplicitGCInvokesConcurrent这个参数加了之后会比真正的Full GC好？</li>
+<li>它如何做到暂停整个进程？</li>
+<li>堆外内存分配为什么有时候要配合System.gc？</li>
+</ul>
+
 
 <p>如果你上面这些疑惑也都知道，那说明你很懂System.gc了，那么接下来的文字你可以不用看啦</p>
 
