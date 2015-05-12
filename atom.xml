@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-05-12T13:54:58+08:00</updated>
+  <updated>2015-05-12T15:31:02+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -163,9 +163,13 @@
 </span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<p>通过上面的代码我们知道可以通过-XX:MaxDirectMemorySize来指定最大的堆外内存，那么我们首先引入两个问题
-* 堆外内存默认是多大
-* 为什么要主动调用System.gc()</p>
+<p>通过上面的代码我们知道可以通过-XX:MaxDirectMemorySize来指定最大的堆外内存，那么我们首先引入两个问题</p>
+
+<ul>
+<li>堆外内存默认是多大</li>
+<li>为什么要主动调用System.gc()</li>
+</ul>
+
 
 <h3>堆外内存默认是多大</h3>
 
