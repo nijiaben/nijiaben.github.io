@@ -142,6 +142,409 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2015-07-09T14:35:31+08:00" pubdate data-updated="true">Jul 9<span>th</span>, 2015</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2015/07/09/final-reference/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm,finalreference/"><span class="badge">JVM,FinalReference</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2015/07/09/final-reference/">JVM源码分析之FinalReference</a></h1>
+      <h2>概述</h2>
+
+<p>JAVA对象引用体系除了强引用之外，出于对性能、可扩展性等方面考虑还特地实现了四种其他引用：SoftReference、WeakReference、PhantomReference、FinalReference，本文主要想讲的是FinalReference，因为我们在使用内存分析工具比如zprofiler、mat等在分析一些oom的heap的时候，经常能看到 <code>java.lang.ref.Finalizer</code>占用的内存大小远远排在前面，而这个类占用的内存大小又和我们这次的主角<code>FinalReference</code>有着密不可分的关系。</p>
+
+<p>对于FinalReference及关联的内容，我们可能有如下印象：
+* 自己代码里从没有使用过
+* 线程dump之后，我们能看到一个叫做<code>Finalizer</code>的java线程
+* 偶尔能注意到<code>java.lang.ref.Finalizer</code>的存在
+* 我们在类里可能会写finalize方法</p>
+
+<p>那FinalReference到底存在的意义是什么，以怎样的形式和我们的代码相关联呢，这是本文要理清的问题。</p>
+
+<h2>JDK中的FinalReference</h2>
+
+<p>首先我们看看FinalReference在JDK里的实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>class FinalReference&lt;T&gt; extends Reference&lt;T&gt; {
+</span><span class='line'>
+</span><span class='line'>    public FinalReference(T referent, ReferenceQueue&lt;? super T&gt; q) {
+</span><span class='line'>        super(referent, q);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>大家应该注意到了类访问权限是package的，这也就意味着我们不能直接去对其进行扩展，但是JDK里对此类进行了扩展实现<code>java.lang.ref.Finalizer</code>，这个类也是我们在概述里提到的，而此类的访问权限也是package的，并且是final的，意味着真的不能被扩展了，接下来的重点我们围绕<code>java.lang.ref.Finalizer</code>展开(PS：后续讲Finalizer相关的其实也就是在说FinalReference)</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final class Finalizer extends FinalReference { /* Package-private; must be in
+</span><span class='line'>                                                  same package as the Reference
+</span><span class='line'>                                                  class */
+</span><span class='line'>
+</span><span class='line'>    /* A native method that invokes an arbitrary object's finalize method is
+</span><span class='line'>       required since the finalize method is protected
+</span><span class='line'>     */
+</span><span class='line'>    static native void invokeFinalizeMethod(Object o) throws Throwable;
+</span><span class='line'>
+</span><span class='line'>    private static ReferenceQueue queue = new ReferenceQueue();
+</span><span class='line'>    private static Finalizer unfinalized = null;
+</span><span class='line'>    private static final Object lock = new Object();
+</span><span class='line'>
+</span><span class='line'>    private Finalizer
+</span><span class='line'>        next = null,
+</span><span class='line'>        prev = null;
+</span><span class='line'>        
+</span><span class='line'>    private Finalizer(Object finalizee) {
+</span><span class='line'>        super(finalizee, queue);
+</span><span class='line'>        add();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /* Invoked by VM */
+</span><span class='line'>    static void register(Object finalizee) {
+</span><span class='line'>        new Finalizer(finalizee);
+</span><span class='line'>    }  
+</span><span class='line'>    
+</span><span class='line'>    private void add() {
+</span><span class='line'>        synchronized (lock) {
+</span><span class='line'>            if (unfinalized != null) {
+</span><span class='line'>                this.next = unfinalized;
+</span><span class='line'>                unfinalized.prev = this;
+</span><span class='line'>            }
+</span><span class='line'>            unfinalized = this;
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>      
+</span><span class='line'>    ...
+</span><span class='line'>    
+</span><span class='line'>   }    
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Finalizer的构造函数</h3>
+
+<p>从构造函数上我们获得下面的几个关键信息
+* private：意味着我们在外面无法自己构建这类对象
+* finalizee参数：FinalReference指向的对象引用
+* 调用add方法：将当前对象插入到Finalizer对象链里，链里的对象和Finalizer类静态相关联，言外之意是在这个链里的对象都无法被gc掉，除非将这种引用关系剥离掉（因为Finalizer类无法被unload）</p>
+
+<p>虽然外面无法创建Finalizer对象，但是注意到有一个register的静态方法，在方法里会创建这种对象，同时将这个对象加入到Finalizer对象链里，这个方法是被vm调用的，那么问题来了，vm在什么情况下会调用这个方法呢？</p>
+
+<h2>Finalizer对象何时被注册到Finalizer对象链里</h2>
+
+<p>类其实有挺多的修饰，比如final，abstract，public等等，如果一个类有final修饰，我们就说这个类是一个final类，上面列的都是语法层面我们可以显示标记的，在jvm里其实还给类标记其他一些符号，比如finalizer，表示这个类是一个finalizer类（为了和java.lang.ref.Fianlizer类进行区分，下文要提到的finalizer类的地方都说成f类），gc在处理这种类的对象的时候要做一些特殊的处理，如在这个对象被回收之前会调用一下它的finalize方法。</p>
+
+<h3>如何判断一个类是不是一个f类</h3>
+
+<p>在讲这个问题之前，我们先来看下<code>java.lang.Object</code>里的一个方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected void finalize() throws Throwable { }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在Object类里定义了一个名为finalize的空方法，这意味着Java世界里的所有类都会继承这个方法，甚至可以覆写该方法，并且根据方法覆写原则，如果子类覆盖此方法，方法访问权限都是至少是protected级别的，这样其子类就算没有覆写此方法也会继承此方法。</p>
+
+<p>而判断当前类是否是一个f类的标准并不仅仅是当前类是否含有一个参数为空，返回值为void的名为finalize的方法，而另外一个要求是<code>finalize方法必须非空</code>，因此我们的Object类虽然含有一个finalize方法，但是并不是一个f类，Object的对象在被gc回收的时候其实并不会去调用它的finalize方法。</p>
+
+<p>需要注意的是我们的类在被加载过程中其实就已经被标记为是否为f类了（遍历所有方法，包括父类的方法，只要有一个非空的参数为空返回void的finalize方法就认为是一个f类）。</p>
+
+<h3>f类的对象何时传到Finalizer.register方法</h3>
+
+<p>对象的创建其实是被拆分成多个步骤的，比如<code>A a=new A(2)</code>这样一条语句对应的字节码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0: new           #1                  // class A
+</span><span class='line'>3: dup
+</span><span class='line'>4: iconst_2
+</span><span class='line'>5: invokespecial #11                 // Method "&lt;init&gt;":(I)V</span></code></pre></td></tr></table></div></figure>
+
+
+<p>先执行new分配好对象空间，然后再执行invokespecial调用构造函数，jvm里其实可以让用户选择在这两个时机中的任意一个将当前对象传递给Finalizer.register方法来注册到Finalizer对象链里，这个选择依赖于RegisterFinalizersAtInit这个vm参数是否被设置，默认值为true，也就是在调用构造函数返回之前调用Finalizer.register方法，如果通过-XX:-RegisterFinalizersAtInit关闭了该参数，那将在对象空间分配好之后就将这个对象注册进去。</p>
+
+<p>另外需要提一点的是当我们通过clone的方式复制一个对象的时候，如果当前类是一个f类，那么在clone完成的时候将调用Finalizer.register方法进行注册。</p>
+
+<h3>hotspot如何实现f类对象在构造函数执行完毕后调用Finalizer.register</h3>
+
+<p>这个实现比较有意思，在这里简单提一下，我们知道一个构造函数执行的时候，会去调用父类的构造函数，主要是为了能对继承自父类的属性也能做初始化，那么任何一个对象的初始化最终都会调用到Object的空构造函数里（任何空的构造函数其实并不空，会含有三条字节码指令，如下代码所示），为了不对所有的类的构造函数都做埋点调用Finalizer.register方法，hotspot的实现是在Object这个类在做初始化的时候将构造函数里的<code>return</code>指令替换为<code>_return_register_finalizer</code>指令，该指令并不是标准的字节码指令，是hotspot扩展的指令，这样在处理该指令的时候调用Finalizer.register方法，这样就在侵入性很小的情况下完美地解决了这个问题。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0: aload_0
+</span><span class='line'>1: invokespecial #21                 // Method java/lang/Object."&lt;init&gt;":()V
+</span><span class='line'>4: return</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>f类对象的GC回收</h2>
+
+<h3>FinalizerThread线程</h3>
+
+<p>在Finalizer类的clinit方法（静态块）里我们看到它会创建了一个FinalizerThread的守护线程，这个线程的优先级并不是最高的，意味着在cpu很紧张的情况下其被调度的优先级可能会受到影响</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  private static class FinalizerThread extends Thread {
+</span><span class='line'>        private volatile boolean running;
+</span><span class='line'>        FinalizerThread(ThreadGroup g) {
+</span><span class='line'>            super(g, "Finalizer");
+</span><span class='line'>        }
+</span><span class='line'>        public void run() {
+</span><span class='line'>            if (running)
+</span><span class='line'>                return;
+</span><span class='line'>            running = true;
+</span><span class='line'>            for (;;) {
+</span><span class='line'>                try {
+</span><span class='line'>                    Finalizer f = (Finalizer)queue.remove();
+</span><span class='line'>                    f.runFinalizer();
+</span><span class='line'>                } catch (InterruptedException x) {
+</span><span class='line'>                    continue;
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    static {
+</span><span class='line'>        ThreadGroup tg = Thread.currentThread().getThreadGroup();
+</span><span class='line'>        for (ThreadGroup tgn = tg;
+</span><span class='line'>             tgn != null;
+</span><span class='line'>             tg = tgn, tgn = tg.getParent());
+</span><span class='line'>        Thread finalizer = new FinalizerThread(tg);
+</span><span class='line'>        finalizer.setPriority(Thread.MAX_PRIORITY - 2);
+</span><span class='line'>        finalizer.setDaemon(true);
+</span><span class='line'>        finalizer.start();
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个线程主要就是从queue里取Finalizer对象，然后执行该对象的runFinalizer方法，这个方法主要是将Finalizer对象从Finalizer对象链里剥离出来，这样意味着下次gc发生的时候就可能将其关联的f对象gc掉了，最后将这个Finalizer对象关联的f对象传给了一个native方法invokeFinalizeMethod</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private void runFinalizer() {
+</span><span class='line'>        synchronized (this) {
+</span><span class='line'>            if (hasBeenFinalized()) return;
+</span><span class='line'>            remove();
+</span><span class='line'>        }
+</span><span class='line'>        try {
+</span><span class='line'>            Object finalizee = this.get();
+</span><span class='line'>            if (finalizee != null && !(finalizee instanceof java.lang.Enum)) {
+</span><span class='line'>                invokeFinalizeMethod(finalizee);
+</span><span class='line'>                /* Clear stack slot containing this variable, to decrease
+</span><span class='line'>                   the chances of false retention with a conservative GC */
+</span><span class='line'>                finalizee = null;
+</span><span class='line'>            }
+</span><span class='line'>        } catch (Throwable x) { }
+</span><span class='line'>        super.clear();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'> static native void invokeFinalizeMethod(Object o) throws Throwable;
+</span><span class='line'> </span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实invokeFinalizeMethod方法就是调了这个f对象的finalize方法，看到这里大家应该恍然大悟了，整个过程都串起来了</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>JNIEXPORT void JNICALL
+</span><span class='line'>Java_java_lang_ref_Finalizer_invokeFinalizeMethod(JNIEnv *env, jclass clazz,
+</span><span class='line'>                                                  jobject ob)
+</span><span class='line'>{
+</span><span class='line'>    jclass cls;
+</span><span class='line'>    jmethodID mid;
+</span><span class='line'>
+</span><span class='line'>    cls = (*env)-&gt;GetObjectClass(env, ob);
+</span><span class='line'>    if (cls == NULL) return;
+</span><span class='line'>    mid = (*env)-&gt;GetMethodID(env, cls, "finalize", "()V");
+</span><span class='line'>    if (mid == NULL) return;
+</span><span class='line'>    (*env)-&gt;CallVoidMethod(env, ob, mid);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>f对象的finalize方法抛出异常会导致FinalizeThread退出吗</h3>
+
+<p>不知道大家有没有想过如果f对象的finalize方法抛了一个没捕获的异常，这个FinalizerThread会不会退出呢，细心的读者看上面的代码其实就可以找到答案，在runFinalizer方法里对Throwable的异常都进行了捕获，因此不可能出现FinalizerThread因异常未捕获而退出的情况。</p>
+
+<h3>f对象的finalize方法会执行多次吗</h3>
+
+<p>如果我们在f对象的finalize方法里重新将当前对象赋值出去，变成可达对象，当这个f对象再次变成不可达的时候还会被执行finalize方法吗？答案是否定的，因为在执行完第一次finalize方法之后，这个f对象已经和之前的Finalizer对象关系剥离了，也就是下次gc的时候不会再发现Finalizer对象指向该f对象了，自然也就不会调用这个f对象的finalize方法了。</p>
+
+<h3>Finalizer对象何时被放到ReferenceQueue里</h3>
+
+<p>除了这里要说的环节之外，整个过程大家应该都比较清楚了。</p>
+
+<p>当gc发生的时候，gc算法会判断f类对象是不是只被Finalizer类引用（f类对象被Finalizer对象引用，然后放到Finalizer对象链里），如果这个类仅仅被Finalizer对象引用的时候，说明这个对象在不久的将来会被回收了现在可以执行它的finalize方法了，于是会将这个Finalizer对象放到Finalizer类的ReferenceQueue里，但是这个f类对象其实并没有被回收，因为Finalizer这个类还对他们持有引用，在gc完成之前，jvm会调用ReferenceQueue里的lock对象的notify方法（当ReferenceQueue为空的时候，FinalizerThread线程会调用ReferenceQueue的lock对象的wait方法直到被jvm唤醒），此时就会执行上面FinalizeThread线程里看到的其他逻辑了。</p>
+
+<h2>Finalizer导致的内存泄露</h2>
+
+<p>这里举一个简单的例子，我们使用挺广的socket通信，SocksSocketImpl的父类其实就实现了finalize方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Cleans up if the user forgets to close it.
+</span><span class='line'> */
+</span><span class='line'>protected void finalize() throws IOException {
+</span><span class='line'>      close();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实这么做的主要目的是万一用户忘记关闭socket了，那么在这个对象被回收的时候能主动关闭socket来释放一些系统资源，但是如果真的是用户忘记关闭了，那这些socket对象可能因为FinalizeThread迟迟没有执行到这些socket对象的finalize方法，而导致内存泄露，这种问题我们碰到过多次，因此对于这类情况除了大家好好注意貌似没有什么更好的方法了，该做的事真不能省.</p>
+
+<h2>Finalizer的客观评价</h2>
+
+<p>上面的过程基本对Finalizer的实现细节进行完整剖析了，java里我们看到有构造函数，但是并没有看到析构函数一说，Finalizer其实是实现了析构函数的概念，我们在对象被回收前可以执行一些『收拾性』的逻辑，应该说是一个特殊场景的补充，但是这种概念的实现给我们的f对象生命周期以及gc等带来了一些影响：
+* f对象因为Finalizer的引用而变成了一个临时的强引用，即使没有其他的强引用了，还是无法立即被回收
+* f对象至少经历两次GC才能被回收，因为只有在FinalizerThread执行完了f对象的finalize方法的情况下才有可能被下次gc回收，而有可能期间已经经历过多次gc了，但是一直还没执行f对象的finalize方法
+* cpu资源比较稀缺的情况下FinalizerThread线程有可能因为优先级比较低而延迟执行f对象的finalize方法
+* 因为f对象的finalize方法迟迟没有执行，有可能会导致大部分f对象进入到old分代，此时容易引发old分代的gc，甚至fullgc，gc暂停时间明显变长
+* f对象的finalize方法被调用了，但是这个对象其实还并没有被回收，虽然可能在不久的将来会被回收</p>
+
+      
+      
+    </div>
+  </div>
+
+
+
+    </article>
+    
+    <hr>
+    
+  
+  
+    <article>
+      
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2015-05-12T13:49:57+08:00" pubdate data-updated="true">May 12<span>th</span>, 2015</time></h5>
           <div class="row-fluid">
           
@@ -617,87 +1020,10 @@
 
     </article>
     
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2014-04-23T23:47:00+08:00" pubdate data-updated="true">Apr 23<span>rd</span>, 2014</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2014/04/23/new-begin/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a></h1>
-      <p><img src="/images/2014/04/github_page_and-octopress.png"></p>
-
-<pre><code>    今天又做了一个尝试，从wordpress换到了octopress，放弃了pcduino，选择了免费的github。
-</code></pre>
-
-<ul>
-<li>octopress界面的清爽简洁</li>
-<li>octopress对markdown语法的天然支持
-
-<ul>
-<li>虽然wordpress也有markdown的插件，但是还是喜欢正统</li>
-<li>公司周报都用markdown写了，主要是排版非常舒服</li>
-</ul>
-</li>
-<li>octopress有程序员的思维，用官方话说“Octopress is a blogging framework for hackers”</li>
-<li>pcduino
-
-<ul>
-<li>于己写文章/发布都比较蛋疼，毕竟是一块价值仅300多的开发板，性能有限，有时间真的会影响写文章的心情</li>
-<li>于人访问速度犹如龟速，甚至有时候还经常打不开，实在对不住看客们</li>
-<li>域名访问不稳定，主要还是自己不想成为域名代理服务商付费用户，只得路由器上做端口映射，路由器重启域名还会重新指定A记录，实在是屌丝至极</li>
-</ul>
-</li>
-<li>转向github，大势所趋，公司内部都慢慢放弃svn，投入github托管，自己目前开发的项目也使用git，之前记得微博上有人招聘，提了几个要求，如果你连github账户都没一个，请不要投简历给我，可见github的未来非常美好啊
-
-<ul>
-<li>主要还是免费的，哈哈， 访问速度还可以，虽然偶尔会被墙一下，不过貌似问题不大</li>
-<li>还支持域名绑定</li>
-</ul>
-</li>
-</ul>
-
-
-<p>之前的部分博文请访问<a href="http://alipaymiddleware.com/">支付宝中间件官方博客</a></p>
-
-      
-      
-    </div>
-  </div>
-
-
-
-    </article>
-    
   
   <div class="pagination">
+    
+    <a class="prev" href="/blog/page/2/">&larr; Older</a>
     
 
     
