@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JVM,FinalReference | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm-finalreference/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-07-09T14:46:14+08:00</updated>
+  <updated>2015-07-09T14:47:12+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -18,7 +18,7 @@
     <link href="http://nijiaben.github.io/blog/2015/07/09/final-reference/"/>
     <updated>2015-07-09T14:35:31+08:00</updated>
     <id>http://nijiaben.github.io/blog/2015/07/09/final-reference</id>
-    <content type="html"><![CDATA[<p>注:文章首发于InfoQ：<a href="" title="http://www.infoq.com/cn/articles/jvm-source-code-analysis-finalreference">JVM源码分析之FinalReference</a></p>
+    <content type="html"><![CDATA[<p><code>注:文章首发于InfoQ：</code><a href="" title="http://www.infoq.com/cn/articles/jvm-source-code-analysis-finalreference">JVM源码分析之FinalReference</a></p>
 
 <h2>概述</h2>
 
