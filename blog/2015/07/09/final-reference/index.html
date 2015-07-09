@@ -130,7 +130,9 @@
 </header>
   <div class="row-fluid">
     <div class="span12">
-      <h2>概述</h2>
+      <p>注:文章首发于InfoQ：<a href="" title="http://www.infoq.com/cn/articles/jvm-source-code-analysis-finalreference">JVM源码分析之FinalReference</a></p>
+
+<h2>概述</h2>
 
 <p>JAVA对象引用体系除了强引用之外，出于对性能、可扩展性等方面考虑还特地实现了四种其他引用：SoftReference、WeakReference、PhantomReference、FinalReference，本文主要想讲的是FinalReference，因为我们在使用内存分析工具比如zprofiler、mat等在分析一些oom的heap的时候，经常能看到 <code>java.lang.ref.Finalizer</code>占用的内存大小远远排在前面，而这个类占用的内存大小又和我们这次的主角<code>FinalReference</code>有着密不可分的关系。</p>
 
