@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-07-09T14:45:27+08:00</updated>
+  <updated>2015-07-09T14:46:14+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -23,6 +23,9 @@
 <h2>概述</h2>
 
 <p>JAVA对象引用体系除了强引用之外，出于对性能、可扩展性等方面考虑还特地实现了四种其他引用：SoftReference、WeakReference、PhantomReference、FinalReference，本文主要想讲的是FinalReference，因为我们在使用内存分析工具比如zprofiler、mat等在分析一些oom的heap的时候，经常能看到 <code>java.lang.ref.Finalizer</code>占用的内存大小远远排在前面，而这个类占用的内存大小又和我们这次的主角<code>FinalReference</code>有着密不可分的关系。</p>
+
+<!--more-->
+
 
 <p>对于FinalReference及关联的内容，我们可能有如下印象：
 * 自己代码里从没有使用过
