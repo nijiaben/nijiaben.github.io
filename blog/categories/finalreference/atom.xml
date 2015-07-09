@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: JVM,FinalReference | 你假笨]]></title>
-  <link href="http://nijiaben.github.io/blog/categories/jvm-finalreference/atom.xml" rel="self"/>
+  <title><![CDATA[Category: FinalReference | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/finalreference/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-07-09T14:48:47+08:00</updated>
+  <updated>2015-07-09T14:51:49+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
