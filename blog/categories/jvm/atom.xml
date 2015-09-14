@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JVM | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-08-21T19:05:31+08:00</updated>
+  <updated>2015-09-14T13:24:01+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,480 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之javaagent原理完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2015/09/14/javaagent/"/>
+    <updated>2015-09-14T13:17:50+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2015/09/14/javaagent</id>
+    <content type="html"><![CDATA[<p><code>注:文章首发于InfoQ：</code><a href="http://www.infoq.com/cn/articles/javaagent-illustrated">JVM源码分析之javaagent原理完全解读</a></p>
+
+<h2>概述</h2>
+
+<p>本文重点讲述javaagent的具体实现，因为它面向的是我们java程序员，而且agent都是用java编写的，不需要太多的c/c++编程基础，不过这篇文章里也会讲到JVMTIAgent(c实现的)，因为javaagent的运行还是依赖于一个特殊的JVMTIAgent。</p>
+
+<!-- more -->
+
+
+<p>对于javaagent或许大家都听过，甚至使用过，常见的用法大致如下：</p>
+
+<p><code>
+java -javaagent:myagent.jar=mode=test Test
+</code></p>
+
+<p>我们通过-javaagent来指定我们编写的agent的jar路径（./myagent.jar）及要传给agent的参数（mode=test），这样在启动的时候这个agent就可以做一些我们想要它做的事了。</p>
+
+<p>javaagent的主要的功能如下：</p>
+
+<ul>
+<li>可以在加载class文件之前做拦截把字节码做修改</li>
+<li>可以在运行期将已经加载的类的字节码做变更，但是这种情况下会有很多的限制，后面会详细说</li>
+<li>还有其他的一些小众的功能
+
+<ul>
+<li>获取所有已经被加载过的类</li>
+<li>获取所有已经被初始化过了的类（执行过了clinit方法，是上面的一个子集）</li>
+<li>获取某个对象的大小</li>
+<li>将某个jar加入到bootstrapclasspath里作为高优先级被bootstrapClassloader加载</li>
+<li>将某个jar加入到classpath里供AppClassloard去加载</li>
+<li>设置某些native方法的前缀，主要在查找native方法的时候做规则匹配</li>
+</ul>
+</li>
+</ul>
+
+
+<p>想象一下可以让程序按照我们预期的逻辑去执行，听起来是不是挺酷的。</p>
+
+<h2>JVMTI</h2>
+
+<p><a href="http://docs.oracle.com/javase/7/docs/platform/jvmti/jvmti.html">JVMTI</a>全称JVM Tool Interface，是jvm暴露出来的一些供用户扩展的接口集合，JVMTI是基于事件驱动的，JVM每执行到一定的逻辑就会调用一些事件的回调接口（如果有的话），这些接口可以供开发者去扩展自己的逻辑。</p>
+
+<p>比如说我们最常见的想在某个类的字节码文件读取之后类定义之前能修改相关的字节码，从而使创建的class对象是我们修改之后的字节码内容，那我们就可以实现一个回调函数赋给JvmtiEnv（JVMTI的运行时，通常一个JVMTIAgent对应一个jvmtiEnv，但是也可以对应多个）的回调方法集合里的ClassFileLoadHook，这样在接下来的类文件加载过程中都会调用到这个函数里来了，大致实现如下:</p>
+
+<p>```</p>
+
+<pre><code>jvmtiEventCallbacks callbacks;
+jvmtiEnv *          jvmtienv = jvmti(agent);
+jvmtiError          jvmtierror;
+memset(&amp;callbacks, 0, sizeof(callbacks));
+callbacks.ClassFileLoadHook = &amp;eventHandlerClassFileLoadHook;
+jvmtierror = (*jvmtienv)-&gt;SetEventCallbacks( jvmtienv,
+                                             &amp;callbacks,
+                                             sizeof(callbacks));
+</code></pre>
+
+<p>```</p>
+
+<h2>JVMTIAgent</h2>
+
+<p>JVMTIAgent其实就是一个动态库，利用JVMTI暴露出来的一些接口来干一些我们想做但是正常情况下又做不到的事情，不过为了和普通的动态库进行区分，它一般会实现如下的一个或者多个函数：</p>
+
+<p>```
+JNIEXPORT jint JNICALL
+Agent_OnLoad(JavaVM <em>vm, char </em>options, void *reserved);</p>
+
+<p>JNIEXPORT jint JNICALL
+Agent_OnAttach(JavaVM<em> vm, char</em> options, void* reserved);</p>
+
+<p>JNIEXPORT void JNICALL
+Agent_OnUnload(JavaVM *vm);</p>
+
+<p>```</p>
+
+<ul>
+<li><code>Agent_OnLoad</code>函数，如果agent是在启动的时候加载的，也就是在vm参数里通过-agentlib来指定，那在启动过程中就会去执行这个agent里的<code>Agent_OnLoad</code>函数。</li>
+<li><code>Agent_OnAttach</code>函数，如果agent不是在启动的时候加载的，是我们先attach到目标进程上，然后给对应的目标进程发送load命令来加载agent，在加载过程中就会调用<code>Agent_OnAttach</code>函数。</li>
+<li><code>Agent_OnUnload</code>函数，在agent做卸载的时候调用，不过貌似基本上很少实现它。</li>
+</ul>
+
+
+<p>其实我们每天都在和JVMTIAgent打交道，只是你可能没有意识到而已，比如我们经常使用eclipse等工具对java代码做调试，其实就利用了jre自带的jdwp agent来实现的，只是由于eclipse等工具在没让你察觉的情况下将相关参数(类似<code>-agentlib:jdwp=transport=dt_socket,suspend=y,address=localhost:61349</code>)给自动加到程序启动参数列表里了，其中agentlib参数就是用来跟要加载的agent的名字，比如这里的jdwp(不过这不是动态库的名字，而JVM是会做一些名称上的扩展，比如在linux下会去找<code>libjdwp.so</code>的动态库进行加载，也就是在名字的基础上加前缀<code>lib</code>,再加后缀<code>.so</code>)，接下来会跟一堆相关的参数，会将这些参数传给<code>Agent_OnLoad</code>或者<code>Agent_OnAttach</code>函数里对应的<code>options</code>参数。</p>
+
+<h2>javaagent</h2>
+
+<p>说到javaagent必须要讲的是一个叫做instrument的JVMTIAgent（linux下对应的动态库是libinstrument.so），因为就是它来实现javaagent的功能的，另外instrument agent还有个别名叫JPLISAgent(Java Programming Language Instrumentation Services Agent)，从这名字里也完全体现了其最本质的功能：就是专门为java语言编写的插桩服务提供支持的。</p>
+
+<h3>instrument agent</h3>
+
+<p>instrument agent实现了<code>Agent_OnLoad</code>和<code>Agent_OnAttach</code>两方法，也就是说我们在用它的时候既支持启动的时候来加载agent，也支持在运行期来动态来加载这个agent，其中启动时加载agent还可以通过类似<code>-javaagent:myagent.jar</code>的方式来间接加载instrument agent，运行期动态加载agent依赖的是jvm的attach机制<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>，通过发送load命令来加载agent。</p>
+
+<p>instrument agent的核心数据结构如下：
+```
+struct _JPLISAgent {</p>
+
+<pre><code>JavaVM *                mJVM;                   /* handle to the JVM */
+JPLISEnvironment        mNormalEnvironment;     /* for every thing but retransform stuff */
+JPLISEnvironment        mRetransformEnvironment;/* for retransform stuff only */
+jobject                 mInstrumentationImpl;   /* handle to the Instrumentation instance */
+jmethodID               mPremainCaller;         /* method on the InstrumentationImpl that does the premain stuff (cached to save lots of lookups) */
+jmethodID               mAgentmainCaller;       /* method on the InstrumentationImpl for agents loaded via attach mechanism */
+jmethodID               mTransform;             /* method on the InstrumentationImpl that does the class file transform */
+jboolean                mRedefineAvailable;     /* cached answer to "does this agent support redefine" */
+jboolean                mRedefineAdded;         /* indicates if can_redefine_classes capability has been added */
+jboolean                mNativeMethodPrefixAvailable; /* cached answer to "does this agent support prefixing" */
+jboolean                mNativeMethodPrefixAdded;     /* indicates if can_set_native_method_prefix capability has been added */
+char const *            mAgentClassName;        /* agent class name */
+char const *            mOptionsString;         /* -javaagent options string */
+</code></pre>
+
+<p>};</p>
+
+<p>struct _JPLISEnvironment {</p>
+
+<pre><code>jvmtiEnv *              mJVMTIEnv;              /* the JVM TI environment */
+JPLISAgent *            mAgent;                 /* corresponding agent */
+jboolean                mIsRetransformer;       /* indicates if special environment */
+</code></pre>
+
+<p>};</p>
+
+<p>```</p>
+
+<p>这里解释下几个重要项：
+* mNormalEnvironment：主要提供正常的类transform及redefine功能的。
+* mRetransformEnvironment：主要提供类retransform功能的。
+* mInstrumentationImpl：这个对象非常重要，也是我们java agent和JVM进行交互的入口，或许写过javaagent的人在写<code>premain</code>以及<code>agentmain</code>方法的时候注意到了有个Instrumentation的参数，这个参数其实就是这里的对象。
+* mPremainCaller：指向<code>sun.instrument.InstrumentationImpl.loadClassAndCallPremain</code>方法，如果agent是在启动的时候加载的，那该方法会被调用。
+* mAgentmainCaller：指向<code>sun.instrument.InstrumentationImpl.loadClassAndCallAgentmain</code>方法，该方法在通过attach的方式动态加载agent的时候调用。
+* mTransform：指向<code>sun.instrument.InstrumentationImpl.transform</code>方法。
+* mAgentClassName：在我们javaagent的MANIFEST.MF里指定的<code>Agent-Class</code>。
+* mOptionsString：传给agent的一些参数。
+* mRedefineAvailable：是否开启了redefine功能，在javaagent的MANIFEST.MF里设置<code>Can-Redefine-Classes:true</code>。
+* mNativeMethodPrefixAvailable：是否支持native方法前缀设置，通样在javaagent的MANIFEST.MF里设置<code>Can-Set-Native-Method-Prefix:true</code>。
+* mIsRetransformer：如果在javaagent的MANIFEST.MF文件里定义了<code>Can-Retransform-Classes:true</code>，那将会设置mRetransformEnvironment的mIsRetransformer为true。</p>
+
+<h3>启动时加载instrument agent</h3>
+
+<p>正如『概述』里提到的方式，就是启动的时候加载instrument agent，具体过程都在<code>InvocationAdapter.c</code>的<code>Agent_OnLoad</code>方法里，简单描述下过程：</p>
+
+<ul>
+<li>创建并初始化JPLISAgent</li>
+<li>监听VMInit事件，在vm初始化完成之后做下面的事情：
+
+<ul>
+<li>创建InstrumentationImpl对象</li>
+<li>监听ClassFileLoadHook事件</li>
+<li>调用InstrumentationImpl的<code>loadClassAndCallPremain</code>方法，在这个方法里会去调用javaagent里MANIFEST.MF里指定的<code>Premain-Class</code>类的premain方法</li>
+</ul>
+</li>
+<li>解析javaagent里MANIFEST.MF里的参数，并根据这些参数来设置JPLISAgent里的一些内容</li>
+</ul>
+
+
+<h3>运行时加载instrument agent</h3>
+
+<p>运行时加载的方式，大致按照下面的方式来操作：
+<code>
+VirtualMachine vm = VirtualMachine.attach(pid);
+vm.loadAgent(agentPath, agentArgs);
+</code></p>
+
+<p>上面会通过jvm的attach机制来请求目标jvm加载对应的agent，过程大致如下：</p>
+
+<ul>
+<li>创建并初始化JPLISAgent</li>
+<li>解析javaagent里MANIFEST.MF里的参数</li>
+<li>创建InstrumentationImpl对象</li>
+<li>监听ClassFileLoadHook事件</li>
+<li>调用InstrumentationImpl的<code>loadClassAndCallAgentmain</code>方法，在这个方法里会去调用javaagent里MANIFEST.MF里指定的<code>Agent-Class</code>类的<code>agentmain</code>方法</li>
+</ul>
+
+
+<h3>instrument agent的ClassFileLoadHook回调实现</h3>
+
+<p>不管是启动时还是运行时加载的instrument agent都关注着同一个jvmti事件---<code>ClassFileLoadHook</code>，这个事件是在读取字节码文件之后回调时用的，这样可以对原来的字节码做修改，那这里面究竟是怎样实现的呢？</p>
+
+<p>```
+void JNICALL
+eventHandlerClassFileLoadHook(  jvmtiEnv *              jvmtienv,</p>
+
+<pre><code>                            JNIEnv *                jnienv,
+                            jclass                  class_being_redefined,
+                            jobject                 loader,
+                            const char*             name,
+                            jobject                 protectionDomain,
+                            jint                    class_data_len,
+                            const unsigned char*    class_data,
+                            jint*                   new_class_data_len,
+                            unsigned char**         new_class_data) {
+JPLISEnvironment * environment  = NULL;
+
+environment = getJPLISEnvironment(jvmtienv);
+
+/* if something is internally inconsistent (no agent), just silently return without touching the buffer */
+if ( environment != NULL ) {
+    jthrowable outstandingException = preserveThrowable(jnienv);
+    transformClassFile( environment-&gt;mAgent,
+                        jnienv,
+                        loader,
+                        name,
+                        class_being_redefined,
+                        protectionDomain,
+                        class_data_len,
+                        class_data,
+                        new_class_data_len,
+                        new_class_data,
+                        environment-&gt;mIsRetransformer);
+    restoreThrowable(jnienv, outstandingException);
+}
+</code></pre>
+
+<p>}
+```</p>
+
+<p>先根据jvmtiEnv取得对应的JPLISEnvironment，因为上面我已经说到其实有两个JPLISEnvironment（并且有两个jvmtiEnv），其中一个专门做retransform的，而另外一个用来做其他的事情，根据不同的用途我们在注册具体的ClassFileTransformer的时候也是分开的，对于作为retransform用的ClassFileTransformer我们会注册到一个单独的TransformerManager里。</p>
+
+<p>接着调用transformClassFile方法，由于函数实现比较长，我这里就不贴代码了，大致意思就是调用InstrumentationImpl对象的transform方法，根据最后那个参数来决定选哪个TransformerManager里的ClassFileTransformer对象们做transform操作。</p>
+
+<p>```
+ private byte[]</p>
+
+<pre><code>transform(  ClassLoader         loader,
+            String              classname,
+            Class               classBeingRedefined,
+            ProtectionDomain    protectionDomain,
+            byte[]              classfileBuffer,
+            boolean             isRetransformer) {
+    TransformerManager mgr = isRetransformer?
+                                    mRetransfomableTransformerManager :
+                                    mTransformerManager;
+    if (mgr == null) {
+        return null; // no manager, no transform
+    } else {
+        return mgr.transform(   loader,
+                                classname,
+                                classBeingRedefined,
+                                protectionDomain,
+                                classfileBuffer);
+    }
+}
+</code></pre>
+
+<p>  public byte[]</p>
+
+<pre><code>transform(  ClassLoader         loader,
+            String              classname,
+            Class               classBeingRedefined,
+            ProtectionDomain    protectionDomain,
+            byte[]              classfileBuffer) {
+    boolean someoneTouchedTheBytecode = false;
+
+    TransformerInfo[]  transformerList = getSnapshotTransformerList();
+
+    byte[]  bufferToUse = classfileBuffer;
+
+    // order matters, gotta run 'em in the order they were added
+    for ( int x = 0; x &lt; transformerList.length; x++ ) {
+        TransformerInfo         transformerInfo = transformerList[x];
+        ClassFileTransformer    transformer = transformerInfo.transformer();
+        byte[]                  transformedBytes = null;
+
+        try {
+            transformedBytes = transformer.transform(   loader,
+                                                        classname,
+                                                        classBeingRedefined,
+                                                        protectionDomain,
+                                                        bufferToUse);
+        }
+        catch (Throwable t) {
+            // don't let any one transformer mess it up for the others.
+            // This is where we need to put some logging. What should go here? FIXME
+        }
+
+        if ( transformedBytes != null ) {
+            someoneTouchedTheBytecode = true;
+            bufferToUse = transformedBytes;
+        }
+    }
+
+    // if someone modified it, return the modified buffer.
+    // otherwise return null to mean "no transforms occurred"
+    byte [] result;
+    if ( someoneTouchedTheBytecode ) {
+        result = bufferToUse;
+    }
+    else {
+        result = null;
+    }
+
+    return result;
+}   
+</code></pre>
+
+<p>```</p>
+
+<p>以上是最终调到的java代码，可以看到已经调用到我们自己编写的javaagent代码里了，我们一般是实现一个ClassFileTransformer类，然后创建一个对象注册了对应的TransformerManager里。</p>
+
+<h2>Class Transform的实现</h2>
+
+<p>这里说的class transform其实是狭义的，主要是针对第一次类文件加载的时候就要求被transform的场景，在加载类文件的时候发出ClassFileLoad的事件，然后交给instrumenat agent来调用javaagent里注册的ClassFileTransformer实现字节码的修改。</p>
+
+<h2>Class Redefine的实现</h2>
+
+<p>类重新定义，这是Instrumentation提供的基础功能之一，主要用在已经被加载过的类上，想对其进行修改，要做这件事，我们必须要知道两个东西，一个是要修改哪个类，另外一个是那个类你想修改成怎样的结构，有了这两信息之后于是你就可以通过InstrumentationImpl的下面的redefineClasses方法去操作了：</p>
+
+<p>```
+public void</p>
+
+<pre><code>redefineClasses(ClassDefinition[]   definitions)
+        throws  ClassNotFoundException {
+    if (!isRedefineClassesSupported()) {
+        throw new UnsupportedOperationException("redefineClasses is not supported in this environment");
+    }
+    if (definitions == null) {
+        throw new NullPointerException("null passed as 'definitions' in redefineClasses");
+    }
+    for (int i = 0; i &lt; definitions.length; ++i) {
+        if (definitions[i] == null) {
+            throw new NullPointerException("element of 'definitions' is null in redefineClasses");
+        }
+    }
+    if (definitions.length == 0) {
+        return; // short-circuit if there are no changes requested
+    }
+
+    redefineClasses0(mNativeAgent, definitions);
+}
+</code></pre>
+
+<p>```</p>
+
+<p>在JVM里对应的实现是创建一个<code>VM_RedefineClasses</code>的<code>VM_Operation</code>，注意执行它的时候会stop the world的：</p>
+
+<p><code>
+jvmtiError
+JvmtiEnv::RedefineClasses(jint class_count, const jvmtiClassDefinition* class_definitions) {
+//TODO: add locking
+  VM_RedefineClasses op(class_count, class_definitions, jvmti_class_load_kind_redefine);
+  VMThread::execute(&amp;op);
+  return (op.check_error());
+} /* end RedefineClasses */
+</code></p>
+
+<p>这个过程我尽量用语言来描述清楚，不详细贴代码了，因为代码量实在有点大：</p>
+
+<ul>
+<li>挨个遍历要批量重定义的jvmtiClassDefinition</li>
+<li>然后读取新的字节码，如果有关注ClassFileLoadHook事件的，还会走对应的transform来对新的字节码再做修改</li>
+<li>字节码解析好，创建一个klassOop对象</li>
+<li>对比新老类，并要求如下：
+
+<ul>
+<li>父类是同一个</li>
+<li>实现的接口数也要相同，并且是相同的接口</li>
+<li>类访问符必须一致</li>
+<li>字段数和字段名要一致</li>
+<li>新增或删除的方法必须是private static/final的</li>
+<li>可以修改方法</li>
+</ul>
+</li>
+<li>对新类做字节码校验</li>
+<li>合并新老类的常量池</li>
+<li>如果老类上有断点，那都清除掉</li>
+<li>对老类做jit去优化</li>
+<li>对新老方法匹配的方法的jmethodid做更新，将老的jmethodId更新到新的method上</li>
+<li>新类的常量池的holer指向老的类</li>
+<li>将新类和老类的一些属性做交换，比如常量池，methods，内部类</li>
+<li>初始化新的vtable和itable</li>
+<li>交换annotation的method,field,paramenter</li>
+<li>遍历所有当前类的子类，修改他们的vtable及itable</li>
+</ul>
+
+
+<p>上面是基本的过程，总的来说就是只更新了类里内容，相当于只更新了指针指向的内容，并没有更新指针，避免了遍历大量已有类对象对它们进行更新带来的开销。</p>
+
+<h2>Class Retransform的实现</h2>
+
+<p>retransform class可以简单理解为回滚操作，具体回滚到哪个版本，这个需要看情况而定，下面不管那种情况都有一个前提，那就是javaagent已经要求要有retransform的能力了：</p>
+
+<ul>
+<li>如果类是在第一次加载的的时候就做了transform，那么做retransform的时候会将代码回滚到transform之后的代码</li>
+<li>如果类是在第一次加载的的时候没有任何变化，那么做retransform的时候会将代码回滚到最原始的类文件里的字节码</li>
+<li>如果类已经被加载了，期间类可能做过多次redefine(比如被另外一个agent做过)，但是接下来加载一个新的agent要求有retransform的能力了，然后对类做redefine的动作，那么retransform的时候会将代码回滚到上一个agent最后一次做redefine后的字节码</li>
+</ul>
+
+
+<p>我们从InstrumentationImpl的<code>retransformClasses</code>方法参数看猜到应该是做回滚操作，因为我们只指定了class</p>
+
+<p>```</p>
+
+<pre><code>public void
+retransformClasses(Class&lt;?&gt;[] classes) {
+    if (!isRetransformClassesSupported()) {
+        throw new UnsupportedOperationException(
+          "retransformClasses is not supported in this environment");
+    }
+    retransformClasses0(mNativeAgent, classes);
+}
+</code></pre>
+
+<p>```</p>
+
+<p>不过retransform的实现其实也是通过redefine的功能来实现，在类加载的时候有比较小的差别，主要体现在究竟会走哪些transform上，如果当前是做retransform的话，那将忽略那些注册到正常的TransformerManager里的ClassFileTransformer，而只会走专门为retransform而准备的TransformerManager的ClassFileTransformer，不然想象一下字节码又被无声无息改成某个中间态了。</p>
+
+<p>```
+private:
+  void post_all_envs() {</p>
+
+<pre><code>if (_load_kind != jvmti_class_load_kind_retransform) {
+  // for class load and redefine,
+  // call the non-retransformable agents
+  JvmtiEnvIterator it;
+  for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
+    if (!env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
+      // non-retransformable agents cannot retransform back,
+      // so no need to cache the original class file bytes
+      post_to_env(env, false);
+    }
+  }
+}
+JvmtiEnvIterator it;
+for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
+  // retransformable agents get all events
+  if (env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
+    // retransformable agents need to cache the original class file
+    // bytes if changes are made via the ClassFileLoadHook
+    post_to_env(env, true);
+  }
+}
+</code></pre>
+
+<p>  }
+```</p>
+
+<h2>javaagent的其他小众功能</h2>
+
+<p>javaagent除了做字节码上面的修改之外，其实还有一些小功能，有时候还是挺有用的</p>
+
+<ul>
+<li><p>获取所有已经被加载的类
+<code>
+  Class[] getAllLoadedClasses();
+</code></p></li>
+<li><p>获取所有已经被初始化过了的类
+<code>
+Class[] getInitiatedClasses(ClassLoader loader);
+</code></p></li>
+<li><p>获取某个对象的大小
+<code>
+long getObjectSize(Object objectToSize);
+</code></p></li>
+<li><p>将某个jar加入到bootstrapclasspath里优先其他jar被加载
+<code>
+void appendToBootstrapClassLoaderSearch(JarFile jarfile);
+</code></p></li>
+<li><p>将某个jar加入到classpath里供appclassloard去加载
+<code>
+void appendToSystemClassLoaderSearch(JarFile jarfile);
+</code></p></li>
+<li>设置某些native方法的前缀，主要在找native方法的时候做规则匹配
+<code>
+void setNativeMethodPrefix(ClassFileTransformer transformer, String prefix);
+</code></li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[进程物理内存远大于Xmx的问题分析]]></title>
@@ -1519,554 +1993,6 @@ collect里一开头就有个判断，如果should_do_concurrent_full_gc返回tru
 <h2>堆外内存常配合使用System GC</h2>
 
 <p>这里说的堆外内存主要针对java.nio.DirectByteBuffer，这些对象的创建过程会通过Unsafe接口直接通过os::malloc来分配内存，然后将内存的起始地址和大小存到java.nio.DirectByteBuffer对象里，这样就可以直接操作这些内存。这些内存只有在DirectByteBuffer回收掉之后才有机会被回收，因此如果这些对象大部分都移到了old，但是一直没有触发CMS GC或者Full GC，那么悲剧将会发生，因为你的物理内存被他们耗尽了，因此为了避免这种悲剧的发生，通过-XX:MaxDirectMemorySize来指定最大的堆外内存大小，当使用达到了阈值的时候将调用System.gc来做一次full gc，以此来回收掉没有被使用的堆外内存，具体堆外内存是如何回收的，其原理机制又是怎样的，还是后面写篇详细的文章吧</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM Bug:多个线程持有一把锁?]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug/"/>
-    <updated>2014-07-24T14:10:26+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug</id>
-    <content type="html"><![CDATA[<p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
-
-<h2>JVM线程dump Bug描述</h2>
-
-<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
-
-<!--more-->
-
-
-<p><img src="/images/2014/07/thread_dump_bug.jpg"></p>
-
-<h2>JStack命令的整个过程</h2>
-
-<p>&#8195;&#8195;上面提到了线程dump，那么就不得不提执行线程dump的工具---jstack，这个工具是Java自带的工具，和Java处于同一个目录下，主要是用来dump线程的，或许大家也有使用kill -3的命令来dump线程，但这两者最明显的一个区别是，前者的dump内容是由jstack这个进程来输出的，目标JVM进程将dump内容发给jstack进程(注意这是没有加-m参数的场景，指定-m参数就有点不一样了，它使用的是serviceability agent的api来实现的，底层通过ptrace的方式来获取目标进程的内容，执行过程可能会比正常模式更长点)，这意味着可以做文件重定向，将线程dump内容输出到指定文件里；而后者是由目标进程输出的，只会产生在目标进程的标准输出文件里，如果正巧标准输出里本身就有内容的话，看起来会比较乱，比如想通过一些分析工具去分析的话，要是该工具没有做过滤操作，很可能无法分析。因此一般情况我们尽量使用jstack，另外jstack还有很多实用的参数，比如<code>jstack pid &gt;thread_dump.log</code>，该命令会将指定pid的进程的线程dump到当前目录的thread_dump.log文件里。</p>
-
-<p>&#8195;&#8195;jstack是使用Java实现的，它通过给目标JVM进程发送一个threaddump的命令，目标JVM的监听线程（<code>attachListener</code>）会实时监听传过来的命令(其实attachListener线程并不是一启动就创建的，它是lazy创建启动的)，当attachListener收到threaddump命令时会调用thread_dump的方法来处理dump操作(方法在attachListener.cpp里)。</p>
-
-<pre class="prettyPrint">
-static jint thread_dump(AttachOperation* op, outputStream* out) {
-  bool print_concurrent_locks = false;
-  if (op->arg(0) != NULL && strcmp(op->arg(0), "-l") == 0) {
-    print_concurrent_locks = true;
-  }
-
-  // thread stacks
-  VM_PrintThreads op1(out, print_concurrent_locks);
-  VMThread::execute(&op1);
-
-  // JNI global handles
-  VM_PrintJNI op2(out);
-  VMThread::execute(&op2);
-
-  // Deadlock detection
-  VM_FindDeadlocks op3(out);
-  VMThread::execute(&op3);
-
-  return JNI_OK;
-}
-</pre>
-
-
-<p>&#8195;&#8195;从上面的方法可以看到，jstack命令执行了三个操作：</p>
-
-<ul>
-<li><code>VM_PrintThreads</code>：打印线程栈</li>
-<li><code>VM_PrintJNI</code>：打印JNI</li>
-<li><code>VM_FindDeadlocks</code>：打印死锁</li>
-</ul>
-
-
-<p>&#8195;&#8195;三个操作都是交给VMThread线程去执行的，VMThread线程在整个JAVA进程有且只会有一个。可以想象一下VMThread线程的简单执行过程：不断地轮询某个任务列表并在有任务时依次执行任务。任务执行时，它会根据具体的任务决定是否会暂停整个应用，也就是stop the world，这是不是让我们联想到了我们熟悉的GC过程？是的，我们的ygc以及cmsgc的两个暂停应用的阶段(init_mark和remark)都是由这个线程来执行的，并且都要求暂停整个应用。其实上面的三个操作都是要求暂停整个应用的，也就是说jstack触发的线程dump过程也是会暂停应用的，只是这个过程一般很快就结束，不会有明显的感觉。另外内存dump的jmap命令，也是会暂停整个应用的，如果使用了-F的参数，其底层也是使用serviceability agent的api来dump的，但是dump内存的速度会明显慢很多。</p>
-
-<h2>VMThread执行任务的过程</h2>
-
-<p>&#8195;&#8195;VMThread执行的任务称为vm_opration，在JVM中存在两种vm_opration，一种是需要在安全点内执行的(所谓安全点，就是系统处于一个安全的状态，除了VMThread这个线程可以正常运行之外，其他的线程都必须暂停执行，在这种情况下就可以放心执行当前的一系列vm_opration了)，另外一种是不需要在安全点内执行的。而这次我们讨论的线程dump是需要在安全点内执行的。</p>
-
-<p>&#8195;&#8195;以下是VMThread轮询的逻辑:</p>
-
-<pre class="prettyPrint">
-void VMThread::loop() {
-  assert(_cur_vm_operation == NULL, "no current one should be executing");
-
-  while(true) {
-    ...
-    //已经获取了一个vm_operation
-    if (_cur_vm_operation->evaluate_at_safepoint()) {
-        //如果该vm_operation需要在安全点内执行
-        _vm_queue->set_drain_list(safepoint_ops); 
-        SafepointSynchronize::begin();//进入安全点
-        evaluate_operation(_cur_vm_operation);
-        do {
-          _cur_vm_operation = safepoint_ops;
-          if (_cur_vm_operation != NULL) {
-            do {
-              VM_Operation* next = _cur_vm_operation->next();
-              _vm_queue->set_drain_list(next);
-              evaluate_operation(_cur_vm_operation);
-              _cur_vm_operation = next;
-              if (PrintSafepointStatistics) {
-                SafepointSynchronize::inc_vmop_coalesced_count();
-              }
-            } while (_cur_vm_operation != NULL);
-          }
-          if (_vm_queue->peek_at_safepoint_priority()) {
-            MutexLockerEx mu_queue(VMOperationQueue_lock,
-                                     Mutex::_no_safepoint_check_flag);
-            safepoint_ops = _vm_queue->drain_at_safepoint_priority();
-          } else {
-            safepoint_ops = NULL;
-          }
-        } while(safepoint_ops != NULL);
-        _vm_queue->set_drain_list(NULL);
-        SafepointSynchronize::end();//退出安全点
-      } else {  // not a safepoint operation
-        if (TraceLongCompiles) {
-          elapsedTimer t;
-          t.start();
-          evaluate_operation(_cur_vm_operation);
-          t.stop();
-          double secs = t.seconds();
-          if (secs * 1e3 > LongCompileThreshold) {
-            tty->print_cr("vm %s: %3.7f secs]", _cur_vm_operation->name(), secs);
-          }
-        } else {
-            evaluate_operation(_cur_vm_operation);
-        }
-        _cur_vm_operation = NULL;
-      }
-    }
-    ...
-  }
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;在这里重点解释下在安全点内执行的vm_opration的过程，VMThread通过不断循环从_vm_queue中获取一个或者几个需要在安全点内执行的vm_opertion，然后在准备执行这些vm_opration之前先通过调用<code>SafepointSynchronize::begin()</code>进入到安全点状态，在执行完这些vm_opration之后，调用<code>SafepointSynchronize::end()</code>，退出安全点模式，恢复之前暂停的所有线程让他们继续运行。对于安全点这块的逻辑挺复杂的，仅仅需要记住在进入安全点模式的时候会持有Threads_lock这把线程互斥锁，对线程的操作都需要获取到这把锁才能继续执行，并且还会设置安全点的状态，如果正在进入安全点过程中设置_state为_synchronizing，当所有线程都完全进入了安全点之后设置_state为_synchronized状态，退出的时候设置为_not_synchronized状态。</p>
-
-<pre class="prettyPrint">
-void SafepointSynchronize::begin() {
-  ...
-  Threads_lock->lock();
-  ...
-  _state            = _synchronizing;
-  ...
-   _state = _synchronized;
-...
-}
-
-void SafepointSynchronize::end() {
-    assert(Threads_lock->owned_by_self(), "must hold Threads_lock");
-    ...
-    _state = _not_synchronized;
-    ...
-    Threads_lock->unlock();
-}
-</pre>
-
-
-<h2>线程Dump中的VM_PrintThreads过程</h2>
-
-<p>&#8195;&#8195;回到开头提到的JVM线程Dump时的Bug，从我们打印的结果来看也基本猜到了这个过程：遍历每个Java线程，然后再遍历每一帧，打印该帧的一些信息(包括类，方法名，行数等)，在打印完每一帧之后然后打印这帧已经关联了的锁信息，下面代码就是打印每个线程的过程:</p>
-
-<pre class="prettyPrint">
-void JavaThread::print_stack_on(outputStream* st) {
-  if (!has_last_Java_frame()) return;
-  ResourceMark rm;
-  HandleMark   hm;
-
-  RegisterMap reg_map(this);
-  vframe* start_vf = last_java_vframe(®_map);
-  int count = 0;
-  for (vframe* f = start_vf; f; f = f->sender() ) {
-    if (f->is_java_frame()) {
-      javaVFrame* jvf = javaVFrame::cast(f);
-      java_lang_Throwable::print_stack_element(st, jvf->method(), jvf->bci());
-      if (JavaMonitorsInStackTrace) {
-        jvf->print_lock_info_on(st, count);
-      }
-    } else {
-      // Ignore non-Java frames
-    }
-    count++;
-    if (MaxJavaStackTraceDepth == count) return;
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;和我们这次问题相关的逻辑，也就是打印<code>"-locked"</code>的信息是正好是在<code>jvf-&gt;print_lock_info_on(st, count)</code>这行里面，请看具体实现:</p>
-
-<pre class="prettyPrint">
-void javaVFrame::print_lock_info_on(outputStream* st, int frame_count) {
-  ResourceMark rm;
-  if (frame_count == 0) {
-    if (method()->name() == vmSymbols::wait_name() &&
-        instanceKlass::cast(method()->method_holder())->name() == vmSymbols::java_lang_Object()) {
-      StackValueCollection* locs = locals();
-      if (!locs->is_empty()) {
-        StackValue* sv = locs->at(0);
-        if (sv->type() == T_OBJECT) {
-          Handle o = locs->at(0)->get_obj();
-          print_locked_object_class_name(st, o, "waiting on");
-        }
-      }
-    } else if (thread()->current_park_blocker() != NULL) {
-      oop obj = thread()->current_park_blocker();
-      Klass* k = Klass::cast(obj->klass());
-      st->print_cr("\t- %s <" INTPTR_FORMAT "> (a %s)", "parking to wait for ", (address)obj, k->external_name());
-    }
-  }
-
-  GrowableArray<MonitorInfo*>* mons = monitors();
-  if (!mons->is_empty()) {
-    bool found_first_monitor = false;
-    for (int index = (mons->length()-1); index >= 0; index--) {
-      MonitorInfo* monitor = mons->at(index);
-      if (monitor->eliminated() && is_compiled_frame()) {
-        if (monitor->owner_is_scalar_replaced()) {
-          Klass* k = Klass::cast(monitor->owner_klass());
-          st->print("\t- eliminated <owner is scalar replaced> (a %s)", k->external_name());
-        } else {
-          oop obj = monitor->owner();
-          if (obj != NULL) {
-            print_locked_object_class_name(st, obj, "eliminated");
-          }
-        }
-        continue;
-      }
-      if (monitor->owner() != NULL) {
-        const char *lock_state = "locked";
-        if (!found_first_monitor && frame_count == 0) {
-          markOop mark = monitor->owner()->mark();
-          if (mark->has_monitor() &&
-              mark->monitor() == thread()->current_pending_monitor()) {
-            lock_state = "waiting to lock";
-          }
-        }
-        found_first_monitor = true;
-        print_locked_object_class_name(st, monitor->owner(), lock_state);
-      }
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到上面的方法，再对比线程dump的结果，我们会发现很多熟悉的东西，比如<code>waiting on</code>，<code>parking to wait for</code>，<code>locked</code>，<code>waiting to lock</code>，而且也清楚了它们分别是在什么情况下会打印的。</p>
-
-<p>&#8195;&#8195;那为什么我们的例子中BLOCKED状态的线程本应该打印<code>waiting to lock</code>,但是为什么却打印了<code>locked</code>呢，那说明<code>if (mark-&gt;has_monitor() &amp;&amp; mark-&gt;monitor() == thread()-&gt;current_pending_monitor())</code> 这个条件肯定不成立，那这个在什么情况下不成立呢？在验证此问题前，有必要先了解下markOop是什么东西，它是用来干什么的？</p>
-
-<h2>markOop是什么</h2>
-
-<p>&#8195;&#8195;markOop描述了一个对象(也包括了Class)的状态信息，Java语法层面的每个对象或者Class在JVM的结构表示中都会包含一个markOop作为Header，当然还有一些其他的JVM数据结构也用它做Header。markOop由32位或者64位构成，具体位数根据运行环境而定。</p>
-
-<p>&#8195;&#8195;下面的结构图包含markOop每一位所代表的含义，markOop的值根据所描述的对象的类型(比如是锁对象还是正常的对象)以及作用的不同而不同。就算在同一个对象里，它的值也是可能会不断变化的，比如锁对象，在一开始创建的时候其实并不知道是锁对象，会当成一个正常对象来创建(在对象的类型并没有设置偏向锁的情况下，其markOop值可能是0x1)，但是随着我们执行到synchronized的代码逻辑时，就知道其实它是一个锁对象了，它的值就不再是0x1了，而是一个新的值，该值是对应栈帧结构里的监控对象列表里的某一个内存地址。</p>
-
-<pre class="prettyPrint">
-//  32 bits:
-//  --------
-//             hash:25 ------------>| age:4    biased_lock:1 lock:2 (normal object)
-//             JavaThread*:23 epoch:2 age:4    biased_lock:1 lock:2 (biased object)
-//             size:32 ------------------------------------------>| (CMS free block)
-//             PromotedObject*:29 ---------->| promo_bits:3 ----->| (CMS promoted object)
-//
-//  64 bits:
-//  --------
-//  unused:25 hash:31 -->| unused:1   age:4    biased_lock:1 lock:2 (normal object)
-//  JavaThread*:54 epoch:2 unused:1   age:4    biased_lock:1 lock:2 (biased object)
-//  PromotedObject*:61 --------------------->| promo_bits:3 ----->| (CMS promoted object)
-//  size:64 ----------------------------------------------------->| (CMS free block)
-//
-//  unused:25 hash:31 -->| cms_free:1 age:4    biased_lock:1 lock:2 (COOPs && normal object)
-//  JavaThread*:54 epoch:2 cms_free:1 age:4    biased_lock:1 lock:2 (COOPs && biased object)
-//  narrowOop:32 unused:24 cms_free:1 unused:4 promo_bits:3 ----->| (COOPs && CMS promoted object)
-//  unused:21 size:35 -->| cms_free:1 unused:7 ------------------>| (COOPs && CMS free block)
-</pre>
-
-
-<p>&#8195;&#8195;就最后的3位而言，其不同的值代表不同的含义：</p>
-
-<pre class="prettyPrint">
- enum { locked_value             = 0,//00
-         unlocked_value           = 1,//01
-         monitor_value            = 2,//10
-         marked_value             = 3,//11      
-         biased_lock_pattern      = 5 //101
-  };
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;上面的判断条件<code>“mark-&gt;has_monitor()”</code>其实就是判断最后的2位是不是10，如果是，则说明这个对象是一个监控对象，可以通过<code>mark-&gt;monitor()</code>方法获取到对应的结构体：</p>
-
-<pre class="prettyPrint">
-bool has_monitor() const {
-    return ((value() & monitor_value) != 0);
-  }
-  ObjectMonitor* monitor() const {
-    assert(has_monitor(), "check");
-    // Use xor instead of &~ to provide one extra tag-bit check.
-    return (ObjectMonitor*) (value() ^ monitor_value);
-  }
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;将一个普通对象转换为一个monitor对象的过程(就是替换markOop的值)请参考为<code>ObjectSynchronizer::inflate</code>方法，能进入到该方法说明该锁为重量级锁，也就是说这把锁其实是被多个线程竞争的。</p>
-
-<p>&#8195;&#8195;了解了markOop之后，还要了解下上面那个条件里的<code>thread()-&gt;current_pending_monitor()</code>，也就是这个值是什么时候设置进去的呢?</p>
-
-<h2>线程设置等待的监控对象的时机</h2>
-
-<p>&#8195;&#8195;设置的逻辑在<code>ObjectMonitor::enter</code>里，关键代码如下：</p>
-
-<pre class="prettyPrint">
-...
-{
-    JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-    DTRACE_MONITOR_PROBE(contended__enter, this, object(), jt);
-    if (JvmtiExport::should_post_monitor_contended_enter()) {
-      JvmtiExport::post_monitor_contended_enter(jt, this);
-    }
-    OSThreadContendState osts(Self->osthread());
-    ThreadBlockInVM tbivm(jt);
-    Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-    for (;;) {
-      jt->set_suspend_equivalent();
-      EnterI (THREAD) ;
-      if (!ExitSuspendEquivalent(jt)) break ;
-          _recursions = 0 ;
-      _succ = NULL ;
-      exit (false, Self) ;
-
-      jt->java_suspend_self();
-    }
-    Self->set_current_pending_monitor(NULL);
-  }
- ... 
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;设置当前线程等待的monitorObject是在有中文注释的那一行设置的，那么出现Bug的原因是不是正好在设置之前进行了线程dump呢？</p>
-
-<h2>水落石出</h2>
-
-<p>&#8195;&#8195;在JVM中只会有一个处于RUNNBALE状态的线程，也就是说另外一个打印<code>"-locked"</code>信息的线程是处于BLOCKED状态的。上面的第一行代码：</p>
-
-<pre class="prettyPrint">
-JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-</pre>
-
-
-<p>&#8195;&#8195;找到其实现位置：</p>
-
-<pre class="prettyPrint">
- JavaThreadBlockedOnMonitorEnterState(JavaThread *java_thread, ObjectMonitor *obj_m) :
-    JavaThreadStatusChanger(java_thread) {
-    assert((java_thread != NULL), "Java thread should not be null here");
-    _active = false;
-    if (is_alive() && ServiceUtil::visible_oop((oop)obj_m->object()) && obj_m->contentions() > 0) {
-      _stat = java_thread->get_thread_stat();
-      _active = contended_enter_begin(java_thread);//关键处
-    }
-  }
-
- static bool contended_enter_begin(JavaThread *java_thread) {
-    set_thread_status(java_thread, java_lang_Thread::BLOCKED_ON_MONITOR_ENTER);//关键处
-    ThreadStatistics* stat = java_thread->get_thread_stat();
-    stat->contended_enter();
-    bool active = ThreadService::is_thread_monitoring_contention();
-    if (active) {
-      stat->contended_enter_begin();
-    }
-    return active;
-  } 
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;上面的contended_enter_begin方法会设置java线程的状态为<code>java_lang_Thread::BLOCKED_ON_MONITOR_ENTER</code>，而线程dump时根据这个状态打印的结果如下：</p>
-
-<pre class="prettyPrint">
-const char* java_lang_Thread::thread_status_name(oop java_thread) {
-  assert(JDK_Version::is_gte_jdk15x_version() && _thread_status_offset != 0, "Must have thread status");
-  ThreadStatus status = (java_lang_Thread::ThreadStatus)java_thread->int_field(_thread_status_offset);
-  switch (status) {
-    case NEW                      : return "NEW";
-    case RUNNABLE                 : return "RUNNABLE";
-    case SLEEPING                 : return "TIMED_WAITING (sleeping)";
-    case IN_OBJECT_WAIT           : return "WAITING (on object monitor)";
-    case IN_OBJECT_WAIT_TIMED     : return "TIMED_WAITING (on object monitor)";
-    case PARKED                   : return "WAITING (parking)";
-    case PARKED_TIMED             : return "TIMED_WAITING (parking)";
-    case BLOCKED_ON_MONITOR_ENTER : return "BLOCKED (on object monitor)";
-    case TERMINATED               : return "TERMINATED";
-    default                       : return "UNKNOWN";
-  };
-}
-</pre>
-
-
-<p>&#8195;&#8195;正好对应我们dump日志中的信息<code>"BLOCKED (on object monitor)"</code>也就是说这行代码被正常执行了，那问题就可能出在<code>JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this)</code>和<code>Self-&gt;set_current_pending_monitor(this)</code>这两行代码之间的逻辑里了：</p>
-
-<pre class="prettyPrint">
-    JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-    DTRACE_MONITOR_PROBE(contended__enter, this, object(), jt);
-    if (JvmtiExport::should_post_monitor_contended_enter()) {
-      JvmtiExport::post_monitor_contended_enter(jt, this);
-    }
-    OSThreadContendState osts(Self->osthread());
-    ThreadBlockInVM tbivm(jt);
-    Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-</pre>
-
-
-<p>&#8195;&#8195;于是检查每一行的实现，前面几行都基本可以排除了，因为它们都是很简单的操作，下面来分析下<code>ThreadBlockInVM tbivm(jt)</code>这一行的实现：</p>
-
-<pre class="prettyPrint">
-ThreadBlockInVM(JavaThread *thread)
-  : ThreadStateTransition(thread) {
-    thread->frame_anchor()->make_walkable(thread);
-    trans_and_fence(_thread_in_vm, _thread_blocked);
-  }
-
- void trans_and_fence(JavaThreadState from, JavaThreadState to) { 
-    transition_and_fence(_thread, from, to); 
- }
-
- static inline void transition_and_fence(JavaThread *thread, JavaThreadState from, JavaThreadState to) {
-    assert(thread->thread_state() == from, "coming from wrong thread state");
-    assert((from & 1) == 0 && (to & 1) == 0, "odd numbers are transitions states");
-    thread->set_thread_state((JavaThreadState)(from + 1));
-    if (os::is_MP()) {
-      if (UseMembar) {
-        OrderAccess::fence();
-      } else {
-        InterfaceSupport::serialize_memory(thread);
-      }
-    }
-
-    if (SafepointSynchronize::do_call_back()) {
-      SafepointSynchronize::block(thread);
-    }
-    thread->set_thread_state(to);
-    CHECK_UNHANDLED_OOPS_ONLY(thread->clear_unhandled_oops();)
-  }
- ...
- } 
- </pre>
-
-
-<p>&#8195;&#8195;也许我们看到可能造成问题的代码了：</p>
-
-<pre class="prettyPrint">
-if (SafepointSynchronize::do_call_back()) {
-      SafepointSynchronize::block(thread);
-}
-</pre>
-
-
-<p>  <br/>
-&#8195;&#8195;想象一下，当这个线程正好执行到这个条件判断，然后进去了，从方法名上来说是不是意味着这个线程会block住，并且不往后走了呢？这样一来设置当前线程的pending_monitor对象的操作就不会被执行了，从而在打印这个线程栈的时候就会打印"-locked"信息了，那么纠结是否正如我们想的那样呢？</p>
-
-<p>首先来看条件<code>SafepointSynchronize::do_call_back()</code>是否一定会成立：</p>
-
-<pre class="prettyPrint">
-inline static bool do_call_back() {
-    return (_state != _not_synchronized);
-}
-</pre>
-
-
-<p>&#8195;&#8195;上面的VMThread执行任务的过程中说到了这个状态，当vmThread执行完了<code>SafepointSynchronize::begin()</code>之后，这个状态是设置为_synchronized的。如果正在执行，那么状态是_synchronizing，因此，当我们触发了jvm的线程dump之后，VMThread执行该操作，而且还在执行线程dump过程前，但是还只是_synchronizing的状态，那么do_call_back()将会返回true，那么将执行接下来的SafepointSynchronize::block(thread)方法：</p>
-
-<pre class="prettyPrint">
-void SafepointSynchronize::block(JavaThread *thread) {
-  assert(thread != NULL, "thread must be set");
-  assert(thread->is_Java_thread(), "not a Java thread");
-
-  ttyLocker::break_tty_lock_for_safepoint(os::current_thread_id());
-
-  if (thread->is_terminated()) {
-     thread->block_if_vm_exited();
-     return;
-  }
-
-  JavaThreadState state = thread->thread_state();
-  thread->frame_anchor()->make_walkable(thread);
-
-  switch(state) {
-    case _thread_in_vm_trans:
-    case _thread_in_Java:        // From compiled code
-      thread->set_thread_state(_thread_in_vm);
-
-      if (is_synchronizing()) {
-         Atomic::inc (&TryingToBlock) ;
-      }
-      Safepoint_lock->lock_without_safepoint_check();
-      if (is_synchronizing()) {
-        assert(_waiting_to_block > 0, "sanity check");
-        _waiting_to_block--;
-        thread->safepoint_state()->set_has_called_back(true);
-
-        DEBUG_ONLY(thread->set_visited_for_critical_count(true));
-        if (thread->in_critical()) {
-          increment_jni_active_count();
-        }
-        if (_waiting_to_block == 0) {
-          Safepoint_lock->notify_all();
-        }
-      }
-      thread->set_thread_state(_thread_blocked);
-      Safepoint_lock->unlock();
-      Threads_lock->lock_without_safepoint_check();//关键代码
-      thread->set_thread_state(state);
-      Threads_lock->unlock();
-      break;
-   ...
-  }
-  if (state != _thread_blocked_trans &&
-      state != _thread_in_vm_trans &&
-      thread->has_special_runtime_exit_condition()) {
-    thread->handle_special_runtime_exit_condition(
-      !thread->is_at_poll_safepoint() && (state != _thread_in_native_trans));
-  }
-}
-
-void Monitor::lock_without_safepoint_check (Thread * Self) {
-  assert (_owner != Self, "invariant") ;
-  ILock (Self) ;
-  assert (_owner == NULL, "invariant");
-  set_owner (Self);
-}
-
-void Monitor::lock_without_safepoint_check () {
-  lock_without_safepoint_check (Thread::current()) ;
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到上面的实现可以确定，Java线程执行时会调用<code>Threads_lock-&gt;lock_without_safepoint_check()</code>，而Threads_lock因为被VMThread持有，将一直卡死在<code>ILock (Self)</code>这个逻辑里，从而没有设置current_monitor属性，由此验证了我们的想法。</p>
-
-<h2>Bug修复</h2>
-
-<p>&#8195;&#8195;在了解了原因之后，我们可以简单的修复这个Bug。将下面两行代码调换下位置即可：</p>
-
-<pre class="prettyPrint">
- ThreadBlockInVM tbivm(jt);
- Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-</pre>
-
-
-<p>
-&#8195;&#8195;该Bug不会对生产环境产生影响，本文主要是和大家分享分析问题的过程，希望大家碰到疑惑都能有一查到底的劲儿，带着问题，不断提出自己的猜想，然后不断验证自己的猜想，最终解决问题。</p>
 ]]></content>
   </entry>
   
