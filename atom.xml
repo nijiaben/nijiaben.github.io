@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-10-21T19:05:55+08:00</updated>
+  <updated>2015-10-21T20:33:19+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -527,7 +527,7 @@
 
 <h2>总结</h2>
 
-<p>这个问题到目前为止应该挺清楚了，我们上面疑惑的锁对象为什么在堆栈里没有体现出来，但是其实线程已经持有了该锁，至于死锁发生的原因稍稍看看堆栈就明白了</p>
+<p>想象下这种场景，两个线程分别使用不同的classloader对两个类进行类加载，然而由于osgi类加载机制的缘故，在loadClass过程中可能会委托给别的classloader去加载，而正巧，这两个线程在获取当前classloader的锁之后，然后分别委托对方的classloader去加载，可以看到文章开头列的那个findLoadedClass方法，而synchronized的那个classloader正好是对方的classloader，从而导致了死锁</p>
 ]]></content>
   </entry>
   
