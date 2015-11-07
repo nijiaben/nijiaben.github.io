@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2015-10-21T20:45:09+08:00</updated>
+  <updated>2015-11-07T10:54:49+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -2742,7 +2742,7 @@
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>其实这么做的主要目的是万一用户忘记关闭socket了，那么在这个对象被回收的时候能主动关闭socket来释放一些系统资源，但是如果真的是用户忘记关闭了，那这些socket对象可能因为FinalizeThread迟迟没有执行到这些socket对象的finalize方法，而导致内存泄露，这种问题我们碰到过多次，因此对于这类情况除了大家好好注意貌似没有什么更好的方法了，该做的事真不能省.</p>
+<p>其实这么做的主要目的是万一用户忘记关闭socket了，那么在这个对象被回收的时候能主动关闭socket来释放一些系统资源，但是如果真的是用户忘记关闭了，那这些socket对象可能因为FinalizeThread迟迟没有执行到这些socket对象的finalize方法，而导致内存泄露，这种问题我们碰到过多次，需要特别注意的是对于已经没有地方引用的这些f对象，并不会在最近的那一次gc里马上回收掉，而是会延迟到下一个或者下几个gc时才被回收，因为执行finalize方法的动作无法在gc过程中执行，万一finalize方法执行很长呢，所以只能在这个gc周期里将这个垃圾对象重新标活，直到执行完finalize方法从queue里删除，这样下次gc的时候就真的是漂浮垃圾了会被回收，因此给大家的一个建议是千万不要在运行期不断创建f对象，不然会很悲剧。</p>
 
 <h2>Finalizer的客观评价</h2>
 
