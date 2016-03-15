@@ -1,0 +1,733 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>JVM源码分析之自定义类加载器如何拉长YGC - 你假笨</title>
+  <meta name="author" content="你假笨">
+
+   
+  <meta name="description" content="技术宅改变世界">
+  
+  <meta name="keywords" content="">
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://nijiaben.github.io/blog/2016/03/15/ygc-classloader">
+  <link href="/favicon.ico" rel="icon">
+  <!--
+  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
+  -->
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/bootstrap-collapse.js"></script>
+  <script src="/js/modernizr-2.0.js"></script>
+  <script src="/js/octopress.js" type="text/javascript"></script>
+  <script src="/js/application.js"></script>
+  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
+  <script type="text/javascript"]]>
+    	$(function(){     
+		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
+	         window.prettyPrint && prettyPrint();
+                 $('table').addClass('table')});
+  </script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+-->
+
+  
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-52812422-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
+
+</head>
+
+<body   >
+  <div class="navbar navbar-inverse navbar-static-top">
+  	<div class="navbar-inner">
+  	  <div class="container">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
+          <span class="fui-menu-24"></span>
+        </a>
+  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
+  	      <ul class="nav">
+    
+        <li ><a href="/">博客</a></li>
+    
+        <li ><a href="/archives/index.html">目录</a></li>
+    
+        <li ><a href="/comments/latest.html">最新评论</a></li>
+    
+        <li ><a href="/about/index.html">关于你假笨</a></li>
+    
+</ul>
+
+<ul class="nav pull-right">
+    
+    
+    
+    
+    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
+    
+    
+    
+    
+    
+    
+    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
+    
+
+    
+</ul>
+
+  	    </div>
+  	  </div>
+  	</div>
+  </div>
+  <div class="container" id="main">
+      <div class="row-fluid">
+        <div id="content">
+          <div>
+<article class="hentry" role="article">
+  
+
+  <header>
+  <div class="jumbotron">
+    JVM源码分析之自定义类加载器如何拉长YGC
+	<h5>
+
+
+
+
+
+
+
+
+  
+
+
+<i class="icon-calendar-empty"></i> <time datetime="2016-03-15T13:51:58+08:00" pubdate data-updated="true">Mar 15<span>th</span>, 2016</time></h5>
+  </div>
+</header>
+  <div class="row-fluid">
+    <div class="span12">
+      <h2>概述</h2>
+
+<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
+
+<!--more-->
+
+
+<p>再回到那个GC的问题，用的参数如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xms512m -Xmx512m -Xmn100m -XX:+UseConcMarkSweepGC</span></code></pre></td></tr></table></div></figure>
+
+
+<p>demo程序如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import com.thoughtworks.xstream.XStream;
+</span><span class='line'> 
+</span><span class='line'>public class XStreamTest {
+</span><span class='line'>     
+</span><span class='line'>    public static void main(String[] args) throws Exception {
+</span><span class='line'>        while(true){
+</span><span class='line'>            XStream xs = new XStream();
+</span><span class='line'>            xs.toString();
+</span><span class='line'>            xs = null;
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'> 
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>执行效果如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-03-14T22:48:01.502+0800: [GC [ParNew: 327680K-&gt;4258K(368640K), 0.0179071 secs] 327680K-&gt;4258K(1007616K), 0.0179448 secs] [Times: user=0.06 sys=0.01, real=0.01 secs] 
+</span><span class='line'>2016-03-14T22:48:05.975+0800: [GC [ParNew: 331938K-&gt;10239K(368640K), 0.0336279 secs] 331938K-&gt;10239K(1007616K), 0.0336593 secs] [Times: user=0.13 sys=0.02, real=0.03 secs] 
+</span><span class='line'>2016-03-14T22:48:12.215+0800: [GC [ParNew: 337919K-&gt;14444K(368640K), 0.0471005 secs] 337919K-&gt;14444K(1007616K), 0.0471257 secs] [Times: user=0.19 sys=0.02, real=0.05 secs] 
+</span><span class='line'>2016-03-14T22:48:21.768+0800: [GC [ParNew: 342124K-&gt;19088K(368640K), 0.0605017 secs] 342124K-&gt;19088K(1007616K), 0.0605295 secs] [Times: user=0.26 sys=0.03, real=0.06 secs] 
+</span><span class='line'>2016-03-14T22:48:35.180+0800: [GC [ParNew: 346768K-&gt;20633K(368640K), 0.0993470 secs] 346768K-&gt;25248K(1007616K), 0.0993777 secs] [Times: user=0.34 sys=0.04, real=0.09 secs]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>发现gc的时间越来越长，但是gc触发的时机以及回收的效果都差不多，那问题究竟在哪里呢？</p>
+
+<h2>Demo分析</h2>
+
+<p>虽然这个demo代码逻辑很简单，但是其实这是一个特殊的demo，并不简单，如果我们将XStream对象换成Object对象，会发现不存在这个问题，既然如此那有必要进去看看这个XStream的构造函数：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public XStream() {
+</span><span class='line'>        this((ReflectionProvider)null, (Mapper)((Mapper)null), (HierarchicalStreamDriver)(new XppDriver()));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /** @deprecated */
+</span><span class='line'>    public XStream(ReflectionProvider reflectionProvider, Mapper mapper, HierarchicalStreamDriver driver) {
+</span><span class='line'>        this(reflectionProvider, driver, (ClassLoader)(new CompositeClassLoader()), mapper);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /** @deprecated */
+</span><span class='line'>    public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {
+</span><span class='line'>        this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoader, Mapper mapper, final DefaultConverterLookup defaultConverterLookup) {
+</span><span class='line'>        this(reflectionProvider, driver, (ClassLoaderReference)classLoader, mapper, new ConverterLookup() {
+</span><span class='line'>            public Converter lookupConverterForType(Class type) {
+</span><span class='line'>                return defaultConverterLookup.lookupConverterForType(type);
+</span><span class='line'>            }
+</span><span class='line'>        }, new ConverterRegistry() {
+</span><span class='line'>            public void registerConverter(Converter converter, int priority) {
+</span><span class='line'>                defaultConverterLookup.registerConverter(converter, priority);
+</span><span class='line'>            }
+</span><span class='line'>        });
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /** @deprecated */
+</span><span class='line'>    public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
+</span><span class='line'>        this(reflectionProvider, driver, (ClassLoaderReference)(new ClassLoaderReference(classLoader)), mapper, converterLookup, converterRegistry);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoaderReference, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
+</span><span class='line'>        if(reflectionProvider == null) {
+</span><span class='line'>            reflectionProvider = JVM.newReflectionProvider();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        this.reflectionProvider = reflectionProvider;
+</span><span class='line'>        this.hierarchicalStreamDriver = driver;
+</span><span class='line'>        this.classLoaderReference = classLoaderReference;
+</span><span class='line'>        this.converterLookup = converterLookup;
+</span><span class='line'>        this.converterRegistry = converterRegistry;
+</span><span class='line'>        this.mapper = mapper == null?this.buildMapper():mapper;
+</span><span class='line'>        this.setupMappers();
+</span><span class='line'>        this.setupSecurity();
+</span><span class='line'>        this.setupAliases();
+</span><span class='line'>        this.setupDefaultImplementations();
+</span><span class='line'>        this.setupConverters();
+</span><span class='line'>        this.setupImmutableTypes();
+</span><span class='line'>        this.setMode(1003);
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个构造函数还是很复杂的，里面会创建很多的对象，上面还有一些方法实现我就不贴了，总之都是在不断构建各种大大小小的对象，一个XStream对象构建出来的时候大概好像有12M的样子。</p>
+
+<p>那到底是哪些对象会导致ygc不断增长呢，于是可能想到逐步替换上面这些逻辑，比如将最后一个构造函数里的那些逻辑都禁掉，然后我们再跑测试看看还会不会让ygc不断恶化，最终我们会发现，如果我们直接使用如下构造函数构造对象时，如果传入的classloader是AppClassLoader，那会发现这个问题不再出现了。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {
+</span><span class='line'>        this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
+</span><span class='line'> }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>测试代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public static void main(String[] args) throws Exception {
+</span><span class='line'>        int i=0;
+</span><span class='line'>        while (true) {
+</span><span class='line'>            XStream xs = new XStream(null,null, new ClassLoaderReference(XStreamTest.class.getClassLoader()),null, new DefaultConverterLookup());
+</span><span class='line'>            xs.toString();
+</span><span class='line'>            xs=null;
+</span><span class='line'>        }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>gc日志如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-03-14T23:10:33.537+0800: [GC [ParNew: 327680K-&gt;758K(368640K), 0.0019803 secs] 327680K-&gt;758K(1007616K), 0.0020182 secs] [Times: user=0.01 sys=0.00, real=0.00 secs] 
+</span><span class='line'>2016-03-14T23:10:35.189+0800: [GC [ParNew: 328438K-&gt;1066K(368640K), 0.0018641 secs] 328438K-&gt;1066K(1007616K), 0.0019055 secs] [Times: user=0.01 sys=0.00, real=0.01 secs] 
+</span><span class='line'>2016-03-14T23:10:36.465+0800: [GC [ParNew: 328746K-&gt;1156K(368640K), 0.0010304 secs] 328746K-&gt;1156K(1007616K), 0.0010519 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+</span><span class='line'>2016-03-14T23:10:37.767+0800: [GC [ParNew: 328836K-&gt;1065K(368640K), 0.0011329 secs] 328836K-&gt;1065K(1007616K), 0.0011543 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+</span><span class='line'>2016-03-14T23:10:39.035+0800: [GC [ParNew: 328745K-&gt;351K(368640K), 0.0043387 secs] 328745K-&gt;1127K(1007616K), 0.0043700 secs] [Times: user=0.01 sys=0.00, real=0.01 secs] 
+</span><span class='line'>2016-03-14T23:10:40.324+0800: [GC [ParNew: 328031K-&gt;160K(368640K), 0.0011579 secs] 328807K-&gt;936K(1007616K), 0.0011793 secs] [Times: user=0.01 sys=0.00, real=0.00 secs] 
+</span><span class='line'>2016-03-14T23:10:41.610+0800: [GC [ParNew: 327840K-&gt;31K(368640K), 0.0007010 secs] 328616K-&gt;826K(1007616K), 0.0007219 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+</span><span class='line'>2016-03-14T23:10:42.919+0800: [GC [ParNew: 327711K-&gt;24K(368640K), 0.0011246 secs] 328506K-&gt;819K(1007616K), 0.0011450 secs] [Times: user=0.00 sys=0.00, real=0.01 secs] 
+</span><span class='line'>2016-03-14T23:10:44.196+0800: [GC [ParNew: 327704K-&gt;24K(368640K), 0.0006797 secs] 328499K-&gt;819K(1007616K), 0.0007586 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] </span></code></pre></td></tr></table></div></figure>
+
+
+<p>是不是觉得很神奇，由此可见，这个classloader至关重要。</p>
+
+<h2>不得不说的类加载器</h2>
+
+<p>这里着重要说的两个概念是<code>初始类加载器</code>和<code>定义类加载器</code>。举个栗子说吧，AClassLoader->BClassLoader->CClassLoader，表示AClassLoader在加载类的时候会委托BClassLoader类加载器来加载，BClassLoader加载类的时候会委托CClassLoader来加载，假如我们使用AClassLoader来加载X这个类，而X这个类最终是被CClassLoader来加载的，那么我们称CClassLoader为X类的定义类加载器，而AClassLoader和BClassLoader分别为X类的初始类加载器，JVM在加载某个类的时候对这三种类加载器都会记录，记录的数据结构是一个叫做SystemDictionary的hashtable，其key是根据ClassLoader对象和类名算出来的hash值，而value是真正的由定义类加载器加载的Klass对象，因为初始类加载器和定义类加载器是不同的classloader，因此算出来的hash值也是不同的，因此在SystemDictionary里会有多项值的value都是指向同一个Klass对象。</p>
+
+<p>那么JVM为什么要分这两种类加载器呢，其实主要是为了快速找到已经加载的类，比如我们已经通过AClassLoader来触发了对X类的加载，当我们再次使用AClassLoader这个类加载器来加载X这个类的时候就不需要再委托给BClassLoader去找了，因为加载过的类在JVM里有这个类加载器的直接加载的记录，只需要直接返回对应的Klass对象即可。</p>
+
+<h2>Demo中的类加载器是否会加载类</h2>
+
+<p>我们的demo里发现构建了一个CompositeClassLoader的类加载器，那到底有没有用这个类加载器加载类呢，我们可以设置一个断点在CompositeClassLoader的loadClass方法上，于是看到下面的堆栈：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>main@1, prio=5, in group 'main', status: 'RUNNING'
+</span><span class='line'>    at com.thoughtworks.xstream.core.util.CompositeClassLoader.loadClass(CompositeClassLoader.java:53)
+</span><span class='line'>    at java.lang.Class.forName0(Class.java:-1)
+</span><span class='line'>    at java.lang.Class.forName(Class.java:249)
+</span><span class='line'>    at com.thoughtworks.xstream.XStream.buildMapperDynamically(XStream.java:191)
+</span><span class='line'>    at com.thoughtworks.xstream.XStream.buildMapper(XStream.java:170)
+</span><span class='line'>    at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:142)
+</span><span class='line'>    at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:116)
+</span><span class='line'>    at com.BBBB.main(BBBB.java:15)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可见确实有类加载的动作，根据类加载委托机制，在这个demo中我们能肯定类是交给AppClassLoader来加载的，这样一来CompositeClassLoader就变成了初始类加载器，而AppClassLoader会是定义类加载器，都会在SystemDictionary里存在，因此当我们不断new XStream的时候会不断new CompositeClassLoader对象，加载类的时候会不断往SystemDictionary里插入记录，从而使SystemDictionary越来越膨胀，那自然而然会想到如果GC过程不断去扫描这个SystemDictionary的话，那随着SystemDictionary不断膨胀，那么GC的效率也就越低，抱着验证下猜想的方式我们可以使用perf工具来看看，如果发现cpu占比排前的函数如果都是操作SystemDictionary的，那就基本验证了我们的说法，下面是perf工具的截图，基本证实了这一点。</p>
+
+<p><img src="/images/2016/03/ygc_classloader_perf.png"></p>
+
+<h2>SystemDictionary为什么会影响GC过程</h2>
+
+<p>想象一下这么个情况，我们加载了一个类，然后构建了一个对象(这个对象在eden里构建)当一个属性设置到这个类里，如果gc发生的时候，这个对象是不是要被找出来标活才行，那么自然而然我们加载的类肯定是我们一项重要的gc root，这样SystemDictionary就成为了gc过程中的被扫描对象了，事实也是如此，可以看vm的具体代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void SharedHeap::process_strong_roots(bool activate_scope,
+</span><span class='line'>                                      bool collecting_perm_gen,
+</span><span class='line'>                                      ScanningOption so,
+</span><span class='line'>                                      OopClosure* roots,
+</span><span class='line'>                                      CodeBlobClosure* code_roots,
+</span><span class='line'>                                      OopsInGenClosure* perm_blk) {
+</span><span class='line'>  StrongRootsScope srs(this, activate_scope);
+</span><span class='line'>  // General strong roots.
+</span><span class='line'>  assert(_strong_roots_parity != 0, "must have called prologue code");
+</span><span class='line'>  // _n_termination for _process_strong_tasks should be set up stream
+</span><span class='line'>  // in a method not running in a GC worker.  Otherwise the GC worker
+</span><span class='line'>  // could be trying to change the termination condition while the task
+</span><span class='line'>  // is executing in another GC worker.
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_Universe_oops_do)) {
+</span><span class='line'>    Universe::oops_do(roots);
+</span><span class='line'>    // Consider perm-gen discovered lists to be strong.
+</span><span class='line'>    //将perm gen的非强引用标记为root的一部分
+</span><span class='line'>    perm_gen()-&gt;ref_processor()-&gt;weak_oops_do(roots);
+</span><span class='line'>  }
+</span><span class='line'>  // Global (strong) JNI handles
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_JNIHandles_oops_do))
+</span><span class='line'>    JNIHandles::oops_do(roots);
+</span><span class='line'>  // All threads execute this; the individual threads are task groups.
+</span><span class='line'>  if (ParallelGCThreads &gt; 0) {
+</span><span class='line'>    Threads::possibly_parallel_oops_do(roots, code_roots);
+</span><span class='line'>  } else {
+</span><span class='line'>    Threads::oops_do(roots, code_roots);
+</span><span class='line'>  }
+</span><span class='line'>  if (!_process_strong_tasks-&gt; is_task_claimed(SH_PS_ObjectSynchronizer_oops_do))
+</span><span class='line'>    ObjectSynchronizer::oops_do(roots);
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_FlatProfiler_oops_do))
+</span><span class='line'>    FlatProfiler::oops_do(roots);
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_Management_oops_do))
+</span><span class='line'>    Management::oops_do(roots);
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_jvmti_oops_do))
+</span><span class='line'>    JvmtiExport::oops_do(roots);
+</span><span class='line'>
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_SystemDictionary_oops_do)) {
+</span><span class='line'>    if (so & SO_AllClasses) {
+</span><span class='line'>      SystemDictionary::oops_do(roots);
+</span><span class='line'>    } else if (so & SO_SystemClasses) {
+</span><span class='line'>      SystemDictionary::always_strong_oops_do(roots);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_StringTable_oops_do)) {
+</span><span class='line'>    //JavaObjectsInPerm为false，那么String intern的对象已经class对象都是存在heap里的，否则都存在perm里  
+</span><span class='line'>    if (so & SO_Strings || (!collecting_perm_gen && !JavaObjectsInPerm)) {
+</span><span class='line'>      //虽然不回收perm，但是interned的String对象不在perm里，那么还是需要遍历下StringTable里的String对象，因为这些对象在heap里
+</span><span class='line'>      StringTable::oops_do(roots);
+</span><span class='line'>    }
+</span><span class='line'>    if (JavaObjectsInPerm) {
+</span><span class='line'>      // Verify the string table contents are in the perm gen
+</span><span class='line'>      NOT_PRODUCT(StringTable::oops_do(&assert_is_perm_closure));
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_CodeCache_oops_do)) {
+</span><span class='line'>    if (so & SO_CodeCache) {
+</span><span class='line'>      // (Currently, CMSCollector uses this to do intermediate-strength collections.)
+</span><span class='line'>      assert(collecting_perm_gen, "scanning all of code cache");
+</span><span class='line'>      assert(code_roots != NULL, "must supply closure for code cache");
+</span><span class='line'>      if (code_roots != NULL) {
+</span><span class='line'>        CodeCache::blobs_do(code_roots);
+</span><span class='line'>      }
+</span><span class='line'>    } else if (so & (SO_SystemClasses|SO_AllClasses)) {
+</span><span class='line'>      if (!collecting_perm_gen) {
+</span><span class='line'>        // If we are collecting from class statics, but we are not going to
+</span><span class='line'>        // visit all of the CodeCache, collect from the non-perm roots if any.
+</span><span class='line'>        // This makes the code cache function temporarily as a source of strong
+</span><span class='line'>        // roots for oops, until the next major collection.
+</span><span class='line'>        //
+</span><span class='line'>        // If collecting_perm_gen is true, we require that this phase will call
+</span><span class='line'>        // CodeCache::do_unloading.  This will kill off nmethods with expired
+</span><span class='line'>        // weak references, such as stale invokedynamic targets.
+</span><span class='line'>        CodeCache::scavenge_root_nmethods_do(code_roots);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>    // Verify that the code cache contents are not subject to
+</span><span class='line'>    // movement by a scavenging collection.
+</span><span class='line'>    DEBUG_ONLY(CodeBlobToOopClosure assert_code_is_non_scavengable(&assert_is_non_scavengable_closure, /*do_marking=*/ false));
+</span><span class='line'>    DEBUG_ONLY(CodeCache::asserted_non_scavengable_nmethods_do(&assert_code_is_non_scavengable));
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  if (!collecting_perm_gen) {
+</span><span class='line'>    //如果是不回收perm，那找出所有perm指向new的对象  
+</span><span class='line'>    // All threads perform this; coordination is handled internally.
+</span><span class='line'>    rem_set()-&gt;younger_refs_iterate(perm_gen(), perm_blk);//perm的level是-1
+</span><span class='line'>  }
+</span><span class='line'>  _process_strong_tasks-&gt;all_tasks_completed();
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>看上面的<code>SH_PS_SystemDictionary_oops_do</code> task就知道了，这个就是对SystemDictionary进行扫描。</p>
+
+<p>但是这里要说的是虽然有对SystemDictionary进行扫描，但是ygc的过程并不会对SystemDictionary进行处理，如果要对它进行处理需要开启类卸载的vm参数，CMS算法下，CMS GC和Full GC在开启CMSClassUnloadingEnabled的情况下是可能对类做卸载动作的，此时会对SystemDictionary进行清理，所以当我们在跑上面demo的时候，通过<code>jmap -dump:live,format=b,file=heap.bin &lt;pid&gt;</code>命令执行完之后，ygc的时间瞬间降下来了，不过又会慢慢回去，这是因为jmap的这个命令会做一次gc，这个gc过程会对SystemDictionary进行清理。</p>
+
+<h2>修改VM代码验证</h2>
+
+<p>很遗憾hotspot目前没有对ygc的每个task做一个时间的统计，因此无法直接知道是不是<code>SH_PS_SystemDictionary_oops_do</code>这个task导致了ygc的时间变长，为了证明这个结论，我特地修改了一下代码，在上面的代码上加了一行：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_SystemDictionary_oops_do)) {
+</span><span class='line'>  GCTraceTime t("SystemDictionary_OOPS_DO",PrintGCDetails,true,NULL);
+</span><span class='line'>    if (so & SO_AllClasses) {
+</span><span class='line'>      SystemDictionary::oops_do(roots);
+</span><span class='line'>    } else if (so & SO_SystemClasses) {
+</span><span class='line'>      SystemDictionary::always_strong_oops_do(roots);
+</span><span class='line'>    }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后重新编译，跑我们的demo，测试结果如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-03-14T23:57:24.293+0800: [GC2016-03-14T23:57:24.294+0800: [ParNew2016-03-14T23:57:24.296+0800: [SystemDictionary_OOPS_DO, 0.0578430 secs]
+</span><span class='line'>: 81920K-&gt;3184K(92160K), 0.0889740 secs] 81920K-&gt;3184K(514048K), 0.0900970 secs] [Times: user=0.27 sys=0.00, real=0.09 secs]
+</span><span class='line'>2016-03-14T23:57:28.467+0800: [GC2016-03-14T23:57:28.468+0800: [ParNew2016-03-14T23:57:28.468+0800: [SystemDictionary_OOPS_DO, 0.0779210 secs]
+</span><span class='line'>: 85104K-&gt;5175K(92160K), 0.1071520 secs] 85104K-&gt;5175K(514048K), 0.1080490 secs] [Times: user=0.65 sys=0.00, real=0.11 secs]
+</span><span class='line'>2016-03-14T23:57:32.984+0800: [GC2016-03-14T23:57:32.984+0800: [ParNew2016-03-14T23:57:32.984+0800: [SystemDictionary_OOPS_DO, 0.1075680 secs]
+</span><span class='line'>: 87095K-&gt;8188K(92160K), 0.1434270 secs] 87095K-&gt;8188K(514048K), 0.1439870 secs] [Times: user=0.90 sys=0.01, real=0.14 secs]
+</span><span class='line'>2016-03-14T23:57:37.900+0800: [GC2016-03-14T23:57:37.900+0800: [ParNew2016-03-14T23:57:37.901+0800: [SystemDictionary_OOPS_DO, 0.1745390 secs]
+</span><span class='line'>: 90108K-&gt;7093K(92160K), 0.2876260 secs] 90108K-&gt;9992K(514048K), 0.2884150 secs] [Times: user=1.44 sys=0.02, real=0.29 secs]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们会发现YGC的时间变长的时候，SystemDictionary_OOPS_DO的时间也会相应变长多少，因此验证了我们的说法。</p>
+
+    </div>
+  </div>
+
+
+
+  <footer>
+    <hr>
+    
+    <div class="row-fluid">
+      
+      <div class="span6">
+        <p class="meta">
+        
+        
+
+
+        </p>
+      </div>
+      
+      <div class="span6 social-sharing">
+        <div class="sharing">
+  <div class="addthis_toolbox addthis_default_style ">
+  
+  
+  
+  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
+  
+  <a class="addthis_counter addthis_pill_style"></a>
+  </div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+      </div>
+      
+      
+    </div>
+    
+    <div class="row-fluid">
+      <div class="span12">
+        <p class="meta">
+          
+            <a class="basic-alignment left" href="/blog/2015/10/21/deadlock/" title="Previous Post: 消失的死锁">&laquo; 消失的死锁</a>
+          
+          
+        </p>
+      </div>
+    </div>
+  </footer>
+</article>
+
+ 
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+
+
+        </div>
+      </div>
+      <div class="row-fluid">
+        <footer class="footer-page" role="contentinfo">
+          <p>
+  Copyright &copy; 2016 - 你假笨 -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
+</p>
+
+
+        </footer>
+      </div>
+  </div>
+  
+
+
+
+
+
+  <script type="text/javascript">
+//    (function() {
+ //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
+   //   script.src = 'https://apis.google.com/js/plusone.js';
+    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
+   // })();
+  </script>
+
+
+
+
+
+
+
+</body>
+</html>

@@ -125,6 +125,50 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2016-03-15T13:51:58+08:00" pubdate data-updated="true">Mar 15<span>th</span>, 2016</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2016/03/15/ygc-classloader/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2016/03/15/ygc-classloader/">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
+      <h2>概述</h2>
+
+<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
+
+
+      
+       <a href="/blog/2016/03/15/ygc-classloader/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+</article>
+
+
+    <article class="post">
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2015-10-21T18:54:01+08:00" pubdate data-updated="true">Oct 21<span>st</span>, 2015</time></h5>
           <div class="row-fluid">
           
@@ -552,52 +596,6 @@
 
 </article>
 
-
-    <article class="post">
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2014-06-28T11:33:07+08:00" pubdate data-updated="true">Jun 28<span>th</span>, 2014</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2014/06/28/hsdb-string/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/hsdb/"><span class="badge">HSDB</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2014/06/28/hsdb-string/">通过HSDB来了解String值的真身在哪里</a></h1>
-      <p>&#8195;&#8195;最近通过<code>@RednaxelaFX</code>的一篇文章得知了HSDB，并好好研究了一下用法，对学习jvm的人来说绝对是一个利器，可以摆脱GDB，直接图形化看内存结构布局，具体的用法我就不多说了，这篇<a href="http://rednaxelafx.iteye.com/blog/1847971">文章</a>介绍得很详细了，这次写文章主要是想通过这一利器来分析下String的值在java里的内存情况，不同场景下的String的值到底是在内存里的哪块区域，这里强调的是值，并不是对象，因为对象我们都知道是存在heap里的，我们看java.lang.String的源码会看到有一个value数组，这里才是真正的值，本文顺带也是hsdb用法的一个介绍，如此利器希望给大家带来不一样的乐趣。</p>
-
-
-      
-       <a href="/blog/2014/06/28/hsdb-string/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-</article>
-
 <nav id="pagenavi">
     
     
@@ -610,7 +608,7 @@
       <div class="row-fluid">
         <footer class="footer-page" role="contentinfo">
           <p>
-  Copyright &copy; 2015 - 你假笨 -
+  Copyright &copy; 2016 - 你假笨 -
   <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
 </p>
 
