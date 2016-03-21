@@ -4,7 +4,7 @@
   <title><![CDATA[Category: GC | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/gc/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-03-15T14:22:13+08:00</updated>
+  <updated>2016-03-21T20:35:30+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -169,7 +169,7 @@ public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver d
 
 <h2>不得不说的类加载器</h2>
 
-<p>这里着重要说的两个概念是<code>初始类加载器</code>和<code>定义类加载器</code>。举个栗子说吧，AClassLoader->BClassLoader->CClassLoader，表示AClassLoader在加载类的时候会委托BClassLoader类加载器来加载，BClassLoader加载类的时候会委托CClassLoader来加载，假如我们使用AClassLoader来加载X这个类，而X这个类最终是被CClassLoader来加载的，那么我们称CClassLoader为X类的定义类加载器，而AClassLoader和BClassLoader分别为X类的初始类加载器，JVM在加载某个类的时候对这三种类加载器都会记录，记录的数据结构是一个叫做SystemDictionary的hashtable，其key是根据ClassLoader对象和类名算出来的hash值，而value是真正的由定义类加载器加载的Klass对象，因为初始类加载器和定义类加载器是不同的classloader，因此算出来的hash值也是不同的，因此在SystemDictionary里会有多项值的value都是指向同一个Klass对象。</p>
+<p>这里着重要说的两个概念是<code>初始类加载器</code>和<code>定义类加载器</code>。举个栗子说吧，AClassLoader->BClassLoader->CClassLoader，表示AClassLoader在加载类的时候会委托BClassLoader类加载器来加载，BClassLoader加载类的时候会委托CClassLoader来加载，假如我们使用AClassLoader来加载X这个类，而X这个类最终是被CClassLoader来加载的，那么我们称CClassLoader为X类的定义类加载器，而AClassLoader为X类的初始类加载器，JVM在加载某个类的时候对AClassLoader和CClassLoader进行记录，记录的数据结构是一个叫做SystemDictionary的hashtable，其key是根据ClassLoader对象和类名算出来的hash值（其实是一个entry，可以根据这个hash值找到具体的index位置，然后构建一个包含kalssName和classloader对象的entry放到map里），而value是真正的由定义类加载器加载的Klass对象，因为初始类加载器和定义类加载器是不同的classloader，因此算出来的hash值也是不同的，因此在SystemDictionary里会有多项值的value都是指向同一个Klass对象。</p>
 
 <p>那么JVM为什么要分这两种类加载器呢，其实主要是为了快速找到已经加载的类，比如我们已经通过AClassLoader来触发了对X类的加载，当我们再次使用AClassLoader这个类加载器来加载X这个类的时候就不需要再委托给BClassLoader去找了，因为加载过的类在JVM里有这个类加载器的直接加载的记录，只需要直接返回对应的Klass对象即可。</p>
 
