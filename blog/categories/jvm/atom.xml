@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JVM | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-03-21T20:35:30+08:00</updated>
+  <updated>2016-03-27T11:40:44+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,98 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之Object.wait/notify(All)完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/03/27/object-wait-notify/"/>
+    <updated>2016-03-27T11:31:25+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/03/27/object-wait-notify</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
+
+<!--more-->
+
+
+<p>Object.wait/notify(All)大家都知道主要是协同线程处理的，大家用得也很多，大概逻辑和下面的用法差不多</p>
+
+<p>```</p>
+
+<pre><code>    new Thread(){
+        public void run(){
+            synchronized (lock){
+                try{
+                    lock.wait();
+                }catch (InterruptedException e){
+                    e.printStackTrace();
+                }
+            }
+        }
+    }.start();
+
+    new Thread(){
+        public void run(){
+            synchronized (lock){
+                lock.notify();
+            }
+        }
+    }.start();
+</code></pre>
+
+<p>```</p>
+
+<p>看到上面代码，你会有什么疑惑吗？至少我会有几个问题会问自己：
+* 为什么进入wait和notify的时候要加synchronized锁
+* 既然加了synchronized锁，那当某个线程调用了wait的时候明明还在synchronized块里，其他线程怎么进入到锁里去执行notify的
+* 为什么wait方法可能会抛出InterruptedException异常
+* 如果有多个线程都进入wait状态，那某个线程调用notify唤醒线程时是否按照顺序唤起那些wait线程
+* wait的线程是在某个线程执行完notify之后立马就被唤起吗
+* notifyAll又是怎么实现全唤起的
+* wait的线程是否会影响load</p>
+
+<p>如果上面这些问题也都是你想了解的，那这篇文章或许能给你一个答案。</p>
+
+<h2>为何要加synchronized锁</h2>
+
+<p>从实现上来说，这个锁至关重要，正因为这把锁，才能让整个wait/notify玩转起来，当然我觉得其实通过其他的方式也可以实现类似的机制，不过hotspot至少是完全依赖这把锁来实现wait/notify的。</p>
+
+<p>如果要我们来实现这种机制我们会怎么去做，我们知道wait/notify是为了线程间协作而设计的，当我们执行wait的时候让线程挂起，当执行notify的时候唤醒其中一个挂起的线程，那需要有个地方来保存对象和线程之间的映射关系(可以想象一个map，key是对象，value是一个线程列表)，当调用这个对象的wait方法时，将当前线程放到这个线程列表里，当调用这个对象的notify方法时从这个线程列表里取出一个来让其继续执行，这样看来是可行的，也比较简单，那现在的问题这种映射关系放到哪里。而synchronized正好也是为线程间协作而设计的，上面碰到的问题它也要解决，或许正因为这样wait和notify的实现就直接依赖synchronzied(monitorenter/monitorexit是jvm规范里要求要去实现的)来实现了，这只是我的理解，可能初衷不是这个原因，这其实也是这篇文章迟迟未写的一个原因吧，因为我无法取证自己的理解是对的，欢迎各位在这块谈谈自己的见解。</p>
+
+<h2>wait方法执行后未退出同步块，其他线程如何进入同步块</h2>
+
+<p>这个问题其实要回答很简单，因为在wait处理过程中会临时释放同步锁，不过需要注意的是当某个线程调用notify唤起了这个线程的时候，在wait方法退出之前会重新获取这把锁，只有获取了这把锁才会继续执行，想象一下，我们知道wait的方法是被monitorenter和monitorexit包围起来，当我们在执行wait方法过程中如果释放了锁，出来的时候又不拿锁，那在执行到monitorexit指令的时候会发生什么？当然这可以做兼容，不过这实现起来还是很奇怪的。</p>
+
+<h2>为什么wait方法可能抛出InterruptedException异常</h2>
+
+<p>这个异常大家应该都知道，当我们调用了某个线程的interrupt方法时，对应的线程会抛出这个异常，wait方法也不希望破坏这种规则，因此就算当前线程因为wait一直在阻塞，当某个线程希望它起来继续执行的时候，它还是得从阻塞态恢复过来，因此wait方法被唤醒起来的时候会去检测这个状态，当有线程interrupt了它的时候，它就会抛出这个异常从阻塞状态恢复过来。</p>
+
+<p>这里有两点要注意：
+* 如果被interrupt的线程只是创建了，并没有start，那等他start之后进入wait态之后也是不能会恢复的
+* 如果被interrupt的线程已经start了，在进入wait之前，如果有线程调用了其interrupt方法，那这个wait等于什么都没做，会直接跳出来，不会阻塞</p>
+
+<h2>被notify(All)的线程有规律吗</h2>
+
+<p>这里要分情况：
+* 如果是通过notify来唤起的线程，那先进入wait的线程会先被唤起来
+* 如果是通过nootifyAll唤起的线程，默认情况是最后进入的会先被唤起来，即LIFO的策略</p>
+
+<h2>notify执行之后立马唤醒线程吗</h2>
+
+<p>其实这个大家可以验证一下，在notify之后写一些逻辑，看这些逻辑是在其他线程被唤起之前还是之后执行，这个是个细节问题，可能大家并没有关注到这个，其实hotspot里真正的实现是退出同步块的时候才会去真正唤醒对应的线程，不过这个也是个默认策略，也可以改的，在notify之后立马唤醒相关线程。</p>
+
+<h2>notifyAll是怎么实现全唤起的</h2>
+
+<p>或许大家立马想到这个简单，一个for循环就搞定了，不过在jvm里没实现这么简单，而是借助了monitorexit，上面我提到了当某个线程从wait状态恢复出来的时候，要先获取锁，然后再退出同步块，所以notifyAll的实现是调用notify的线程在退出其同步块的时候唤醒起最后一个进入wait状态的线程，然后这个线程退出同步块的时候继续唤醒其倒数第二个进入wait状态的线程，依次类推，同样这这是一个策略的问题，jvm里提供了挨个直接唤醒线程的参数，不过都很罕见就不提了。</p>
+
+<h2>wait的线程是否会影响load</h2>
+
+<p>这个或许是大家比较关心的话题，因为关乎系统性能问题，wait/nofity是通过jvm里的park/unpark机制来实现的，在linux下这种机制又是通过pthread_cond_wait/pthread_cond_signal来玩的，因此当线程进入到wait状态的时候其实是会放弃cpu的，也就是说这类线程是不会占用cpu资源。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM源码分析之自定义类加载器如何拉长YGC]]></title>
@@ -1894,276 +1986,6 @@ org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.j
 </code></p>
 
 <p>这也就说明了其实代码使用上并没有错，因此建议将deflate放到队列里去做，比如限制队列大小是100，每次最多100个数据可以被deflate，处理一个放进一个，以至于不会被活活撑死。</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM源码分析之FinalReference完全解读]]></title>
-    <link href="http://nijiaben.github.io/blog/2015/07/09/final-reference/"/>
-    <updated>2015-07-09T14:35:31+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2015/07/09/final-reference</id>
-    <content type="html"><![CDATA[<p><code>注:文章首发于InfoQ：</code><a href="" title="http://www.infoq.com/cn/articles/jvm-source-code-analysis-finalreference">JVM源码分析之FinalReference</a></p>
-
-<h2>概述</h2>
-
-<p>JAVA对象引用体系除了强引用之外，出于对性能、可扩展性等方面考虑还特地实现了四种其他引用：SoftReference、WeakReference、PhantomReference、FinalReference，本文主要想讲的是FinalReference，因为我们在使用内存分析工具比如zprofiler、mat等在分析一些oom的heap的时候，经常能看到 <code>java.lang.ref.Finalizer</code>占用的内存大小远远排在前面，而这个类占用的内存大小又和我们这次的主角<code>FinalReference</code>有着密不可分的关系。</p>
-
-<!--more-->
-
-
-<p>对于FinalReference及关联的内容，我们可能有如下印象：
-* 自己代码里从没有使用过
-* 线程dump之后，我们能看到一个叫做<code>Finalizer</code>的java线程
-* 偶尔能注意到<code>java.lang.ref.Finalizer</code>的存在
-* 我们在类里可能会写finalize方法</p>
-
-<p>那FinalReference到底存在的意义是什么，以怎样的形式和我们的代码相关联呢，这是本文要理清的问题。</p>
-
-<h2>JDK中的FinalReference</h2>
-
-<p>首先我们看看FinalReference在JDK里的实现：</p>
-
-<p>```
-class FinalReference<T> extends Reference<T> {</p>
-
-<pre><code>public FinalReference(T referent, ReferenceQueue&lt;? super T&gt; q) {
-    super(referent, q);
-}
-</code></pre>
-
-<p>}
-```</p>
-
-<p>大家应该注意到了类访问权限是package的，这也就意味着我们不能直接去对其进行扩展，但是JDK里对此类进行了扩展实现<code>java.lang.ref.Finalizer</code>，这个类也是我们在概述里提到的，而此类的访问权限也是package的，并且是final的，意味着真的不能被扩展了，接下来的重点我们围绕<code>java.lang.ref.Finalizer</code>展开(PS：后续讲Finalizer相关的其实也就是在说FinalReference)</p>
-
-<p>```
-final class Finalizer extends FinalReference { /* Package-private; must be in</p>
-
-<pre><code>                                              same package as the Reference
-                                              class */
-
-/* A native method that invokes an arbitrary object's finalize method is
-   required since the finalize method is protected
- */
-static native void invokeFinalizeMethod(Object o) throws Throwable;
-
-private static ReferenceQueue queue = new ReferenceQueue();
-private static Finalizer unfinalized = null;
-private static final Object lock = new Object();
-
-private Finalizer
-    next = null,
-    prev = null;
-
-private Finalizer(Object finalizee) {
-    super(finalizee, queue);
-    add();
-}
-
-/* Invoked by VM */
-static void register(Object finalizee) {
-    new Finalizer(finalizee);
-}  
-
-private void add() {
-    synchronized (lock) {
-        if (unfinalized != null) {
-            this.next = unfinalized;
-            unfinalized.prev = this;
-        }
-        unfinalized = this;
-    }
-}
-
-...
-</code></pre>
-
-<p>   }</p>
-
-<p>```</p>
-
-<h3>Finalizer的构造函数</h3>
-
-<p>从构造函数上我们获得下面的几个关键信息
-* private：意味着我们在外面无法自己构建这类对象
-* finalizee参数：FinalReference指向的对象引用
-* 调用add方法：将当前对象插入到Finalizer对象链里，链里的对象和Finalizer类静态相关联，言外之意是在这个链里的对象都无法被gc掉，除非将这种引用关系剥离掉（因为Finalizer类无法被unload）</p>
-
-<p>虽然外面无法创建Finalizer对象，但是注意到有一个register的静态方法，在方法里会创建这种对象，同时将这个对象加入到Finalizer对象链里，这个方法是被vm调用的，那么问题来了，vm在什么情况下会调用这个方法呢？</p>
-
-<h2>Finalizer对象何时被注册到Finalizer对象链里</h2>
-
-<p>类其实有挺多的修饰，比如final，abstract，public等等，如果一个类有final修饰，我们就说这个类是一个final类，上面列的都是语法层面我们可以显示标记的，在jvm里其实还给类标记其他一些符号，比如finalizer，表示这个类是一个finalizer类（为了和java.lang.ref.Fianlizer类进行区分，下文要提到的finalizer类的地方都说成f类），gc在处理这种类的对象的时候要做一些特殊的处理，如在这个对象被回收之前会调用一下它的finalize方法。</p>
-
-<h3>如何判断一个类是不是一个f类</h3>
-
-<p>在讲这个问题之前，我们先来看下<code>java.lang.Object</code>里的一个方法</p>
-
-<p>```</p>
-
-<pre><code>protected void finalize() throws Throwable { }
-</code></pre>
-
-<p>```</p>
-
-<p>在Object类里定义了一个名为finalize的空方法，这意味着Java世界里的所有类都会继承这个方法，甚至可以覆写该方法，并且根据方法覆写原则，如果子类覆盖此方法，方法访问权限都是至少是protected级别的，这样其子类就算没有覆写此方法也会继承此方法。</p>
-
-<p>而判断当前类是否是一个f类的标准并不仅仅是当前类是否含有一个参数为空，返回值为void的名为finalize的方法，而另外一个要求是<code>finalize方法必须非空</code>，因此我们的Object类虽然含有一个finalize方法，但是并不是一个f类，Object的对象在被gc回收的时候其实并不会去调用它的finalize方法。</p>
-
-<p>需要注意的是我们的类在被加载过程中其实就已经被标记为是否为f类了（遍历所有方法，包括父类的方法，只要有一个非空的参数为空返回void的finalize方法就认为是一个f类）。</p>
-
-<h3>f类的对象何时传到Finalizer.register方法</h3>
-
-<p>对象的创建其实是被拆分成多个步骤的，比如<code>A a=new A(2)</code>这样一条语句对应的字节码如下：</p>
-
-<p><code>
-0: new           #1                  // class A
-3: dup
-4: iconst_2
-5: invokespecial #11                 // Method "&lt;init&gt;":(I)V
-</code>
-先执行new分配好对象空间，然后再执行invokespecial调用构造函数，jvm里其实可以让用户选择在这两个时机中的任意一个将当前对象传递给Finalizer.register方法来注册到Finalizer对象链里，这个选择依赖于RegisterFinalizersAtInit这个vm参数是否被设置，默认值为true，也就是在调用构造函数返回之前调用Finalizer.register方法，如果通过-XX:-RegisterFinalizersAtInit关闭了该参数，那将在对象空间分配好之后就将这个对象注册进去。</p>
-
-<p>另外需要提一点的是当我们通过clone的方式复制一个对象的时候，如果当前类是一个f类，那么在clone完成的时候将调用Finalizer.register方法进行注册。</p>
-
-<h3>hotspot如何实现f类对象在构造函数执行完毕后调用Finalizer.register</h3>
-
-<p>这个实现比较有意思，在这里简单提一下，我们知道一个构造函数执行的时候，会去调用父类的构造函数，主要是为了能对继承自父类的属性也能做初始化，那么任何一个对象的初始化最终都会调用到Object的空构造函数里（任何空的构造函数其实并不空，会含有三条字节码指令，如下代码所示），为了不对所有的类的构造函数都做埋点调用Finalizer.register方法，hotspot的实现是在Object这个类在做初始化的时候将构造函数里的<code>return</code>指令替换为<code>_return_register_finalizer</code>指令，该指令并不是标准的字节码指令，是hotspot扩展的指令，这样在处理该指令的时候调用Finalizer.register方法，这样就在侵入性很小的情况下完美地解决了这个问题。</p>
-
-<p><code>
-0: aload_0
-1: invokespecial #21                 // Method java/lang/Object."&lt;init&gt;":()V
-4: return
-</code></p>
-
-<h2>f类对象的GC回收</h2>
-
-<h3>FinalizerThread线程</h3>
-
-<p>在Finalizer类的clinit方法（静态块）里我们看到它会创建了一个FinalizerThread的守护线程，这个线程的优先级并不是最高的，意味着在cpu很紧张的情况下其被调度的优先级可能会受到影响</p>
-
-<p>```
-  private static class FinalizerThread extends Thread {</p>
-
-<pre><code>    private volatile boolean running;
-    FinalizerThread(ThreadGroup g) {
-        super(g, "Finalizer");
-    }
-    public void run() {
-        if (running)
-            return;
-        running = true;
-        for (;;) {
-            try {
-                Finalizer f = (Finalizer)queue.remove();
-                f.runFinalizer();
-            } catch (InterruptedException x) {
-                continue;
-            }
-        }
-    }
-}
-
-static {
-    ThreadGroup tg = Thread.currentThread().getThreadGroup();
-    for (ThreadGroup tgn = tg;
-         tgn != null;
-         tg = tgn, tgn = tg.getParent());
-    Thread finalizer = new FinalizerThread(tg);
-    finalizer.setPriority(Thread.MAX_PRIORITY - 2);
-    finalizer.setDaemon(true);
-    finalizer.start();
-}
-</code></pre>
-
-<p>```
-这个线程主要就是从queue里取Finalizer对象，然后执行该对象的runFinalizer方法，这个方法主要是将Finalizer对象从Finalizer对象链里剥离出来，这样意味着下次gc发生的时候就可能将其关联的f对象gc掉了，最后将这个Finalizer对象关联的f对象传给了一个native方法invokeFinalizeMethod</p>
-
-<p>```
-private void runFinalizer() {</p>
-
-<pre><code>    synchronized (this) {
-        if (hasBeenFinalized()) return;
-        remove();
-    }
-    try {
-        Object finalizee = this.get();
-        if (finalizee != null &amp;&amp; !(finalizee instanceof java.lang.Enum)) {
-            invokeFinalizeMethod(finalizee);
-            /* Clear stack slot containing this variable, to decrease
-               the chances of false retention with a conservative GC */
-            finalizee = null;
-        }
-    } catch (Throwable x) { }
-    super.clear();
-}
-</code></pre>
-
-<p> static native void invokeFinalizeMethod(Object o) throws Throwable;</p>
-
-<p>```
-其实invokeFinalizeMethod方法就是调了这个f对象的finalize方法，看到这里大家应该恍然大悟了，整个过程都串起来了</p>
-
-<p>```
-JNIEXPORT void JNICALL
-Java_java_lang_ref_Finalizer_invokeFinalizeMethod(JNIEnv *env, jclass clazz,</p>
-
-<pre><code>                                              jobject ob)
-</code></pre>
-
-<p>{</p>
-
-<pre><code>jclass cls;
-jmethodID mid;
-
-cls = (*env)-&gt;GetObjectClass(env, ob);
-if (cls == NULL) return;
-mid = (*env)-&gt;GetMethodID(env, cls, "finalize", "()V");
-if (mid == NULL) return;
-(*env)-&gt;CallVoidMethod(env, ob, mid);
-</code></pre>
-
-<p>}
-```</p>
-
-<h3>f对象的finalize方法抛出异常会导致FinalizeThread退出吗</h3>
-
-<p>不知道大家有没有想过如果f对象的finalize方法抛了一个没捕获的异常，这个FinalizerThread会不会退出呢，细心的读者看上面的代码其实就可以找到答案，在runFinalizer方法里对Throwable的异常都进行了捕获，因此不可能出现FinalizerThread因异常未捕获而退出的情况。</p>
-
-<h3>f对象的finalize方法会执行多次吗</h3>
-
-<p>如果我们在f对象的finalize方法里重新将当前对象赋值出去，变成可达对象，当这个f对象再次变成不可达的时候还会被执行finalize方法吗？答案是否定的，因为在执行完第一次finalize方法之后，这个f对象已经和之前的Finalizer对象关系剥离了，也就是下次gc的时候不会再发现Finalizer对象指向该f对象了，自然也就不会调用这个f对象的finalize方法了。</p>
-
-<h3>Finalizer对象何时被放到ReferenceQueue里</h3>
-
-<p>除了这里要说的环节之外，整个过程大家应该都比较清楚了。</p>
-
-<p>当gc发生的时候，gc算法会判断f类对象是不是只被Finalizer类引用（f类对象被Finalizer对象引用，然后放到Finalizer对象链里），如果这个类仅仅被Finalizer对象引用的时候，说明这个对象在不久的将来会被回收了现在可以执行它的finalize方法了，于是会将这个Finalizer对象放到Finalizer类的ReferenceQueue里，但是这个f类对象其实并没有被回收，因为Finalizer这个类还对他们持有引用，在gc完成之前，jvm会调用ReferenceQueue里的lock对象的notify方法（当ReferenceQueue为空的时候，FinalizerThread线程会调用ReferenceQueue的lock对象的wait方法直到被jvm唤醒），此时就会执行上面FinalizeThread线程里看到的其他逻辑了。</p>
-
-<h2>Finalizer导致的内存泄露</h2>
-
-<p>这里举一个简单的例子，我们使用挺广的socket通信，SocksSocketImpl的父类其实就实现了finalize方法:
-```
-/<em>*
- * Cleans up if the user forgets to close it.
- </em>/
-protected void finalize() throws IOException {</p>
-
-<pre><code>close();
-</code></pre>
-
-<p>}
-```
-其实这么做的主要目的是万一用户忘记关闭socket了，那么在这个对象被回收的时候能主动关闭socket来释放一些系统资源，但是如果真的是用户忘记关闭了，那这些socket对象可能因为FinalizeThread迟迟没有执行到这些socket对象的finalize方法，而导致内存泄露，这种问题我们碰到过多次，需要特别注意的是对于已经没有地方引用的这些f对象，并不会在最近的那一次gc里马上回收掉，而是会延迟到下一个或者下几个gc时才被回收，因为执行finalize方法的动作无法在gc过程中执行，万一finalize方法执行很长呢，所以只能在这个gc周期里将这个垃圾对象重新标活，直到执行完finalize方法从queue里删除，这样下次gc的时候就真的是漂浮垃圾了会被回收，因此给大家的一个建议是千万不要在运行期不断创建f对象，不然会很悲剧。</p>
-
-<h2>Finalizer的客观评价</h2>
-
-<p>上面的过程基本对Finalizer的实现细节进行完整剖析了，java里我们看到有构造函数，但是并没有看到析构函数一说，Finalizer其实是实现了析构函数的概念，我们在对象被回收前可以执行一些『收拾性』的逻辑，应该说是一个特殊场景的补充，但是这种概念的实现给我们的f对象生命周期以及gc等带来了一些影响：
-* f对象因为Finalizer的引用而变成了一个临时的强引用，即使没有其他的强引用了，还是无法立即被回收
-* f对象至少经历两次GC才能被回收，因为只有在FinalizerThread执行完了f对象的finalize方法的情况下才有可能被下次gc回收，而有可能期间已经经历过多次gc了，但是一直还没执行f对象的finalize方法
-* cpu资源比较稀缺的情况下FinalizerThread线程有可能因为优先级比较低而延迟执行f对象的finalize方法
-* 因为f对象的finalize方法迟迟没有执行，有可能会导致大部分f对象进入到old分代，此时容易引发old分代的gc，甚至fullgc，gc暂停时间明显变长
-* f对象的finalize方法被调用了，但是这个对象其实还并没有被回收，虽然可能在不久的将来会被回收</p>
 ]]></content>
   </entry>
   

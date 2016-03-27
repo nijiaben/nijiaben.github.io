@@ -125,6 +125,52 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2016-03-27T11:31:25+08:00" pubdate data-updated="true">Mar 27<span>th</span>, 2016</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2016/03/27/object-wait-notify/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2016/03/27/object-wait-notify/">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
+      <h2>概述</h2>
+
+<p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
+
+
+      
+       <a href="/blog/2016/03/27/object-wait-notify/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+</article>
+
+
+    <article class="post">
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2016-03-15T13:51:58+08:00" pubdate data-updated="true">Mar 15<span>th</span>, 2016</time></h5>
           <div class="row-fluid">
           
@@ -546,56 +592,6 @@
 
       
        <a href="/blog/2014/07/19/java-debug-log/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-</article>
-
-
-    <article class="post">
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2014-07-08T16:39:46+08:00" pubdate data-updated="true">Jul 8<span>th</span>, 2014</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2014/07/08/jdk-sql-deadlock/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/classloader/"><span class="badge">ClassLoader</span></a>
-          
-          <a href="/blog/categories/deadlock/"><span class="badge">DeadLock</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
-      <h2>问题描述</h2>
-
-<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
-
-
-      
-       <a href="/blog/2014/07/08/jdk-sql-deadlock/">Read on &rarr;</a> 
     </div>
   </div>
 
