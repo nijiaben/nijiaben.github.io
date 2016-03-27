@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-03-27T11:40:44+08:00</updated>
+  <updated>2016-03-27T12:03:29+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -67,14 +67,18 @@
 </span><span class='line'>    }.start();</span></code></pre></td></tr></table></div></figure>
 
 
-<p>看到上面代码，你会有什么疑惑吗？至少我会有几个问题会问自己：
-* 为什么进入wait和notify的时候要加synchronized锁
-* 既然加了synchronized锁，那当某个线程调用了wait的时候明明还在synchronized块里，其他线程怎么进入到锁里去执行notify的
-* 为什么wait方法可能会抛出InterruptedException异常
-* 如果有多个线程都进入wait状态，那某个线程调用notify唤醒线程时是否按照顺序唤起那些wait线程
-* wait的线程是在某个线程执行完notify之后立马就被唤起吗
-* notifyAll又是怎么实现全唤起的
-* wait的线程是否会影响load</p>
+<p>看到上面代码，你会有什么疑惑吗？至少我会有几个问题会问自己：</p>
+
+<ul>
+<li>为什么进入wait和notify的时候要加synchronized锁</li>
+<li>既然加了synchronized锁，那当某个线程调用了wait的时候明明还在synchronized块里，其他线程怎么进入到锁里去执行notify的</li>
+<li>为什么wait方法可能会抛出InterruptedException异常</li>
+<li>如果有多个线程都进入wait状态，那某个线程调用notify唤醒线程时是否按照顺序唤起那些wait线程</li>
+<li>wait的线程是在某个线程执行完notify之后立马就被唤起吗</li>
+<li>notifyAll又是怎么实现全唤起的</li>
+<li>wait的线程是否会影响load</li>
+</ul>
+
 
 <p>如果上面这些问题也都是你想了解的，那这篇文章或许能给你一个答案。</p>
 
@@ -92,15 +96,23 @@
 
 <p>这个异常大家应该都知道，当我们调用了某个线程的interrupt方法时，对应的线程会抛出这个异常，wait方法也不希望破坏这种规则，因此就算当前线程因为wait一直在阻塞，当某个线程希望它起来继续执行的时候，它还是得从阻塞态恢复过来，因此wait方法被唤醒起来的时候会去检测这个状态，当有线程interrupt了它的时候，它就会抛出这个异常从阻塞状态恢复过来。</p>
 
-<p>这里有两点要注意：
-* 如果被interrupt的线程只是创建了，并没有start，那等他start之后进入wait态之后也是不能会恢复的
-* 如果被interrupt的线程已经start了，在进入wait之前，如果有线程调用了其interrupt方法，那这个wait等于什么都没做，会直接跳出来，不会阻塞</p>
+<p>这里有两点要注意：</p>
+
+<ul>
+<li>如果被interrupt的线程只是创建了，并没有start，那等他start之后进入wait态之后也是不能会恢复的</li>
+<li>如果被interrupt的线程已经start了，在进入wait之前，如果有线程调用了其interrupt方法，那这个wait等于什么都没做，会直接跳出来，不会阻塞</li>
+</ul>
+
 
 <h2>被notify(All)的线程有规律吗</h2>
 
-<p>这里要分情况：
-* 如果是通过notify来唤起的线程，那先进入wait的线程会先被唤起来
-* 如果是通过nootifyAll唤起的线程，默认情况是最后进入的会先被唤起来，即LIFO的策略</p>
+<p>这里要分情况：</p>
+
+<ul>
+<li>如果是通过notify来唤起的线程，那先进入wait的线程会先被唤起来</li>
+<li>如果是通过nootifyAll唤起的线程，默认情况是最后进入的会先被唤起来，即LIFO的策略</li>
+</ul>
+
 
 <h2>notify执行之后立马唤醒线程吗</h2>
 
