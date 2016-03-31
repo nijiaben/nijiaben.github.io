@@ -5,7 +5,7 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>你假笨</title>
+  <title>如何定位消耗CPU最多的线程 - 你假笨</title>
   <meta name="author" content="你假笨">
 
    
@@ -19,7 +19,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://nijiaben.github.io">
+  <link rel="canonical" href="http://nijiaben.github.io/blog/2016/03/31/cpu-thread">
   <link href="/favicon.ico" rel="icon">
   <!--
   <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
@@ -106,31 +106,14 @@
   <div class="container" id="main">
       <div class="row-fluid">
         <div id="content">
-          <div class="jumbotron">
-  <div class="container">
-    <img src="/images/header/header.jpg" width="100" height="100">
-    
-      你假笨
-    
-    <h3 class="tagline">
-      
-        jvm，linux，tcp&#8230;
-      
-    </h3>
-  </div>
-</div>
-
-
-<div class="blog-index">
+          <div>
+<article class="hentry" role="article">
   
-  
-  
-    <article>
-      
 
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+  <header>
+  <div class="jumbotron">
+    如何定位消耗CPU最多的线程
+	<h5>
 
 
 
@@ -143,23 +126,10 @@
 
 
 <i class="icon-calendar-empty"></i> <time datetime="2016-03-31T18:27:35+08:00" pubdate data-updated="true">Mar 31<span>st</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/31/cpu-thread/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/cpu/"><span class="badge">CPU</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/31/cpu-thread/">如何定位消耗CPU最多的线程</a></h1>
+  </div>
+</header>
+  <div class="row-fluid">
+    <div class="span12">
       <p>之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。</p>
 
 <p>话不多说了，先来看代码吧</p>
@@ -376,511 +346,86 @@
 
 <p><img src="/images/gzh.jpg" width="200" height="200"></p>
 
-      
-      
     </div>
   </div>
 
 
 
-    </article>
-    
+  <footer>
     <hr>
     
-  
-  
-    <article>
+    <div class="row-fluid">
       
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
+      <div class="span6">
+        <p class="meta">
+        
+        
 
 
 
+  <a href="/blog/categories/cpu/"><span class="badge">CPU</span></a>
+
+  <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
 
 
 
-  
 
-
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-27T11:31:25+08:00" pubdate data-updated="true">Mar 27<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/27/object-wait-notify/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/27/object-wait-notify/">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
-      <h2>概述</h2>
-
-<p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
-
-
+        </p>
+      </div>
       
-       <a href="/blog/2016/03/27/object-wait-notify/">Read on &rarr;</a> 
-    </div>
+      <div class="span6 social-sharing">
+        <div class="sharing">
+  <div class="addthis_toolbox addthis_default_style ">
+  
+  
+  
+  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
+  
+  <a class="addthis_counter addthis_pill_style"></a>
   </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-15T13:51:58+08:00" pubdate data-updated="true">Mar 15<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/15/ygc-classloader/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/classloader/"><span class="badge">ClassLoader</span></a>
-          
-          <a href="/blog/categories/gc/"><span class="badge">GC</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/15/ygc-classloader/">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
-      <h2>概述</h2>
-
-<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
-
-
-      
-       <a href="/blog/2016/03/15/ygc-classloader/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-10-21T18:54:01+08:00" pubdate data-updated="true">Oct 21<span>st</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/10/21/deadlock/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/deadlock/"><span class="badge">DeadLock</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/10/21/deadlock/">消失的死锁</a></h1>
-      <h2>问题描述</h2>
-
-<p>如果java层面发生了死锁，当我们使用<code>jstack</code>命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似<code>Found one Java-level deadlock:</code>的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来，这次碰到一个系统就发生类似的问题，不过这个dump文档里虽然提到了如下的死锁信息：</p>
-
-
-      
-       <a href="/blog/2015/10/21/deadlock/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-09-14T13:17:50+08:00" pubdate data-updated="true">Sep 14<span>th</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/09/14/javaagent/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/agent/"><span class="badge">Agent</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/09/14/javaagent/">JVM源码分析之javaagent原理完全解读</a></h1>
-      <p><code>注:文章首发于InfoQ：</code><a href="http://www.infoq.com/cn/articles/javaagent-illustrated">JVM源码分析之javaagent原理完全解读</a></p>
-
-<h2>概述</h2>
-
-<p>本文重点讲述javaagent的具体实现，因为它面向的是我们java程序员，而且agent都是用java编写的，不需要太多的c/c++编程基础，不过这篇文章里也会讲到JVMTIAgent(c实现的)，因为javaagent的运行还是依赖于一个特殊的JVMTIAgent。</p>
-
-
-      
-       <a href="/blog/2015/09/14/javaagent/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-08-21T18:58:53+08:00" pubdate data-updated="true">Aug 21<span>st</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/08/21/rssxmx/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/oomkiller/"><span class="badge">OOMKiller</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/08/21/rssxmx/">进程物理内存远大于Xmx的问题分析</a></h1>
-      <h2>问题描述</h2>
-
-<p>最近经常被问到一个问题，&#8221;为什么我们系统进程占用的物理内存(Res/Rss)会远远大于设置的Xmx值&#8221;，比如Xmx设置1.7G，但是top看到的Res的值却达到了3.0G，随着进程的运行，Res的值还在递增，直到达到某个值，被OS当做bad process直接被kill掉了。</p>
-
-
-      
-       <a href="/blog/2015/08/21/rssxmx/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-07-09T14:35:31+08:00" pubdate data-updated="true">Jul 9<span>th</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/07/09/final-reference/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/finalreference/"><span class="badge">FinalReference</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/07/09/final-reference/">JVM源码分析之FinalReference完全解读</a></h1>
-      <p><code>注:文章首发于InfoQ：</code><a href="" title="http://www.infoq.com/cn/articles/jvm-source-code-analysis-finalreference">JVM源码分析之FinalReference</a></p>
-
-<h2>概述</h2>
-
-<p>JAVA对象引用体系除了强引用之外，出于对性能、可扩展性等方面考虑还特地实现了四种其他引用：SoftReference、WeakReference、PhantomReference、FinalReference，本文主要想讲的是FinalReference，因为我们在使用内存分析工具比如zprofiler、mat等在分析一些oom的heap的时候，经常能看到 <code>java.lang.ref.Finalizer</code>占用的内存大小远远排在前面，而这个类占用的内存大小又和我们这次的主角<code>FinalReference</code>有着密不可分的关系。</p>
-
-
-      
-       <a href="/blog/2015/07/09/final-reference/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-05-12T13:49:57+08:00" pubdate data-updated="true">May 12<span>th</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/05/12/direct-buffer/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/05/12/direct-buffer/">JVM源码分析之堆外内存完全解读</a></h1>
-      <h2>概述</h2>
-
-<h3>广义的堆外内存</h3>
-
-<p>说到堆外内存，那大家肯定想到堆内内存，这也是我们大家接触最多的，我们在jvm参数里通常设置-Xmx来指定我们的堆的最大值，不过这还不是我们理解的Java堆，-Xmx的值是新生代和老生代的和的最大值，我们在jvm参数里通常还会加一个参数-XX:MaxPermSize来指定持久代的最大值，那么我们认识的Java堆的最大值其实是-Xmx和-XX:MaxPermSize的总和，在分代算法下，新生代，老生代和持久代是连续的虚拟地址，因为它们是一起分配的，那么剩下的都可以认为是堆外内存(广义的)了，这些包括了jvm本身在运行过程中分配的内存，codecache，jni里分配的内存，DirectByteBuffer分配的内存等等</p>
-
-<h3>狭义的堆外内存</h3>
-
-<p>而作为java开发者，我们常说的堆外内存溢出了，其实是狭义的堆外内存，这个主要是指java.nio.DirectByteBuffer在创建的时候分配内存，我们这篇文章里也主要是讲狭义的堆外内存，因为它和我们平时碰到的问题比较密切</p>
-
-
-      
-       <a href="/blog/2015/05/12/direct-buffer/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-05-07T20:02:51+08:00" pubdate data-updated="true">May 7<span>th</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/05/07/system-gc/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/systemgc/"><span class="badge">SystemGC</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/05/07/system-gc/">JVM源码分析之SystemGC完全解读</a></h1>
-      <h2>概述</h2>
-
-<p>JVM的GC一般情况下是JVM本身根据一定的条件触发的，不过我们还是可以做一些人为的触发，比如通过jvmti做强制GC，通过System.gc触发，还可以通过jmap来触发等，针对每个场景其实我们都可以写篇文章来做一个介绍，本文重点介绍下System.gc的原理</p>
-
-
-      
-       <a href="/blog/2015/05/07/system-gc/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2014-07-24T14:10:26+08:00" pubdate data-updated="true">Jul 24<span>th</span>, 2014</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2014/07/24/jvm-thread-dump-bug/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/thread/"><span class="badge">Thread</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2014/07/24/jvm-thread-dump-bug/">JVM Bug:多个线程持有一把锁?</a></h1>
-      <p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
-
-<h2>JVM线程dump Bug描述</h2>
-
-<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
-
-
-      
-       <a href="/blog/2014/07/24/jvm-thread-dump-bug/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-  
-  <div class="pagination">
-    
-    <a class="prev" href="/blog/page/2/">&larr; Older</a>
-    
-
-    
-  </div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
 </div>
+
+      </div>
+      
+      
+    </div>
+    
+    <div class="row-fluid">
+      <div class="span12">
+        <p class="meta">
+          
+            <a class="basic-alignment left" href="/blog/2016/03/27/object-wait-notify/" title="Previous Post: JVM源码分析之Object.wait/notify(All)完全解读">&laquo; JVM源码分析之Object.wait/notify(All)完全解读</a>
+          
+          
+        </p>
+      </div>
+    </div>
+  </footer>
+</article>
+
+ 
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
 
 
         </div>
