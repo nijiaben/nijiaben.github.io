@@ -142,6 +142,57 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2016-03-31T22:11:56+08:00" pubdate data-updated="true">Mar 31<span>st</span>, 2016</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2016/03/31/class-init/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/class/"><span class="badge">Class</span></a>
+          
+          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2016/03/31/class-init/">不可逆的类初始化过程</a></h1>
+      <p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
+
+
+      
+       <a href="/blog/2016/03/31/class-init/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+
+    </article>
+    
+    <hr>
+    
+  
+  
+    <article>
+      
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2016-03-31T18:27:35+08:00" pubdate data-updated="true">Mar 31<span>st</span>, 2016</time></h5>
           <div class="row-fluid">
           
@@ -597,61 +648,6 @@
 
       
        <a href="/blog/2015/05/07/system-gc/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2014-07-24T14:10:26+08:00" pubdate data-updated="true">Jul 24<span>th</span>, 2014</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2014/07/24/jvm-thread-dump-bug/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/thread/"><span class="badge">Thread</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2014/07/24/jvm-thread-dump-bug/">JVM Bug:多个线程持有一把锁?</a></h1>
-      <p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
-
-<h2>JVM线程dump Bug描述</h2>
-
-<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
-
-
-      
-       <a href="/blog/2014/07/24/jvm-thread-dump-bug/">Read on &rarr;</a> 
     </div>
   </div>
 

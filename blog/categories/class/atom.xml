@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Class | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/class/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-03-31T22:13:40+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[不可逆的类初始化过程]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/03/31/class-init/"/>
+    <updated>2016-03-31T22:11:56+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/03/31/class-init</id>
+    <content type="html"><![CDATA[<p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
+
+<!--more-->
+
+
+<p>本文我想说的是最后一个阶段，类的初始化，但是也不细说其中的过程，只围绕我们今天要说的展开。</p>
+
+<p>我们定义一个类的时候，可能有静态变量，可能有静态代码块，这些逻辑编译之后会封装到一个叫做clinit的方法里，比如下面的代码：</p>
+
+<p>```
+class BadClass{</p>
+
+<pre><code>private static int a=100;
+static{
+    System.out.println("before init");
+    int b=3/0;
+    System.out.println("after init");
+}
+
+public static void doSomething(){
+    System.out.println("do somthing");
+}
+</code></pre>
+
+<p>}
+<code>``
+编译之后我们通过</code>javap -verbose BadClass`可以看到如下字节码：</p>
+
+<p>```
+{
+  BadClass();</p>
+
+<pre><code>flags:
+Code:
+  stack=1, locals=1, args_size=1
+     0: aload_0
+     1: invokespecial #1                  // Method java/lang/Object."&lt;init&gt;":()V
+     4: return
+  LineNumberTable:
+    line 1: 0
+</code></pre>
+
+<p>  public static void doSomething();</p>
+
+<pre><code>flags: ACC_PUBLIC, ACC_STATIC
+Code:
+  stack=2, locals=0, args_size=0
+     0: getstatic     #2                  // Field java/lang/System.out:Ljava/io/PrintStream;
+     3: ldc           #3                  // String do somthing
+     5: invokevirtual #4                  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     8: return
+  LineNumberTable:
+    line 10: 0
+    line 11: 8
+</code></pre>
+
+<p>  static {};</p>
+
+<pre><code>flags: ACC_STATIC
+Code:
+  stack=2, locals=1, args_size=0
+     0: bipush        100
+     2: putstatic     #5                  // Field a:I
+     5: getstatic     #2                  // Field java/lang/System.out:Ljava/io/PrintStream;
+     8: ldc           #6                  // String before init
+    10: invokevirtual #4                  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+    13: iconst_3
+    14: iconst_0
+    15: idiv
+    16: istore_0
+    17: getstatic     #2                  // Field java/lang/System.out:Ljava/io/PrintStream;
+    20: ldc           #7                  // String after init
+    22: invokevirtual #4                  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+    25: return
+  LineNumberTable:
+    line 2: 0
+    line 4: 5
+    line 5: 13
+    line 6: 17
+    line 7: 25
+</code></pre>
+
+<p>}
+```</p>
+
+<p>我们看到最后那个方法<code>static{}</code>，其实就是我上面说的clinit方法，我们看到静态字段的初始化和静态代码库都封装在这个方法里。</p>
+
+<p>假如我们通过如下代码来测试上面的类：</p>
+
+<p>```
+ public static void main(String args[]){</p>
+
+<pre><code>    try{
+        BadClass.doSomething();
+    }catch (Throwable e){
+        e.printStackTrace();
+    }
+
+    BadClass.doSomething();
+}
+</code></pre>
+
+<p>```</p>
+
+<p>大家觉得输出会是什么？是会打印多次<code>before init</code>吗？其实不然，输出结果如下：</p>
+
+<p>```
+before init
+java.lang.ExceptionInInitializerError</p>
+
+<pre><code>at ObjectTest.main(ObjectTest.java:7)
+at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+at java.lang.reflect.Method.invoke(Method.java:606)
+at com.intellij.rt.execution.application.AppMain.main(AppMain.java:134)
+</code></pre>
+
+<p>Caused by: java.lang.ArithmeticException: / by zero</p>
+
+<pre><code>at BadClass.&lt;clinit&gt;(ObjectTest.java:25)
+... 6 more
+</code></pre>
+
+<p>Exception in thread "main" java.lang.NoClassDefFoundError: Could not initialize class BadClass</p>
+
+<pre><code>at ObjectTest.main(ObjectTest.java:12)
+at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+at java.lang.reflect.Method.invoke(Method.java:606)
+at com.intellij.rt.execution.application.AppMain.main(AppMain.java:134)
+</code></pre>
+
+<p>```</p>
+
+<p>也就是说其实是只输出了一次<code>before init</code>，这是为什么呢？</p>
+
+<p>clinit方法在我们第一次主动使用这个类的时候会触发执行，比如我们访问这个类的静态方法或者静态字段就会触发执行clinit，但是这个过程是不可逆的，也就是说当我们执行一遍之后再也不会执行了，如果在执行这个方法过程中出现了异常没有被捕获，那这个类将永远不可用，虽然我们上面执行<code>BadClass.doSomething()</code>的时候catch住了异常，但是当代码跑到这里的时候，在jvm里已经将这个类打上标记了，说这个类初始化失败了，下次再初始化的时候就会直接返回并抛出类似的异常<code>java.lang.NoClassDefFoundError: Could not initialize class BadClass</code>，而不去再次执行初始化的逻辑，具体可以看下jvm里对类的状态定义：</p>
+
+<p>```
+ enum ClassState {</p>
+
+<pre><code>unparsable_by_gc = 0,               // object is not yet parsable by gc. Value of _init_state at object allocation.
+allocated,                          // allocated (but not yet linked)
+loaded,                             // loaded and inserted in class hierarchy (but not linked yet)
+linked,                             // successfully linked/verified (but not initialized yet)
+being_initialized,                  // currently running class initializer
+fully_initialized,                  // initialized (successfull final state)
+initialization_error                // error happened during initialization
+</code></pre>
+
+<p>  };
+```</p>
+
+<p>如果clinit执行失败了，抛了一个未被捕获的异常，那将这个类的状态设置为<code>initialization_error</code>,并且无法再恢复，因为jvm会认为你这次初始化失败了，下次肯定也是失败的，为了防止不断抛这种异常，所以做了一个缓存处理，不是每次都再去执行clinit，因此大家要特别注意，类的初始化过程可千万不能出错，出错就可能只能重启了哦。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
+  
+</feed>
