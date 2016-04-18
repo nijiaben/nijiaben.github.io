@@ -142,6 +142,63 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2015-05-12T13:49:57+08:00" pubdate data-updated="true">May 12<span>th</span>, 2015</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2015/05/12/direct-buffer/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2015/05/12/direct-buffer/">JVM源码分析之堆外内存完全解读</a></h1>
+      <h2>概述</h2>
+
+<h3>广义的堆外内存</h3>
+
+<p>说到堆外内存，那大家肯定想到堆内内存，这也是我们大家接触最多的，我们在jvm参数里通常设置-Xmx来指定我们的堆的最大值，不过这还不是我们理解的Java堆，-Xmx的值是新生代和老生代的和的最大值，我们在jvm参数里通常还会加一个参数-XX:MaxPermSize来指定持久代的最大值，那么我们认识的Java堆的最大值其实是-Xmx和-XX:MaxPermSize的总和，在分代算法下，新生代，老生代和持久代是连续的虚拟地址，因为它们是一起分配的，那么剩下的都可以认为是堆外内存(广义的)了，这些包括了jvm本身在运行过程中分配的内存，codecache，jni里分配的内存，DirectByteBuffer分配的内存等等</p>
+
+<h3>狭义的堆外内存</h3>
+
+<p>而作为java开发者，我们常说的堆外内存溢出了，其实是狭义的堆外内存，这个主要是指java.nio.DirectByteBuffer在创建的时候分配内存，我们这篇文章里也主要是讲狭义的堆外内存，因为它和我们平时碰到的问题比较密切</p>
+
+
+      
+       <a href="/blog/2015/05/12/direct-buffer/">Read on &rarr;</a> 
+    </div>
+  </div>
+
+
+
+    </article>
+    
+    <hr>
+    
+  
+  
+    <article>
+      
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2015-05-07T20:02:51+08:00" pubdate data-updated="true">May 7<span>th</span>, 2015</time></h5>
           <div class="row-fluid">
           
