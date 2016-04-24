@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JDK8 | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jdk8/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-04-24T11:29:18+08:00</updated>
+  <updated>2016-04-24T11:30:16+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -21,6 +21,9 @@
     <content type="html"><![CDATA[<h2>概述</h2>
 
 <p>这篇文章基于最近在排查的一个问题，花了我们团队不少时间来排查这个问题，现象是有一些类加载器是作为key放到WeakHashMap里的，但是经历过多次full gc之后，依然坚挺地存在内存里，但是从代码上来说这些类加载器是应该被回收的，因为没有任何强引用可以到达这些类加载器了，于是我们做了内存dump，分析了下内存，发现除了一个WeakHashMap外并没有别的GC ROOT途径达到这些类加载器了，那这样一来经过多次FULL GC肯定是可以被回收的，但是事实却不是这样，为了让这个问题听起来更好理解，还是照例先上个Demo，完全模拟了这种场景。</p>
+
+<!--more-->
+
 
 <h2>Demo</h2>
 
