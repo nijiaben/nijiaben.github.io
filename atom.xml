@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-04-24T11:30:16+08:00</updated>
+  <updated>2016-04-24T11:39:15+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -317,13 +317,17 @@
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>这里提几个属性：
-* <code>_class_loader</code> : 就是对应的类加载器对象
-* <code>_keep_alive</code> : 如果这个值是true，那这个类加载器会认为是活的，会将其做为GC ROOT的一部分，gc的时候不会被回收
-* <code>_unloading</code> : 表示这个类加载是否需要卸载的
-* <code>_is_anonymous</code> : 是否匿名，这种ClassLoaderData主要是在lambda表达式里用的，这个我后面会详细说
-* <code>_next</code> : 指向下一个ClassLoaderData，在gc的时候方便遍历
-* <code>_dependencies</code> : 这个属性也是本文的重点，后面会细说</p>
+<p>这里提几个属性：</p>
+
+<ul>
+<li><code>_class_loader</code> : 就是对应的类加载器对象</li>
+<li><code>_keep_alive</code> : 如果这个值是true，那这个类加载器会认为是活的，会将其做为GC ROOT的一部分，gc的时候不会被回收</li>
+<li><code>_unloading</code> : 表示这个类加载是否需要卸载的</li>
+<li><code>_is_anonymous</code> : 是否匿名，这种ClassLoaderData主要是在lambda表达式里用的，这个我后面会详细说</li>
+<li><code>_next</code> : 指向下一个ClassLoaderData，在gc的时候方便遍历</li>
+<li><code>_dependencies</code> : 这个属性也是本文的重点，后面会细说</li>
+</ul>
+
 
 <p>再来看下构造函数：</p>
 
@@ -385,10 +389,14 @@
 
 <p>类加载器是否需要被回收，其实就是看这个类加载器对象是否是活的，所谓活的就是这个类加载器加载的任何一个类或者这些类的对象是强可达的，当然还包括这个类加载器本身就是GC ROOT一部分或者有GC ROOT可达的路径，那这个类加载器就肯定不会被回收。</p>
 
-<p>从各种GC情况来看：
-* 如果是YGC，类加载器是作为GC ROOT的，也就是都不会被回收
-* 如果是Full GC，只要是死的就会被回收
-* 如果是CMS GC，CMS GC过程也是会做标记的（这是默认情况，不过可以通过一些参数来改变），但是不会做真正的清理，真正的清理动作是发生在下次进入安全点的时候。</p>
+<p>从各种GC情况来看：</p>
+
+<ul>
+<li>如果是YGC，类加载器是作为GC ROOT的，也就是都不会被回收</li>
+<li>如果是Full GC，只要是死的就会被回收</li>
+<li>如果是CMS GC，CMS GC过程也是会做标记的（这是默认情况，不过可以通过一些参数来改变），但是不会做真正的清理，真正的清理动作是发生在下次进入安全点的时候。</li>
+</ul>
+
 
 <h2>僵尸类加载器如何产生</h2>
 
