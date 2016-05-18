@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-04-24T11:39:15+08:00</updated>
+  <updated>2016-05-18T19:01:43+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,85 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[YGC前后新生代变大？]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/05/18/ygc-worse/"/>
+    <updated>2016-05-18T18:59:44+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/05/18/ygc-worse</id>
+    <content type="html"><![CDATA[<h2>问题描述</h2>
+
+<p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): 636088K-&gt;690555K(707840K), 0.2958900 secs][CMS: 1019739K-&gt;1019733K(1310720K), 2.6208600 secs] 1655820K-&gt;1655820K(2018560K), [CMS Perm : 205486K-&gt;205486K(262144K)], 2.9174390 secs] [Times: user=3.74 sys=0.01, real=2.91 secs]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
+
+<h2>原理分析</h2>
+
+<p>要解释这个问题，我们先要弄清楚YGC的过程，parNew是新生代的gc算法，简单来说从gc roots开始扫描对象，当扫到一个只要是属于新生代的对象就将其挪到to space，但是老的对象还不会做释放，直到gc完成之后再看是否释放老的对象(比如说上面我们看到了<code>promotion failed</code>的关键字，意味着晋升失败了，也就是说to和old都装不下新生代晋升来的对象，那么在这种情况下其实是不会对eden和from里的老对象做释放的，尽管to space里已经可能存在一份副本了)，但是在gc前后不管是否晋升成功，都会对from space和to space做一个对换，也就是原来的from变成to，原来的to变成from，再来看看打印gc前后内存变化的代码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void GenCollectedHeap::print_heap_change(size_t prev_used) const {
+</span><span class='line'>  if (PrintGCDetails && Verbose) {
+</span><span class='line'>    gclog_or_tty-&gt;print(" "  SIZE_FORMAT
+</span><span class='line'>                        "-&gt;" SIZE_FORMAT
+</span><span class='line'>                        "("  SIZE_FORMAT ")",
+</span><span class='line'>                        prev_used, used(), capacity());
+</span><span class='line'>  } else {
+</span><span class='line'>    gclog_or_tty-&gt;print(" "  SIZE_FORMAT "K"
+</span><span class='line'>                        "-&gt;" SIZE_FORMAT "K"
+</span><span class='line'>                        "("  SIZE_FORMAT "K)",
+</span><span class='line'>                        prev_used / K, used() / K, capacity() / K);
+</span><span class='line'>  }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>size_t GenCollectedHeap::used() const {
+</span><span class='line'>  size_t res = 0;
+</span><span class='line'>  for (int i = 0; i &lt; _n_gens; i++) {
+</span><span class='line'>    res += _gens[i]-&gt;used();
+</span><span class='line'>  }
+</span><span class='line'>  return res;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>size_t DefNewGeneration::used() const {
+</span><span class='line'>  return eden()-&gt;used()
+</span><span class='line'>       + from()-&gt;used();      // to() is only used during scavenge
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面代码我们知道，gc之后的内存情况是used()方法返回的，其中新生代的used方法返回的是eden+from的内存，同样的上面的prev_used也是这么计算的，只是发生在gc之前，这样一来，根据我上面提到的情况，在gc之后不管是否成功都会做一次from和to的swap，那么gc之前新生代的使用大小，其实是gc之前eden+from的使用大小，而gc之后的新生代的使用大小，其实是eden+原来的to现在是使用的大小，原来的to现在使用的大小其实就是在gc过程中将eden和from拷贝过来的对象所占的大小。</p>
+
+<p>综上分析你应该知道为什么会出现这种情况了，其实是一种特殊情况，只有在出现<code>promotion failed</code>的情况下才会发生这样的情况，因为在这个情况下存在to里新增对象，而from和eden不会变化的情况</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM源码分析之JDK8下的僵尸(无法回收)类加载器]]></title>
@@ -8141,94 +8220,6 @@ msgstr ""
 <li><p>当第一次往一个对端已经close的通道写数据的时候会和上面的情况一样，会收到reset报文，当再次往这个socket写数据的时候，就会抛出<code>Broken pipe</code>了
 ，根据tcp的约定，当收到reset包的时候，上层必须要做出处理，调用将socket文件描述符进行关闭，其实也意味着pipe会关闭，因此会抛出这个顾名思义的异常</p></li>
 </ol>
-
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[pcduino搭建web站点IP映射解决方案]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site/"/>
-    <updated>2014-05-04T10:43:57+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site</id>
-    <content type="html"><![CDATA[<p>&#8195;&#8195;在pcduino上搭建站点，有两个问题首先需要解决</p>
-
-<ul>
-<li> 域名绑定</li>
-<li> 端口映射</li>
-</ul>
-
-
-<p>&#8195;&#8195;如果你的pcduino连的路由器的IP已经是公网IP，按照如下步骤查看</p>
-
-<ul>
-<li> 打开路由器管理页面，比如<code>192.168.1.1</code>，查看运行状态里WAN显示的IP地址</li>
-<li> 打开<code>www.ip138.com</code>，上面会显示你的公网IP</li>
-<li> 如果以上两者相等，说明你的路由器就是直接连的公网，否则外面可能还有一层或者几层路由器，这个就比较麻烦了，你必须要有操作他们的权限才能继续往下走</li>
-</ul>
-
-
-<!--more-->
-
-
-<h2>域名绑定解决方案</h2>
-
-<ul>
-<li> 自己在域名管理处设置A记录指向你的公网IP，该IP如果是静态的(可以通过重启路由器查看你的公网IP是否有变化来测试)，这个就好说了，如果是动态变化的，那么要么你的A记录跟着变，要么参考下一条方案</li>
-<li> 针对动态IP，一般采用花生壳的方案，一般的路由器都带有嵌入式的花生壳，在路由器里登录花生壳就好了，域名的管理需要在花生壳官网配置，同时要到你的域名商那里修改dns，指向花生壳的dns，如<code>ns1.dnsoray.net</code>和<code>ns2.dnsoray.net</code>，这样基本就可以了，同时在花生壳官网你可以看到你的域名自动帮你A记录到你的公网IP，如果显示的IP不是你的公网IP，就麻烦了，下面具体描述下这种情况</li>
-</ul>
-
-
-<p>&#8195;&#8195;某些互联网宽带服务运营商(简称为ISP)为了扩展所属地区的相关信息业务,或基于其他的技术原因,在用户拥有“公网IP”的同时，在ISP出口作出一个特殊的技术手段处理 —— NAT转发，受到被ISP 做NAT转发的用户苦不堪言,明明拥有公网IP地址，在使用大部分动态域名解析软件时却出现被解析到另外一个莫名其妙的公网IP地址。目前免费的花生壳用户是不提供此类解决方案的，除非你成为付费用户，几百块一年吧，我其实就是处于这种情况，我自己目前方案是第一种（我的比这个还复杂点，我的pcduino是处在多重局域网中，下面正要说的），比较蛋疼，没有想到好的解决方案，万一路由器重启了，我必须重新改变A记录指向，屌丝总想省点钱(空间服务费省了，要是域名服务费也能省了就好了)。</p>
-
-<h2>端口转发的设置过程</h2>
-
-<ul>
-<li> pcduino所连的路由器直接处于广域网中的情况，在你的路由器管理页面里选择&#8221;转发规则&#8221;->&#8221;虚拟服务器&#8221;里添加新条目(假如你使用的是tplink，其他的路由器也类似)，里面有几个选项，直接看帮助就知道什么意思了，该设置主要实现的功能是针对某个端口来的所有请求都转发给对应的内网机器，比如80来的web请求都转给<code>192.168.1.10</code>，这个IP就是pcduino的IP，下面会介绍pcduino上如果进行静态IP的设置</li>
-<li> 对于网中网的情况，那么就必须要有从分配了公网IP的路由器到pcduino的路由器之间涉及的所有路由器都要有操作权限，也就是通过类似上面的方法一层层指定下来，比如公网里80端口来的服务首先转到路由器1的80端口，然后再转给路由器2的80端口&#8230;以此类推，直到你的pcduino的80端口</li>
-<li> 如果嫌设置端口映射麻烦，那还有一个方案，那就是通过设置每个路由器的dmz主机，上层路由器的dmz主机指向下层路由器的IP或者pcduino的IP，这样相当于将pcduino整个暴露给公网了，当然你中间的路由器也是类似的情况，安全性有待考验</li>
-</ul>
-
-
-<h2>pcduino设置静态IP的操作</h2>
-
-<p>&#8195;&#8195;我的pcduino弄了一个<a href="http://item.jd.com/509932.html`">无usb无线网卡</a>，即插即用，很方便</p>
-
-<ul>
-<li> 首先确保你正确连接了你的无线网络，通过<code>iwlist wlan3 scan</code>查看你的无线网络参数，ESSID指定的值就是你的无线网名字，不要选错了   <br/>
-<pre class="prettyPrint">
-root@ubuntu:/etc/network# iwlist wlan3 scan       <br/>
-    wlan3     Scan completed :
-              ESSID:"RJB"   <br/>
-              Protocol:IEEE 802.11bgn         <br/>
-              Mode:Master
-              Frequency:2.452 GHz (Channel 9)
-              Encryption key:on
-              Bit Rates:150 Mb/s
-</pre></li>
-<li> 通过上面我们看到几个关键参数，<code>wlan3</code>(网卡名)，<code>ESSID</code>(网络名)，<code>Channel 9</code>(信道)</li>
-<li><p> 于是编辑/etc/network/interface，加入如下内容
-<pre class="prettyPrint">
-auto wlan3<br/>
-iface wlan3 inet static<br/>
-address 192.168.1.10<br/>
-netmask 255.255.255.0<br/>
-gateway 192.168.1.1<br/>
-wpa-ssid RJB（要连接的wlan ssid）<br/>
-wpa-passphrase wlan密码<br/>
-wireless-channel 9（信道号）
-</pre></p></li>
-<li><p> 修改dns服务器地址</p>
-
-<ul>
-<li><p>拷贝<code>/etc/resolv.conf</code>里面的内容出来，然后删除该文件</p></li>
-<li><p>新建上面的这个文件，将拷贝的内容复制进去，同时增加<code>nameserver 8.8.8.8</code></p></li>
-<li><p>执行命令<code>chattr +i /etc/resolv.conf</code>，之所以执行该步骤，是为了不让<code>resolv.conf</code>了的内容被覆盖</p></li>
-<li>重启网络<code>/etc/init.d/networking restart</code> ，抑或重启系统<code>shutdown -r now</code></li>
-</ul>
-
-
-<p> 通过以上方式就可以将你的pcduino地址绑定到静态地址了，这样这个地址你就可以放心地在路由器上配置端口转发规则了</p></li>
-</ul>
 
 ]]></content>
   </entry>

@@ -142,6 +142,126 @@
   
 
 
+<i class="icon-calendar-empty"></i> <time datetime="2016-05-18T18:59:44+08:00" pubdate data-updated="true">May 18<span>th</span>, 2016</time></h5>
+          <div class="row-fluid">
+          
+           <a href="/blog/2016/05/18/ygc-worse/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          </div>
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/gc/"><span class="badge">GC</span></a>
+          
+          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+          
+          </div>
+          
+    </div>
+    <div class="span10 post-container">
+      <h1 class="link"><a href="/blog/2016/05/18/ygc-worse/">YGC前后新生代变大？</a></h1>
+      <h2>问题描述</h2>
+
+<p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): 636088K-&gt;690555K(707840K), 0.2958900 secs][CMS: 1019739K-&gt;1019733K(1310720K), 2.6208600 secs] 1655820K-&gt;1655820K(2018560K), [CMS Perm : 205486K-&gt;205486K(262144K)], 2.9174390 secs] [Times: user=3.74 sys=0.01, real=2.91 secs]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
+
+<h2>原理分析</h2>
+
+<p>要解释这个问题，我们先要弄清楚YGC的过程，parNew是新生代的gc算法，简单来说从gc roots开始扫描对象，当扫到一个只要是属于新生代的对象就将其挪到to space，但是老的对象还不会做释放，直到gc完成之后再看是否释放老的对象(比如说上面我们看到了<code>promotion failed</code>的关键字，意味着晋升失败了，也就是说to和old都装不下新生代晋升来的对象，那么在这种情况下其实是不会对eden和from里的老对象做释放的，尽管to space里已经可能存在一份副本了)，但是在gc前后不管是否晋升成功，都会对from space和to space做一个对换，也就是原来的from变成to，原来的to变成from，再来看看打印gc前后内存变化的代码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void GenCollectedHeap::print_heap_change(size_t prev_used) const {
+</span><span class='line'>  if (PrintGCDetails && Verbose) {
+</span><span class='line'>    gclog_or_tty-&gt;print(" "  SIZE_FORMAT
+</span><span class='line'>                        "-&gt;" SIZE_FORMAT
+</span><span class='line'>                        "("  SIZE_FORMAT ")",
+</span><span class='line'>                        prev_used, used(), capacity());
+</span><span class='line'>  } else {
+</span><span class='line'>    gclog_or_tty-&gt;print(" "  SIZE_FORMAT "K"
+</span><span class='line'>                        "-&gt;" SIZE_FORMAT "K"
+</span><span class='line'>                        "("  SIZE_FORMAT "K)",
+</span><span class='line'>                        prev_used / K, used() / K, capacity() / K);
+</span><span class='line'>  }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>size_t GenCollectedHeap::used() const {
+</span><span class='line'>  size_t res = 0;
+</span><span class='line'>  for (int i = 0; i &lt; _n_gens; i++) {
+</span><span class='line'>    res += _gens[i]-&gt;used();
+</span><span class='line'>  }
+</span><span class='line'>  return res;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>size_t DefNewGeneration::used() const {
+</span><span class='line'>  return eden()-&gt;used()
+</span><span class='line'>       + from()-&gt;used();      // to() is only used during scavenge
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面代码我们知道，gc之后的内存情况是used()方法返回的，其中新生代的used方法返回的是eden+from的内存，同样的上面的prev_used也是这么计算的，只是发生在gc之前，这样一来，根据我上面提到的情况，在gc之后不管是否成功都会做一次from和to的swap，那么gc之前新生代的使用大小，其实是gc之前eden+from的使用大小，而gc之后的新生代的使用大小，其实是eden+原来的to现在是使用的大小，原来的to现在使用的大小其实就是在gc过程中将eden和from拷贝过来的对象所占的大小。</p>
+
+<p>综上分析你应该知道为什么会出现这种情况了，其实是一种特殊情况，只有在出现<code>promotion failed</code>的情况下才会发生这样的情况，因为在这个情况下存在to里新增对象，而from和eden不会变化的情况</p>
+
+      
+      
+    </div>
+  </div>
+
+
+
+    </article>
+    
+    <hr>
+    
+  
+  
+    <article>
+      
+
+  <div class="row-fluid">
+    <div class="span2 post-meta">
+	  <h5 class="date-time">
+
+
+
+
+
+
+
+
+  
+
+
 <i class="icon-calendar-empty"></i> <time datetime="2016-04-24T11:21:24+08:00" pubdate data-updated="true">Apr 24<span>th</span>, 2016</time></h5>
           <div class="row-fluid">
           
@@ -592,59 +712,6 @@
 
       
        <a href="/blog/2015/09/14/javaagent/">Read on &rarr;</a> 
-    </div>
-  </div>
-
-
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2015-08-21T18:58:53+08:00" pubdate data-updated="true">Aug 21<span>st</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/08/21/rssxmx/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/oomkiller/"><span class="badge">OOMKiller</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/08/21/rssxmx/">进程物理内存远大于Xmx的问题分析</a></h1>
-      <h2>问题描述</h2>
-
-<p>最近经常被问到一个问题，&#8221;为什么我们系统进程占用的物理内存(Res/Rss)会远远大于设置的Xmx值&#8221;，比如Xmx设置1.7G，但是top看到的Res的值却达到了3.0G，随着进程的运行，Res的值还在递增，直到达到某个值，被OS当做bad process直接被kill掉了。</p>
-
-
-      
-       <a href="/blog/2015/08/21/rssxmx/">Read on &rarr;</a> 
     </div>
   </div>
 

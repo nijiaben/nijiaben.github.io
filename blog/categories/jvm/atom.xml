@@ -4,7 +4,7 @@
   <title><![CDATA[Category: JVM | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-04-24T11:39:15+08:00</updated>
+  <updated>2016-05-18T19:01:43+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,72 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[YGC前后新生代变大？]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/05/18/ygc-worse/"/>
+    <updated>2016-05-18T18:59:44+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/05/18/ygc-worse</id>
+    <content type="html"><![CDATA[<h2>问题描述</h2>
+
+<p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
+
+<p><code>
+2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): 636088K-&gt;690555K(707840K), 0.2958900 secs][CMS: 1019739K-&gt;1019733K(1310720K), 2.6208600 secs] 1655820K-&gt;1655820K(2018560K), [CMS Perm : 205486K-&gt;205486K(262144K)], 2.9174390 secs] [Times: user=3.74 sys=0.01, real=2.91 secs]
+</code></p>
+
+<p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
+
+<h2>原理分析</h2>
+
+<p>要解释这个问题，我们先要弄清楚YGC的过程，parNew是新生代的gc算法，简单来说从gc roots开始扫描对象，当扫到一个只要是属于新生代的对象就将其挪到to space，但是老的对象还不会做释放，直到gc完成之后再看是否释放老的对象(比如说上面我们看到了<code>promotion failed</code>的关键字，意味着晋升失败了，也就是说to和old都装不下新生代晋升来的对象，那么在这种情况下其实是不会对eden和from里的老对象做释放的，尽管to space里已经可能存在一份副本了)，但是在gc前后不管是否晋升成功，都会对from space和to space做一个对换，也就是原来的from变成to，原来的to变成from，再来看看打印gc前后内存变化的代码</p>
+
+<p>```
+void GenCollectedHeap::print_heap_change(size_t prev_used) const {
+  if (PrintGCDetails &amp;&amp; Verbose) {</p>
+
+<pre><code>gclog_or_tty-&gt;print(" "  SIZE_FORMAT
+                    "-&gt;" SIZE_FORMAT
+                    "("  SIZE_FORMAT ")",
+                    prev_used, used(), capacity());
+</code></pre>
+
+<p>  } else {</p>
+
+<pre><code>gclog_or_tty-&gt;print(" "  SIZE_FORMAT "K"
+                    "-&gt;" SIZE_FORMAT "K"
+                    "("  SIZE_FORMAT "K)",
+                    prev_used / K, used() / K, capacity() / K);
+</code></pre>
+
+<p>  }
+}</p>
+
+<p>size_t GenCollectedHeap::used() const {
+  size_t res = 0;
+  for (int i = 0; i &lt; _n_gens; i++) {</p>
+
+<pre><code>res += _gens[i]-&gt;used();
+</code></pre>
+
+<p>  }
+  return res;
+}</p>
+
+<p>size_t DefNewGeneration::used() const {
+  return eden()->used()</p>
+
+<pre><code>   + from()-&gt;used();      // to() is only used during scavenge
+</code></pre>
+
+<p>}
+```</p>
+
+<p>从上面代码我们知道，gc之后的内存情况是used()方法返回的，其中新生代的used方法返回的是eden+from的内存，同样的上面的prev_used也是这么计算的，只是发生在gc之前，这样一来，根据我上面提到的情况，在gc之后不管是否成功都会做一次from和to的swap，那么gc之前新生代的使用大小，其实是gc之前eden+from的使用大小，而gc之后的新生代的使用大小，其实是eden+原来的to现在是使用的大小，原来的to现在使用的大小其实就是在gc过程中将eden和from拷贝过来的对象所占的大小。</p>
+
+<p>综上分析你应该知道为什么会出现这种情况了，其实是一种特殊情况，只有在出现<code>promotion failed</code>的情况下才会发生这样的情况，因为在这个情况下存在to里新增对象，而from和eden不会变化的情况</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM源码分析之JDK8下的僵尸(无法回收)类加载器]]></title>
@@ -869,364 +935,6 @@ at Test$1.run(Test.java:9)
 <h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
 
 <p><img src="/images/gzh.jpg" width="200" height="200"></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM源码分析之自定义类加载器如何拉长YGC]]></title>
-    <link href="http://nijiaben.github.io/blog/2016/03/15/ygc-classloader/"/>
-    <updated>2016-03-15T13:51:58+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2016/03/15/ygc-classloader</id>
-    <content type="html"><![CDATA[<h2>概述</h2>
-
-<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
-
-<!--more-->
-
-
-<p>再回到那个GC的问题，用的参数如下：</p>
-
-<p><code>
--XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xms512m -Xmx512m -Xmn100m -XX:+UseConcMarkSweepGC
-</code></p>
-
-<p>demo程序如下：</p>
-
-<p>```
-import com.thoughtworks.xstream.XStream;</p>
-
-<p>public class XStreamTest {</p>
-
-<pre><code>public static void main(String[] args) throws Exception {
-    while(true){
-        XStream xs = new XStream();
-        xs.toString();
-        xs = null;
-    }
-}
-</code></pre>
-
-<p>}
-```</p>
-
-<p>执行效果如下</p>
-
-<p><code>
-2016-03-14T22:48:01.502+0800: [GC [ParNew: 327680K-&gt;4258K(368640K), 0.0179071 secs] 327680K-&gt;4258K(1007616K), 0.0179448 secs] [Times: user=0.06 sys=0.01, real=0.01 secs]
-2016-03-14T22:48:05.975+0800: [GC [ParNew: 331938K-&gt;10239K(368640K), 0.0336279 secs] 331938K-&gt;10239K(1007616K), 0.0336593 secs] [Times: user=0.13 sys=0.02, real=0.03 secs]
-2016-03-14T22:48:12.215+0800: [GC [ParNew: 337919K-&gt;14444K(368640K), 0.0471005 secs] 337919K-&gt;14444K(1007616K), 0.0471257 secs] [Times: user=0.19 sys=0.02, real=0.05 secs]
-2016-03-14T22:48:21.768+0800: [GC [ParNew: 342124K-&gt;19088K(368640K), 0.0605017 secs] 342124K-&gt;19088K(1007616K), 0.0605295 secs] [Times: user=0.26 sys=0.03, real=0.06 secs]
-2016-03-14T22:48:35.180+0800: [GC [ParNew: 346768K-&gt;20633K(368640K), 0.0993470 secs] 346768K-&gt;25248K(1007616K), 0.0993777 secs] [Times: user=0.34 sys=0.04, real=0.09 secs]
-</code></p>
-
-<p>发现gc的时间越来越长，但是gc触发的时机以及回收的效果都差不多，那问题究竟在哪里呢？</p>
-
-<h2>Demo分析</h2>
-
-<p>虽然这个demo代码逻辑很简单，但是其实这是一个特殊的demo，并不简单，如果我们将XStream对象换成Object对象，会发现不存在这个问题，既然如此那有必要进去看看这个XStream的构造函数：</p>
-
-<p>```
- public XStream() {</p>
-
-<pre><code>    this((ReflectionProvider)null, (Mapper)((Mapper)null), (HierarchicalStreamDriver)(new XppDriver()));
-}
-
-/** @deprecated */
-public XStream(ReflectionProvider reflectionProvider, Mapper mapper, HierarchicalStreamDriver driver) {
-    this(reflectionProvider, driver, (ClassLoader)(new CompositeClassLoader()), mapper);
-}
-
-/** @deprecated */
-public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {
-    this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
-}
-
-public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoader, Mapper mapper, final DefaultConverterLookup defaultConverterLookup) {
-    this(reflectionProvider, driver, (ClassLoaderReference)classLoader, mapper, new ConverterLookup() {
-        public Converter lookupConverterForType(Class type) {
-            return defaultConverterLookup.lookupConverterForType(type);
-        }
-    }, new ConverterRegistry() {
-        public void registerConverter(Converter converter, int priority) {
-            defaultConverterLookup.registerConverter(converter, priority);
-        }
-    });
-}
-
-/** @deprecated */
-public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
-    this(reflectionProvider, driver, (ClassLoaderReference)(new ClassLoaderReference(classLoader)), mapper, converterLookup, converterRegistry);
-}
-
-public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoaderReference, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
-    if(reflectionProvider == null) {
-        reflectionProvider = JVM.newReflectionProvider();
-    }
-
-    this.reflectionProvider = reflectionProvider;
-    this.hierarchicalStreamDriver = driver;
-    this.classLoaderReference = classLoaderReference;
-    this.converterLookup = converterLookup;
-    this.converterRegistry = converterRegistry;
-    this.mapper = mapper == null?this.buildMapper():mapper;
-    this.setupMappers();
-    this.setupSecurity();
-    this.setupAliases();
-    this.setupDefaultImplementations();
-    this.setupConverters();
-    this.setupImmutableTypes();
-    this.setMode(1003);
-}
-</code></pre>
-
-<p>```</p>
-
-<p>这个构造函数还是很复杂的，里面会创建很多的对象，上面还有一些方法实现我就不贴了，总之都是在不断构建各种大大小小的对象，一个XStream对象构建出来的时候大概好像有12M的样子。</p>
-
-<p>那到底是哪些对象会导致ygc不断增长呢，于是可能想到逐步替换上面这些逻辑，比如将最后一个构造函数里的那些逻辑都禁掉，然后我们再跑测试看看还会不会让ygc不断恶化，最终我们会发现，如果我们直接使用如下构造函数构造对象时，如果传入的classloader是AppClassLoader，那会发现这个问题不再出现了。</p>
-
-<p>```
- public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {</p>
-
-<pre><code>    this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
-</code></pre>
-
-<p> }
-```</p>
-
-<p>测试代码如下：</p>
-
-<p>```    <br/>
- public static void main(String[] args) throws Exception {</p>
-
-<pre><code>    int i=0;
-    while (true) {
-        XStream xs = new XStream(null,null, new ClassLoaderReference(XStreamTest.class.getClassLoader()),null, new DefaultConverterLookup());
-        xs.toString();
-        xs=null;
-    }
-</code></pre>
-
-<p>  }
-```</p>
-
-<p>gc日志如下：</p>
-
-<p><code>
-2016-03-14T23:10:33.537+0800: [GC [ParNew: 327680K-&gt;758K(368640K), 0.0019803 secs] 327680K-&gt;758K(1007616K), 0.0020182 secs] [Times: user=0.01 sys=0.00, real=0.00 secs]
-2016-03-14T23:10:35.189+0800: [GC [ParNew: 328438K-&gt;1066K(368640K), 0.0018641 secs] 328438K-&gt;1066K(1007616K), 0.0019055 secs] [Times: user=0.01 sys=0.00, real=0.01 secs]
-2016-03-14T23:10:36.465+0800: [GC [ParNew: 328746K-&gt;1156K(368640K), 0.0010304 secs] 328746K-&gt;1156K(1007616K), 0.0010519 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
-2016-03-14T23:10:37.767+0800: [GC [ParNew: 328836K-&gt;1065K(368640K), 0.0011329 secs] 328836K-&gt;1065K(1007616K), 0.0011543 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
-2016-03-14T23:10:39.035+0800: [GC [ParNew: 328745K-&gt;351K(368640K), 0.0043387 secs] 328745K-&gt;1127K(1007616K), 0.0043700 secs] [Times: user=0.01 sys=0.00, real=0.01 secs]
-2016-03-14T23:10:40.324+0800: [GC [ParNew: 328031K-&gt;160K(368640K), 0.0011579 secs] 328807K-&gt;936K(1007616K), 0.0011793 secs] [Times: user=0.01 sys=0.00, real=0.00 secs]
-2016-03-14T23:10:41.610+0800: [GC [ParNew: 327840K-&gt;31K(368640K), 0.0007010 secs] 328616K-&gt;826K(1007616K), 0.0007219 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
-2016-03-14T23:10:42.919+0800: [GC [ParNew: 327711K-&gt;24K(368640K), 0.0011246 secs] 328506K-&gt;819K(1007616K), 0.0011450 secs] [Times: user=0.00 sys=0.00, real=0.01 secs]
-2016-03-14T23:10:44.196+0800: [GC [ParNew: 327704K-&gt;24K(368640K), 0.0006797 secs] 328499K-&gt;819K(1007616K), 0.0007586 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
-</code></p>
-
-<p>是不是觉得很神奇，由此可见，这个classloader至关重要。</p>
-
-<h2>不得不说的类加载器</h2>
-
-<p>这里着重要说的两个概念是<code>初始类加载器</code>和<code>定义类加载器</code>。举个栗子说吧，AClassLoader->BClassLoader->CClassLoader，表示AClassLoader在加载类的时候会委托BClassLoader类加载器来加载，BClassLoader加载类的时候会委托CClassLoader来加载，假如我们使用AClassLoader来加载X这个类，而X这个类最终是被CClassLoader来加载的，那么我们称CClassLoader为X类的定义类加载器，而AClassLoader为X类的初始类加载器，JVM在加载某个类的时候对AClassLoader和CClassLoader进行记录，记录的数据结构是一个叫做SystemDictionary的hashtable，其key是根据ClassLoader对象和类名算出来的hash值（其实是一个entry，可以根据这个hash值找到具体的index位置，然后构建一个包含kalssName和classloader对象的entry放到map里），而value是真正的由定义类加载器加载的Klass对象，因为初始类加载器和定义类加载器是不同的classloader，因此算出来的hash值也是不同的，因此在SystemDictionary里会有多项值的value都是指向同一个Klass对象。</p>
-
-<p>那么JVM为什么要分这两种类加载器呢，其实主要是为了快速找到已经加载的类，比如我们已经通过AClassLoader来触发了对X类的加载，当我们再次使用AClassLoader这个类加载器来加载X这个类的时候就不需要再委托给BClassLoader去找了，因为加载过的类在JVM里有这个类加载器的直接加载的记录，只需要直接返回对应的Klass对象即可。</p>
-
-<h2>Demo中的类加载器是否会加载类</h2>
-
-<p>我们的demo里发现构建了一个CompositeClassLoader的类加载器，那到底有没有用这个类加载器加载类呢，我们可以设置一个断点在CompositeClassLoader的loadClass方法上，于是看到下面的堆栈：</p>
-
-<p>```
-main@1, prio=5, in group 'main', status: 'RUNNING'</p>
-
-<pre><code>  at com.thoughtworks.xstream.core.util.CompositeClassLoader.loadClass(CompositeClassLoader.java:53)
-  at java.lang.Class.forName0(Class.java:-1)
-  at java.lang.Class.forName(Class.java:249)
-  at com.thoughtworks.xstream.XStream.buildMapperDynamically(XStream.java:191)
-  at com.thoughtworks.xstream.XStream.buildMapper(XStream.java:170)
-  at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:142)
-  at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:116)
-  at com.BBBB.main(BBBB.java:15)
-</code></pre>
-
-<p>```</p>
-
-<p>可见确实有类加载的动作，根据类加载委托机制，在这个demo中我们能肯定类是交给AppClassLoader来加载的，这样一来CompositeClassLoader就变成了初始类加载器，而AppClassLoader会是定义类加载器，都会在SystemDictionary里存在，因此当我们不断new XStream的时候会不断new CompositeClassLoader对象，加载类的时候会不断往SystemDictionary里插入记录，从而使SystemDictionary越来越膨胀，那自然而然会想到如果GC过程不断去扫描这个SystemDictionary的话，那随着SystemDictionary不断膨胀，那么GC的效率也就越低，抱着验证下猜想的方式我们可以使用perf工具来看看，如果发现cpu占比排前的函数如果都是操作SystemDictionary的，那就基本验证了我们的说法，下面是perf工具的截图，基本证实了这一点。</p>
-
-<p><img src="/images/2016/03/ygc_classloader_perf.png"></p>
-
-<h2>SystemDictionary为什么会影响GC过程</h2>
-
-<p>想象一下这么个情况，我们加载了一个类，然后构建了一个对象(这个对象在eden里构建)当一个属性设置到这个类里，如果gc发生的时候，这个对象是不是要被找出来标活才行，那么自然而然我们加载的类肯定是我们一项重要的gc root，这样SystemDictionary就成为了gc过程中的被扫描对象了，事实也是如此，可以看vm的具体代码：</p>
-
-<p>```
-void SharedHeap::process_strong_roots(bool activate_scope,</p>
-
-<pre><code>                                  bool collecting_perm_gen,
-                                  ScanningOption so,
-                                  OopClosure* roots,
-                                  CodeBlobClosure* code_roots,
-                                  OopsInGenClosure* perm_blk) {
-</code></pre>
-
-<p>  StrongRootsScope srs(this, activate_scope);
-  // General strong roots.
-  assert(<em>strong_roots_parity != 0, "must have called prologue code");
-  // </em>n_termination for <em>process_strong_tasks should be set up stream
-  // in a method not running in a GC worker.  Otherwise the GC worker
-  // could be trying to change the termination condition while the task
-  // is executing in another GC worker.
-  if (!</em>process_strong_tasks->is_task_claimed(SH_PS_Universe_oops_do)) {</p>
-
-<pre><code>Universe::oops_do(roots);
-// Consider perm-gen discovered lists to be strong.
-//将perm gen的非强引用标记为root的一部分
-perm_gen()-&gt;ref_processor()-&gt;weak_oops_do(roots);
-</code></pre>
-
-<p>  }
-  // Global (strong) JNI handles
-  if (!_process_strong_tasks->is_task_claimed(SH_PS_JNIHandles_oops_do))</p>
-
-<pre><code>JNIHandles::oops_do(roots);
-</code></pre>
-
-<p>  // All threads execute this; the individual threads are task groups.
-  if (ParallelGCThreads > 0) {</p>
-
-<pre><code>Threads::possibly_parallel_oops_do(roots, code_roots);
-</code></pre>
-
-<p>  } else {</p>
-
-<pre><code>Threads::oops_do(roots, code_roots);
-</code></pre>
-
-<p>  }
-  if (!_process_strong_tasks-> is_task_claimed(SH_PS_ObjectSynchronizer_oops_do))</p>
-
-<pre><code>ObjectSynchronizer::oops_do(roots);
-</code></pre>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_FlatProfiler_oops_do))</p>
-
-<pre><code>FlatProfiler::oops_do(roots);
-</code></pre>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_Management_oops_do))</p>
-
-<pre><code>Management::oops_do(roots);
-</code></pre>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_jvmti_oops_do))</p>
-
-<pre><code>JvmtiExport::oops_do(roots);
-</code></pre>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_SystemDictionary_oops_do)) {</p>
-
-<pre><code>if (so &amp; SO_AllClasses) {
-  SystemDictionary::oops_do(roots);
-} else if (so &amp; SO_SystemClasses) {
-  SystemDictionary::always_strong_oops_do(roots);
-}
-</code></pre>
-
-<p>  }</p>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_StringTable_oops_do)) {</p>
-
-<pre><code>//JavaObjectsInPerm为false，那么String intern的对象已经class对象都是存在heap里的，否则都存在perm里  
-if (so &amp; SO_Strings || (!collecting_perm_gen &amp;&amp; !JavaObjectsInPerm)) {
-  //虽然不回收perm，但是interned的String对象不在perm里，那么还是需要遍历下StringTable里的String对象，因为这些对象在heap里
-  StringTable::oops_do(roots);
-}
-if (JavaObjectsInPerm) {
-  // Verify the string table contents are in the perm gen
-  NOT_PRODUCT(StringTable::oops_do(&amp;assert_is_perm_closure));
-}
-</code></pre>
-
-<p>  }</p>
-
-<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_CodeCache_oops_do)) {</p>
-
-<pre><code>if (so &amp; SO_CodeCache) {
-  // (Currently, CMSCollector uses this to do intermediate-strength collections.)
-  assert(collecting_perm_gen, "scanning all of code cache");
-  assert(code_roots != NULL, "must supply closure for code cache");
-  if (code_roots != NULL) {
-    CodeCache::blobs_do(code_roots);
-  }
-} else if (so &amp; (SO_SystemClasses|SO_AllClasses)) {
-  if (!collecting_perm_gen) {
-    // If we are collecting from class statics, but we are not going to
-    // visit all of the CodeCache, collect from the non-perm roots if any.
-    // This makes the code cache function temporarily as a source of strong
-    // roots for oops, until the next major collection.
-    //
-    // If collecting_perm_gen is true, we require that this phase will call
-    // CodeCache::do_unloading.  This will kill off nmethods with expired
-    // weak references, such as stale invokedynamic targets.
-    CodeCache::scavenge_root_nmethods_do(code_roots);
-  }
-}
-// Verify that the code cache contents are not subject to
-// movement by a scavenging collection.
-DEBUG_ONLY(CodeBlobToOopClosure assert_code_is_non_scavengable(&amp;assert_is_non_scavengable_closure, /*do_marking=*/ false));
-DEBUG_ONLY(CodeCache::asserted_non_scavengable_nmethods_do(&amp;assert_code_is_non_scavengable));
-</code></pre>
-
-<p>  }</p>
-
-<p>  if (!collecting_perm_gen) {</p>
-
-<pre><code>//如果是不回收perm，那找出所有perm指向new的对象  
-// All threads perform this; coordination is handled internally.
-rem_set()-&gt;younger_refs_iterate(perm_gen(), perm_blk);//perm的level是-1
-</code></pre>
-
-<p>  }
-  _process_strong_tasks->all_tasks_completed();
-}</p>
-
-<p>```</p>
-
-<p>看上面的<code>SH_PS_SystemDictionary_oops_do</code> task就知道了，这个就是对SystemDictionary进行扫描。</p>
-
-<p>但是这里要说的是虽然有对SystemDictionary进行扫描，但是ygc的过程并不会对SystemDictionary进行处理，如果要对它进行处理需要开启类卸载的vm参数，CMS算法下，CMS GC和Full GC在开启CMSClassUnloadingEnabled的情况下是可能对类做卸载动作的，此时会对SystemDictionary进行清理，所以当我们在跑上面demo的时候，通过<code>jmap -dump:live,format=b,file=heap.bin &lt;pid&gt;</code>命令执行完之后，ygc的时间瞬间降下来了，不过又会慢慢回去，这是因为jmap的这个命令会做一次gc，这个gc过程会对SystemDictionary进行清理。</p>
-
-<h2>修改VM代码验证</h2>
-
-<p>很遗憾hotspot目前没有对ygc的每个task做一个时间的统计，因此无法直接知道是不是<code>SH_PS_SystemDictionary_oops_do</code>这个task导致了ygc的时间变长，为了证明这个结论，我特地修改了一下代码，在上面的代码上加了一行：</p>
-
-<p>```
-if (!_process_strong_tasks->is_task_claimed(SH_PS_SystemDictionary_oops_do)) {</p>
-
-<pre><code>GCTraceTime t("SystemDictionary_OOPS_DO",PrintGCDetails,true,NULL);
-if (so &amp; SO_AllClasses) {
-  SystemDictionary::oops_do(roots);
-} else if (so &amp; SO_SystemClasses) {
-  SystemDictionary::always_strong_oops_do(roots);
-}
-</code></pre>
-
-<p>  }
-```</p>
-
-<p>然后重新编译，跑我们的demo，测试结果如下：</p>
-
-<p><code>
-2016-03-14T23:57:24.293+0800: [GC2016-03-14T23:57:24.294+0800: [ParNew2016-03-14T23:57:24.296+0800: [SystemDictionary_OOPS_DO, 0.0578430 secs]
-: 81920K-&gt;3184K(92160K), 0.0889740 secs] 81920K-&gt;3184K(514048K), 0.0900970 secs] [Times: user=0.27 sys=0.00, real=0.09 secs]
-2016-03-14T23:57:28.467+0800: [GC2016-03-14T23:57:28.468+0800: [ParNew2016-03-14T23:57:28.468+0800: [SystemDictionary_OOPS_DO, 0.0779210 secs]
-: 85104K-&gt;5175K(92160K), 0.1071520 secs] 85104K-&gt;5175K(514048K), 0.1080490 secs] [Times: user=0.65 sys=0.00, real=0.11 secs]
-2016-03-14T23:57:32.984+0800: [GC2016-03-14T23:57:32.984+0800: [ParNew2016-03-14T23:57:32.984+0800: [SystemDictionary_OOPS_DO, 0.1075680 secs]
-: 87095K-&gt;8188K(92160K), 0.1434270 secs] 87095K-&gt;8188K(514048K), 0.1439870 secs] [Times: user=0.90 sys=0.01, real=0.14 secs]
-2016-03-14T23:57:37.900+0800: [GC2016-03-14T23:57:37.900+0800: [ParNew2016-03-14T23:57:37.901+0800: [SystemDictionary_OOPS_DO, 0.1745390 secs]
-: 90108K-&gt;7093K(92160K), 0.2876260 secs] 90108K-&gt;9992K(514048K), 0.2884150 secs] [Times: user=1.44 sys=0.02, real=0.29 secs]
-</code>
-我们会发现YGC的时间变长的时候，SystemDictionary_OOPS_DO的时间也会相应变长多少，因此验证了我们的说法。</p>
 ]]></content>
   </entry>
   
