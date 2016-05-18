@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T19:01:43+08:00</updated>
+  <updated>2016-05-18T21:04:27+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -89,6 +89,10 @@
 <p>从上面代码我们知道，gc之后的内存情况是used()方法返回的，其中新生代的used方法返回的是eden+from的内存，同样的上面的prev_used也是这么计算的，只是发生在gc之前，这样一来，根据我上面提到的情况，在gc之后不管是否成功都会做一次from和to的swap，那么gc之前新生代的使用大小，其实是gc之前eden+from的使用大小，而gc之后的新生代的使用大小，其实是eden+原来的to现在是使用的大小，原来的to现在使用的大小其实就是在gc过程中将eden和from拷贝过来的对象所占的大小。</p>
 
 <p>综上分析你应该知道为什么会出现这种情况了，其实是一种特殊情况，只有在出现<code>promotion failed</code>的情况下才会发生这样的情况，因为在这个情况下存在to里新增对象，而from和eden不会变化的情况</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="http://nijiaben.github.io/images/gzh.jpg" width="200" height="200"></p>
 ]]></content>
   </entry>
   
