@@ -1,0 +1,608 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>JVM源码分析之栈溢出完全解读 - 你假笨</title>
+  <meta name="author" content="你假笨">
+
+   
+  <meta name="description" content="技术宅改变世界">
+  
+  <meta name="keywords" content="">
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://nijiaben.github.io/blog/2016/04/19/stack-over-flow">
+  <link href="/favicon.ico" rel="icon">
+  <!--
+  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
+  -->
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/bootstrap-collapse.js"></script>
+  <script src="/js/modernizr-2.0.js"></script>
+  <script src="/js/octopress.js" type="text/javascript"></script>
+  <script src="/js/application.js"></script>
+  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
+  <script type="text/javascript"]]>
+    	$(function(){     
+		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
+	         window.prettyPrint && prettyPrint();
+                 $('table').addClass('table')});
+  </script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+-->
+
+  
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-52812422-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
+
+</head>
+
+<body   >
+  <div class="navbar navbar-inverse navbar-static-top">
+  	<div class="navbar-inner">
+  	  <div class="container">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
+          <span class="fui-menu-24"></span>
+        </a>
+  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
+  	      <ul class="nav">
+    
+        <li ><a href="/">博客</a></li>
+    
+        <li ><a href="/archives/index.html">目录</a></li>
+    
+        <li ><a href="/comments/latest.html">最新评论</a></li>
+    
+        <li ><a href="/about/index.html">关于你假笨</a></li>
+    
+</ul>
+
+<ul class="nav pull-right">
+    
+    
+    
+    
+    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
+    
+    
+    
+    
+    
+    
+    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
+    
+
+    
+</ul>
+
+  	    </div>
+  	  </div>
+  	</div>
+  </div>
+  <div class="container" id="main">
+      <div class="row-fluid">
+        <div id="content">
+          <div>
+<article class="hentry" role="article">
+  
+
+  <header>
+  <div class="jumbotron">
+    JVM源码分析之栈溢出完全解读
+	<h5>
+
+
+
+
+
+
+
+
+  
+
+
+<i class="icon-calendar-empty"></i> <time datetime="2016-04-19T01:24:25+08:00" pubdate data-updated="true">Apr 19<span>th</span>, 2016</time></h5>
+  </div>
+</header>
+  <div class="row-fluid">
+    <div class="span12">
+      <h2>概述</h2>
+
+<p>之所以想写这篇文章，其实是因为最近有不少系统出现了栈溢出导致进程crash的问题，并且很隐蔽，根本原因还得借助coredump才能分析出来，于是想从JVM实现的角度来全面分析下栈溢出的这类问题，或许你碰到过如下的场景:</p>
+
+<ul>
+<li>日志里出现了StackOverflowError的异常</li>
+<li>进程突然消失了，但是留下了crash日志</li>
+<li>进程消失了，crash日志也没有留下</li>
+</ul>
+
+
+<p>这些都可能是栈溢出导致的。</p>
+
+<!--more-->
+
+
+<h2>如何定位是否是栈溢出</h2>
+
+<p>上面提到的后面两种情况有可能不是我们今天要聊的栈溢出的问题导致的crash，也许是别的一些可能，那如何确定上面三种情况是栈溢出导致的呢？</p>
+
+<ul>
+<li>出现了StackOverflowError，这种毫无疑问，必然是栈溢出，具体什么方法导致的栈溢出从栈上是能知道的，不过要提醒一点，我们打印出来看到的栈可能是不全的，因为JVM里对栈的输出条数是可以控制的，默认是1024，这个参数是<code>-XX:MaxJavaStackTraceDepth=1024</code>，可以将这个参数设置为-1，那将会全部输出对应的堆栈</li>
+<li>如果进程消失了，但是留下了crash日志，那请检查下crash日志里的Current thread的stack范围，以及RSP寄存器的值，如果RSP寄存器的值是超出这个stack范围的，那说明是栈溢出了。</li>
+<li>如果crash日志也没有留下，那只能通过coredump来分析了，在进程运行前，先执行<code>ulimit -c unlimited</code>，然后再跑进程，在进程挂掉之后，会产生一个<code>core.&lt;pid&gt;</code>的文件，然后再通过<code>jstack $JAVA_HOME/bin/java core.&lt;pid&gt;</code>来看输出的栈，如果正常输出了，那就可以看是否存在很长的调用栈的线程，当然还有可能没有正常输出的，因为jstack的这条从core文件抓栈的命令其实是基于serviceability agent来实现的，而SA在某些版本里是存在bug的，当然现在的SA也不能说完全没有bug，还是存在不少bug的，祝你好运。</li>
+</ul>
+
+
+<h2>如何解决栈溢出的问题</h2>
+
+<p>这个需要具体问题具体分析，因为导致栈溢出的原因很多，提三个主要的：
+* java代码写得不当，比如出现递归死循环，这也是最常见的，只能靠写代码的人稍微小心了
+* native代码有栈上分配的逻辑，并且要求的内存还不小
+* 线程栈空间设置比较小</p>
+
+<p>有时候我们的代码需要调用到native里去，最常见的一种情况譬如<code>java.net.SocketInputStream.read0</code>方法，这是一个native方法，在进入到这个方法里之后，它首先就要求到栈上去分配一个64KB的缓存(64位linux)，试想一下如果执行到read0这个方法的时候，剩余的栈空间已经不足以分配64KB的内存了会怎样？也许就是一开头我们提到的crash，这只是一个例子，还有其他的一些native实现，包括我们自己也可能写这种native代码，如果真有这种情况，我们就需要好好斟酌下我们的线程栈到底要设置多大了。</p>
+
+<p>如果我们的代码确实存在正常的很深的递归调用的话，通常是我们的栈可能设置太小，我们可以通过<code>-Xss</code>或者<code>-XX:ThreadStackSize</code>来设置java线程栈的大小，如果两个参数都设置了，那具体有效的是写在后面的那个生效。顺便提下，线程栈内存是和java heap独立的内存，并不是在java heap内分配的，是直接malloc分配的内存。</p>
+
+<h2>线程栈大小</h2>
+
+<p>在jvm里，线程其实不仅仅只有一种，比如我们java里创建的叫做java线程，还有gc线程，编译线程等，默认情况下他们的栈大小如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>size_t os::Linux::default_stack_size(os::ThreadType thr_type) {
+</span><span class='line'>  // default stack size (compiler thread needs larger stack)
+</span><span class='line'>#ifdef AMD64
+</span><span class='line'>  size_t s = (thr_type == os::compiler_thread ? 4 * M : 1 * M);
+</span><span class='line'>#else
+</span><span class='line'>  size_t s = (thr_type == os::compiler_thread ? 2 * M : 512 * K);
+</span><span class='line'>#endif // AMD64
+</span><span class='line'>  return s;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可见默认情况下编译线程需要的栈空间是其他种类线程的4倍。</p>
+
+<p>各种类型的线程他们所需要的栈的大小其实是可以通过不同的参数来控制的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>switch (thr_type) {
+</span><span class='line'>      case os::java_thread:
+</span><span class='line'>        // Java threads use ThreadStackSize which default value can be
+</span><span class='line'>        // changed with the flag -Xss
+</span><span class='line'>        assert (JavaThread::stack_size_at_create() &gt; 0, "this should be set");
+</span><span class='line'>        stack_size = JavaThread::stack_size_at_create();
+</span><span class='line'>        break;
+</span><span class='line'>      case os::compiler_thread:
+</span><span class='line'>        if (CompilerThreadStackSize &gt; 0) {
+</span><span class='line'>          stack_size = (size_t)(CompilerThreadStackSize * K);
+</span><span class='line'>          break;
+</span><span class='line'>        } // else fall through:
+</span><span class='line'>          // use VMThreadStackSize if CompilerThreadStackSize is not defined
+</span><span class='line'>      case os::vm_thread:
+</span><span class='line'>      case os::pgc_thread:
+</span><span class='line'>      case os::cgc_thread:
+</span><span class='line'>      case os::watcher_thread:
+</span><span class='line'>        if (VMThreadStackSize &gt; 0) stack_size = (size_t)(VMThreadStackSize * K);
+</span><span class='line'>        break;
+</span><span class='line'>      }</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li><code>java_thread</code>的stack_size，其实就是-Xss或者-XX:ThreadStackSize的值</li>
+<li><code>compiler_thread</code>的stack_size，是-XX:CompilerThreadStackSize指定的值</li>
+<li>vm内部的线程比如gc线程等可以通过-XX:VMThreadStackSize来设置</li>
+</ul>
+
+
+<h2>JVM里栈溢出的实现</h2>
+
+<p>JVM里的栈溢出到底是怎么实现的，得从栈的大致结构说起：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Java thread:
+</span><span class='line'>//
+</span><span class='line'>//   Low memory addresses
+</span><span class='line'>//    +------------------------+
+</span><span class='line'>//    |                        |\  JavaThread created by VM does not have glibc
+</span><span class='line'>//    |    glibc guard page    | - guard, attached Java thread usually has
+</span><span class='line'>//    |                        |/  1 page glibc guard.
+</span><span class='line'>// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()
+</span><span class='line'>//    |                        |\
+</span><span class='line'>//    |  HotSpot Guard Pages   | - red and yellow pages
+</span><span class='line'>//    |                        |/
+</span><span class='line'>//    +------------------------+ JavaThread::stack_yellow_zone_base()
+</span><span class='line'>//    |                        |\
+</span><span class='line'>//    |      Normal Stack      | -
+</span><span class='line'>//    |                        |/
+</span><span class='line'>// P2 +------------------------+ Thread::stack_base()
+</span><span class='line'>//
+</span><span class='line'>// Non-Java thread:
+</span><span class='line'>//
+</span><span class='line'>//   Low memory addresses
+</span><span class='line'>//    +------------------------+
+</span><span class='line'>//    |                        |\
+</span><span class='line'>//    |  glibc guard page      | - usually 1 page
+</span><span class='line'>//    |                        |/
+</span><span class='line'>// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()
+</span><span class='line'>//    |                        |\
+</span><span class='line'>//    |      Normal Stack      | -
+</span><span class='line'>//    |                        |/
+</span><span class='line'>// P2 +------------------------+ Thread::stack_base()
+</span><span class='line'>//
+</span><span class='line'>// ** P1 (aka bottom) and size ( P2 = P1 - size) are the address and stack size returned from
+</span><span class='line'>//    pthread_attr_getstack()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>linux下java线程栈是从高地址往低地址方向走的，在栈尾（低地址）会预留两块受保护的内存区域，分别叫做yellow page和red page，其中yellow page在前，另外如果是java创建的线程，最后并没有图示的一个page的<code>glibc guard page</code>，非java线程是有的，但是没有yellow和red page，比如我们的gc线程，注意编译线程其实是java线程。</p>
+
+<p>除了yellow page和red page，其实还有个shadow page，这三个page可以分别通过vm参数<code>-XX:StackYellowPages</code>,<code>-XX:StackRedPages</code>,<code>-XX:StackShadowPages</code>来控制。当我们要调用某个java方法的时候，它需要多大的栈其实是预先知道的，javac里就计算好了，但是如果调用的是native方法，那这就不好办了，在native方法里到底需要多大内存，这个无法得知，因此shadow page就是用来做一个大致的预测，看需要多大的栈空间，如果预测到新的RSP的值超过了yellowpage的位置，那就直接抛出栈溢出的异常，否则就去新的方法里处理，当我们的代码访问到yellow page或者red page里的地址的时候，因为这块内存是受保护的，所以会产生SIGSEGV的信号，此时会交给JVM里的信号处理函数来处理，针对yellow page以及red page会有不同的处理策略，其中yellow page的处理是会抛出StackOverflowError的异常，进程不会挂掉，也就是文章开头提到的第一个场景，但是如果是red page，那将直接导致进程退出，不过还是会产生Crash的日志，也就是文章开头提到的第二个场景，另外还有第三个场景，其实是没有栈空间了并且访问了超过了red page的地址，这个时候因为栈空间不够了，所以信号处理函数都进不去，因此就直接crash了，crash日志也不会产生。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> if (sig == SIGSEGV) {
+</span><span class='line'>      address addr = (address) info-&gt;si_addr;
+</span><span class='line'>
+</span><span class='line'>      // check if fault address is within thread stack
+</span><span class='line'>      if (addr &lt; thread-&gt;stack_base() &&
+</span><span class='line'>          addr &gt;= thread-&gt;stack_base() - thread-&gt;stack_size()) {
+</span><span class='line'>        // stack overflow
+</span><span class='line'>        if (thread-&gt;in_stack_yellow_zone(addr)) {
+</span><span class='line'>          thread-&gt;disable_stack_yellow_zone();
+</span><span class='line'>          if (thread-&gt;thread_state() == _thread_in_Java) {
+</span><span class='line'>            // Throw a stack overflow exception.  Guard pages will be reenabled
+</span><span class='line'>            // while unwinding the stack.
+</span><span class='line'>            stub = SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::STACK_OVERFLOW);
+</span><span class='line'>          } else {
+</span><span class='line'>            // Thread was in the vm or native code.  Return and try to finish.
+</span><span class='line'>            return 1;
+</span><span class='line'>          }
+</span><span class='line'>        } else if (thread-&gt;in_stack_red_zone(addr)) {
+</span><span class='line'>          // Fatal red zone violation.  Disable the guard pages and fall through
+</span><span class='line'>          // to handle_unexpected_exception way down below.
+</span><span class='line'>          thread-&gt;disable_stack_red_zone();
+</span><span class='line'>          tty-&gt;print_raw_cr("An irrecoverable stack overflow has occurred.");
+</span><span class='line'>
+</span><span class='line'>          // This is a likely cause, but hard to verify. Let's just print
+</span><span class='line'>          // it as a hint.
+</span><span class='line'>          tty-&gt;print_raw_cr("Please check if any of your loaded .so files has "
+</span><span class='line'>                            "enabled executable stack (see man page execstack(8))");
+</span><span class='line'>        } else {
+</span><span class='line'>          // Accessing stack address below sp may cause SEGV if current
+</span><span class='line'>          // thread has MAP_GROWSDOWN stack. This should only happen when
+</span><span class='line'>          // current thread was created by user code with MAP_GROWSDOWN flag
+</span><span class='line'>          // and then attached to VM. See notes in os_linux.cpp.
+</span><span class='line'>          if (thread-&gt;osthread()-&gt;expanding_stack() == 0) {
+</span><span class='line'>             thread-&gt;osthread()-&gt;set_expanding_stack();
+</span><span class='line'>             if (os::Linux::manually_expand_stack(thread, addr)) {
+</span><span class='line'>               thread-&gt;osthread()-&gt;clear_expanding_stack();
+</span><span class='line'>               return 1;
+</span><span class='line'>             }
+</span><span class='line'>             thread-&gt;osthread()-&gt;clear_expanding_stack();
+</span><span class='line'>          } else {
+</span><span class='line'>             fatal("recursive segv. expanding stack.");
+</span><span class='line'>          }
+</span><span class='line'>        }
+</span><span class='line'>     }
+</span><span class='line'>  }
+</span><span class='line'>    
+</span><span class='line'>  ......
+</span><span class='line'>   
+</span><span class='line'>  if (stub != NULL) {
+</span><span class='line'>    // save all thread context in case we need to restore it
+</span><span class='line'>    if (thread != NULL) thread-&gt;set_saved_exception_pc(pc);
+</span><span class='line'>
+</span><span class='line'>    uc-&gt;uc_mcontext.gregs[REG_PC] = (greg_t)stub;
+</span><span class='line'>    return true;
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // signal-chaining
+</span><span class='line'>  if (os::Linux::chained_handler(sig, info, ucVoid)) {
+</span><span class='line'>     return true;
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  if (!abort_if_unrecognized) {
+</span><span class='line'>    // caller wants another chance, so give it to him
+</span><span class='line'>    return false;
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  if (pc == NULL && uc != NULL) {
+</span><span class='line'>    pc = os::Linux::ucontext_get_pc(uc);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // unmask current signal
+</span><span class='line'>  sigset_t newset;
+</span><span class='line'>  sigemptyset(&newset);
+</span><span class='line'>  sigaddset(&newset, sig);
+</span><span class='line'>  sigprocmask(SIG_UNBLOCK, &newset, NULL);
+</span><span class='line'>
+</span><span class='line'>  VMError err(t, sig, pc, info, ucVoid);
+</span><span class='line'>  err.report_and_die();
+</span><span class='line'>
+</span><span class='line'>  ShouldNotReachHere();   </span></code></pre></td></tr></table></div></figure>
+
+
+<p>了解上面的场景之后，再回过头来想想JVM为什么要设置这几个page，其实是为了安全，能预测到栈溢出的话就抛出StackOverfolwError，而避免导致进程挂掉。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+
+    </div>
+  </div>
+
+
+
+  <footer>
+    <hr>
+    
+    <div class="row-fluid">
+      
+      <div class="span6">
+        <p class="meta">
+        
+        
+
+
+
+  <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
+
+  <a href="/blog/categories/stackoverflow/"><span class="badge">StackOverflow</span></a>
+
+
+
+
+        </p>
+      </div>
+      
+      <div class="span6 social-sharing">
+        <div class="sharing">
+  <div class="addthis_toolbox addthis_default_style ">
+  
+  
+  
+  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
+  
+  <a class="addthis_counter addthis_pill_style"></a>
+  </div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+      </div>
+      
+      
+    </div>
+    
+    <div class="row-fluid">
+      <div class="span12">
+        <p class="meta">
+          
+            <a class="basic-alignment left" href="/blog/2016/04/03/type-inference/" title="Previous Post: JDK8在泛型类型推导上的变化">&laquo; JDK8在泛型类型推导上的变化</a>
+          
+          
+            <a class="basic-alignment right" href="/blog/2016/04/24/classloader-unload/" title="Next Post: JVM源码分析之JDK8下的僵尸(无法回收)类加载器">JVM源码分析之JDK8下的僵尸(无法回收)类加载器 &raquo;</a>
+          
+        </p>
+      </div>
+    </div>
+  </footer>
+</article>
+
+ 
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+
+
+        </div>
+      </div>
+      <div class="row-fluid">
+        <footer class="footer-page" role="contentinfo">
+          <p>
+  Copyright &copy; 2016 - 你假笨 -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
+</p>
+
+
+        </footer>
+      </div>
+  </div>
+  
+
+
+
+
+
+  <script type="text/javascript">
+//    (function() {
+ //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
+   //   script.src = 'https://apis.google.com/js/plusone.js';
+    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
+   // })();
+  </script>
+
+
+
+
+
+
+
+</body>
+</html>

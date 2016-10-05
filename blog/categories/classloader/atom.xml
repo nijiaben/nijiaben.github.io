@@ -1,0 +1,1212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: ClassLoader | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/classloader/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-05-18T23:46:24+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之JDK8下的僵尸(无法回收)类加载器]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/04/24/classloader-unload/"/>
+    <updated>2016-04-24T11:21:24+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/04/24/classloader-unload</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>这篇文章基于最近在排查的一个问题，花了我们团队不少时间来排查这个问题，现象是有一些类加载器是作为key放到WeakHashMap里的，但是经历过多次full gc之后，依然坚挺地存在内存里，但是从代码上来说这些类加载器是应该被回收的，因为没有任何强引用可以到达这些类加载器了，于是我们做了内存dump，分析了下内存，发现除了一个WeakHashMap外并没有别的GC ROOT途径达到这些类加载器了，那这样一来经过多次FULL GC肯定是可以被回收的，但是事实却不是这样，为了让这个问题听起来更好理解，还是照例先上个Demo，完全模拟了这种场景。</p>
+
+<!--more-->
+
+
+<h2>Demo</h2>
+
+<p>首先我们创建两个类AAA和AAB，分别打包到两个不同jar里，比如AAA.jar和AAB.jar，这两个类之间是有关系的，AAA里有个属性是AAB类型的，注意这两个jar不要放到classpath里让appClassLoader加载到：</p>
+
+<p>```
+public class AAA {</p>
+
+<pre><code>    private AAB aab;
+    public AAA(){
+            aab=new AAB();
+    }
+    public void clear(){
+            aab=null;
+    }
+</code></pre>
+
+<p>}</p>
+
+<p>public class AAB {}
+```</p>
+
+<p>接着我们创建一个类加载TestLoader，里面存一个WeakHashMap，专门来存TestLoader的，并且复写loadClass方法，如果是加载AAB这个类，就创建一个新的TestLoader来从AAB.jar里加载这个类</p>
+
+<p>```
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.WeakHashMap;</p>
+
+<p>public class TestLoader extends URLClassLoader {</p>
+
+<pre><code>    public static WeakHashMap&lt;TestLoader,Object&gt; map=new WeakHashMap&lt;TestLoader,Object&gt;();
+    private static int count=0;
+    public TestLoader(URL[] urls){
+            super(urls);
+            map.put(this, new Object());
+    }
+    @SuppressWarnings("resource")
+    public Class&lt;?&gt; loadClass(String name) throws ClassNotFoundException {
+            if(name.equals("AAB") &amp;&amp; count==0){
+                    try {
+                            count=1;
+                URL[] urls = new URL[1];
+                urls[0] = new URL("file:///home/nijiaben/tmp/AAB.jar");
+                return new TestLoader(urls).loadClass("AAB");
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+            }else{
+                    return super.loadClass(name);
+            }
+            return null;
+    }
+</code></pre>
+
+<p>}
+```</p>
+
+<p>再看我们的主类TTest，一些说明都写在类里了：</p>
+
+<p>```
+import java.lang.reflect.Method;
+import java.net.URL;</p>
+
+<p>/<em>*
+ * Created by nijiaben on 4/22/16.
+ </em>/
+public class TTest {</p>
+
+<pre><code>private Object aaa;
+public static void main(String args[]){
+    try {
+        TTest tt = new TTest();
+        //将对象移到old，并置空aaa的aab属性
+        test(tt);
+        //清理掉aab对象
+        System.gc();
+        System.out.println("finished");
+    }catch (Exception e){
+        e.printStackTrace();
+    }
+}
+
+@SuppressWarnings("resource")
+    public static void test(TTest tt){
+    try {
+        //创建一个新的类加载器，从AAA.jar里加载AAA类
+        URL[] urls = new URL[1];
+        urls[0] = new URL("file:///home/nijiaben/tmp/AAA.jar");
+        tt.aaa=new TestLoader(urls).loadClass("AAA").newInstance();
+        //保证类加载器对象能进入到old里，因为ygc是不会对classLoader做清理的
+        for(int i=0;i&lt;10;i++){
+            System.gc();
+            Thread.sleep(1000);
+        }
+        //将aaa里的aab属性清空掉，以便在后面gc的时候能清理掉aab对象，这样AAB的类加载器其实就没有什么地方有强引用了，在full gc的时候能被回收
+        Method[] methods=tt.aaa.getClass().getDeclaredMethods();
+        for(Method m:methods){
+            if(m.getName().equals("clear")){
+                    m.invoke(tt.aaa);
+                    break;
+            }
+        }
+    }catch (Exception e){
+        e.printStackTrace();
+    }
+}
+</code></pre>
+
+<p>}
+```</p>
+
+<p>运行的时候请跑在JDK8下，打个断点在<code>System.out.println("finished")</code>的地方，然后做一次内存dump。</p>
+
+<p>从上面的例子中我们得知，TTest是类加载器AppClassLoader加载的，其属性aaa的对象类型是通过TestLoader从AAA.jar里加载的，而aaa里的aab属性是从一个全新的类加载器TestLoader从AAB.jar里加载的，当我们做了多次System GC之后，这些对象会移到old，在做最后一次GC之后，aab对象会从内存里移除，其类加载器此时已经是没有任何地方的强引用了，只有一个WeakHashMap引用它，理论上做GC的时候也应该被回收，但是事实时这个AAB的这个类加载器并没有被回收，从分析结果来看，GC ROOT路径是WeakHashMap，如图所示：</p>
+
+<p><img src="/images/2016/04/mat.png"></p>
+
+<h2>JDK8里的metaspace</h2>
+
+<p>这里不得不提的一个概念是JDK8里的metaspace，它是为了取代perm的，至于好处是什么，我个人觉得不是那么明显，有点费力不讨好的感觉，代码改了很多，但是实际收益并不明显，据说是oracle内部斗争的一个结果。</p>
+
+<p>在JDK8里虽然没了perm，但是klass的信息还是要有地方存，jvm里为此分配了两块内存，一块是紧挨着heap来的，就和perm一样，专门用来存klass的信息，可以通过<code>-XX:CompressedClassSpaceSize</code>来设置大小，另外一块和它们不一定连着，主要是存非klass之外的其他信息，比如常量池什么的，可以通过<code>-XX:InitialBootClassLoaderMetaspaceSize</code>来设置，同时我们还可以通过<code>-XX:MaxMetaspaceSize</code>来设置触发metaspace回收的阈值。</p>
+
+<p>每个类加载器都会从全局的metaspace空间里取一些metaChunk管理起来，当有类定义的时候，其实就是从这些内存里分配的，当不够的时候再去全局的metaspace里分配一块并管理起来。</p>
+
+<p>这块具体的情况后面可以专门写一篇文章来介绍，包括内存结构，内存分配，GC等。</p>
+
+<h2>JDK8里的ClassLoaderDataGraph</h2>
+
+<p>每个类加载器都会对应一个ClassLoaderData的数据结构，里面会存譬如具体的类加载器对象，加载的klass，管理内存的metaspace等，它是一个链式结构，会链到下一个ClassLoaderData上，gc的时候通过ClassLoaderDataGraph来遍历这些ClassLoaderData，ClassLoaderDataGraph的第一个ClassLoaderData是bootstrapClassLoader的</p>
+
+<p>```
+class ClassLoaderData : public CHeapObj<mtClass> {
+  ...
+  static ClassLoaderData * _the_null_class_loader_data;</p>
+
+<p>  oop _class_loader;          // oop used to uniquely identify a class loader</p>
+
+<pre><code>                          // class loader or a canonical class path
+</code></pre>
+
+<p>  Dependencies _dependencies; // holds dependencies from this class loader</p>
+
+<pre><code>                          // data to others.
+</code></pre>
+
+<p>  Metaspace * _metaspace;  // Meta-space where meta-data defined by the</p>
+
+<pre><code>                       // classes in the class loader are allocated.
+</code></pre>
+
+<p>  Mutex* <em>metaspace_lock;  // Locks the metaspace for allocations and setup.
+  bool </em>unloading;         // true if this class loader goes away
+  bool <em>keep_alive;        // if this CLD is kept alive without a keep_alive_object().
+  bool </em>is_anonymous;      // if this CLD is for an anonymous class
+  volatile int _claimed;   // true if claimed, for example during GC traces.</p>
+
+<pre><code>                       // To avoid applying oop closure more than once.
+                       // Has to be an int because we cas it.
+</code></pre>
+
+<p>  Klass* _klasses;         // The classes defined by the class loader.</p>
+
+<p>  JNIHandleBlock* _handles; // Handles to constant pool arrays</p>
+
+<p>  // These method IDs are created for the class loader and set to NULL when the
+  // class loader is unloaded.  They are rarely freed, only for redefine classes
+  // and if they lose a data race in InstanceKlass.
+  JNIMethodBlock*                  _jmethod_ids;</p>
+
+<p>  // Metadata to be deallocated when it's safe at class unloading, when
+  // this class loader isn't unloaded itself.
+  GrowableArray&lt;Metadata<em>></em>      _deallocate_list;</p>
+
+<p>  // Support for walking class loader data objects
+  ClassLoaderData* _next; /// Next loader_datas created</p>
+
+<p>  // ReadOnly and ReadWrite metaspaces (static because only on the null
+  // class loader for now).
+  static Metaspace<em> _ro_metaspace;
+  static Metaspace</em> _rw_metaspace;</p>
+
+<p>  ...</p>
+
+<p>}
+```</p>
+
+<p>这里提几个属性：</p>
+
+<ul>
+<li><code>_class_loader</code> : 就是对应的类加载器对象</li>
+<li><code>_keep_alive</code> : 如果这个值是true，那这个类加载器会认为是活的，会将其做为GC ROOT的一部分，gc的时候不会被回收</li>
+<li><code>_unloading</code> : 表示这个类加载是否需要卸载的</li>
+<li><code>_is_anonymous</code> : 是否匿名，这种ClassLoaderData主要是在lambda表达式里用的，这个我后面会详细说</li>
+<li><code>_next</code> : 指向下一个ClassLoaderData，在gc的时候方便遍历</li>
+<li><code>_dependencies</code> : 这个属性也是本文的重点，后面会细说</li>
+</ul>
+
+
+<p>再来看下构造函数：</p>
+
+<p>```
+ClassLoaderData::ClassLoaderData(Handle h_class_loader, bool is_anonymous, Dependencies dependencies) :
+  <em>class_loader(h_class_loader()),
+  </em>is_anonymous(is_anonymous),
+  // An anonymous class loader data doesn't have anything to keep
+  // it from being unloaded during parsing of the anonymous class.
+  // The null-class-loader should always be kept alive.
+  <em>keep_alive(is_anonymous || h_class_loader.is_null()),
+  </em>metaspace(NULL), <em>unloading(false), </em>klasses(NULL),
+  <em>claimed(0), </em>jmethod_ids(NULL), <em>handles(NULL), </em>deallocate_list(NULL),
+  <em>next(NULL), </em>dependencies(dependencies),
+  _metaspace_lock(new Mutex(Monitor::leaf+1, "Metaspace allocation lock", true)) {</p>
+
+<pre><code>// empty
+</code></pre>
+
+<p>}
+<code>``
+可见，</code><em>keep_ailve<code>属性的值是根据</code></em>is_anonymous`以及当前类加载器是不是bootstrapClassLoader来的。</p>
+
+<p><code>_keep_alive</code>到底用在哪？其实是在GC的的时候，来决定要不要用Closure或者用什么Closure来扫描对应的ClassLoaderData。</p>
+
+<p>```
+void ClassLoaderDataGraph::roots_cld_do(CLDClosure<em> strong, CLDClosure</em> weak) {
+  //从最后一个创建的classloader到bootstrapClassloader<br/>
+  for (ClassLoaderData* cld = <em>head;  cld != NULL; cld = cld-></em>next) {</p>
+
+<pre><code>//如果是ygc，那weak和strong是一样的，对所有的类加载器都做扫描，保证它们都是活的 
+//如果是cms initmark阶段，如果要unload_classes了(should_unload_classes()返回true)，则weak为null，那就只遍历bootstrapclassloader以及正在做匿名类加载的类加载  
+CLDClosure* closure = cld-&gt;keep_alive() ? strong : weak;
+if (closure != NULL) {
+  closure-&gt;do_cld(cld);
+}
+</code></pre>
+
+<p>  }
+```</p>
+
+<h2>类加载器什么时候被回收</h2>
+
+<p>类加载器是否需要被回收，其实就是看这个类加载器对象是否是活的，所谓活的就是这个类加载器加载的任何一个类或者这些类的对象是强可达的，当然还包括这个类加载器本身就是GC ROOT一部分或者有GC ROOT可达的路径，那这个类加载器就肯定不会被回收。</p>
+
+<p>从各种GC情况来看：</p>
+
+<ul>
+<li>如果是YGC，类加载器是作为GC ROOT的，也就是都不会被回收</li>
+<li>如果是Full GC，只要是死的就会被回收</li>
+<li>如果是CMS GC，CMS GC过程也是会做标记的（这是默认情况，不过可以通过一些参数来改变），但是不会做真正的清理，真正的清理动作是发生在下次进入安全点的时候。</li>
+</ul>
+
+
+<h2>僵尸类加载器如何产生</h2>
+
+<p>如果类加载器是与GC ROOT的对象存在真正依赖的这种关系，这种类加载器对象是活的无可厚非，我们通过zprofiler或者mat都可以分析出来，可以将链路绘出来，但是有两种情况例外：</p>
+
+<h3>lambda匿名类加载</h3>
+
+<p>lambda匿名类加载走的是unsafe的defineAnonymousClass方法，这个方法在vm里对应的是下面的方法</p>
+
+<p>```
+UNSAFE_ENTRY(jclass, Unsafe_DefineAnonymousClass(JNIEnv *env, jobject unsafe, jclass host_class, jbyteArray data, jobjectArray cp_patches_jh))
+{
+  instanceKlassHandle anon_klass;
+  jobject res_jh = NULL;</p>
+
+<p>  UnsafeWrapper("Unsafe_DefineAnonymousClass");
+  ResourceMark rm(THREAD);</p>
+
+<p>  HeapWord* temp_alloc = NULL;</p>
+
+<p>  anon_klass = Unsafe_DefineAnonymousClass_impl(env, host_class, data,</p>
+
+<pre><code>                                            cp_patches_jh,
+                                               &amp;temp_alloc, THREAD);
+</code></pre>
+
+<p>  if (anon_klass() != NULL)</p>
+
+<pre><code>res_jh = JNIHandles::make_local(env, anon_klass-&gt;java_mirror());
+</code></pre>
+
+<p>  // try/finally clause:
+  if (temp_alloc != NULL) {</p>
+
+<pre><code>FREE_C_HEAP_ARRAY(HeapWord, temp_alloc, mtInternal);
+</code></pre>
+
+<p>  }</p>
+
+<p>  // The anonymous class loader data has been artificially been kept alive to
+  // this point.   The mirror and any instances of this class have to keep
+  // it alive afterwards.
+  if (anon_klass() != NULL) {</p>
+
+<pre><code>anon_klass-&gt;class_loader_data()-&gt;set_keep_alive(false);
+</code></pre>
+
+<p>  }</p>
+
+<p>  // let caller initialize it as needed...</p>
+
+<p>  return (jclass) res_jh;
+}
+UNSAFE_END
+}</p>
+
+<p><code>``
+可见，在创建成功匿名类之后，会将对应的ClassLoaderData的</code><em>keep_alive<code>属性设置为false，那是不是意味着</code></em>keep_alive<code>属性在这之前都是true呢？下面的</code>parse_stream`方法是从上面的方法最终会调下来的方法</p>
+
+<p>```
+Klass<em> SystemDictionary::parse_stream(Symbol</em> class_name,</p>
+
+<pre><code>                                  Handle class_loader,
+                                  Handle protection_domain,
+                                  ClassFileStream* st,
+                                  KlassHandle host_klass,
+                                  GrowableArray&lt;Handle&gt;* cp_patches,
+                                  TRAPS) {
+</code></pre>
+
+<p>  TempNewSymbol parsed_name = NULL;</p>
+
+<p>  Ticks class_load_start_time = Ticks::now();</p>
+
+<p>  ClassLoaderData* loader_data;
+  if (host_klass.not_null()) {</p>
+
+<pre><code>// Create a new CLD for anonymous class, that uses the same class loader
+// as the host_klass
+assert(EnableInvokeDynamic, "");
+guarantee(host_klass-&gt;class_loader() == class_loader(), "should be the same");
+guarantee(!DumpSharedSpaces, "must not create anonymous classes when dumping");
+loader_data = ClassLoaderData::anonymous_class_loader_data(class_loader(), CHECK_NULL);
+loader_data-&gt;record_dependency(host_klass(), CHECK_NULL);
+</code></pre>
+
+<p>  } else {</p>
+
+<pre><code>loader_data = ClassLoaderData::class_loader_data(class_loader());
+</code></pre>
+
+<p>  }</p>
+
+<p>  instanceKlassHandle k = ClassFileParser(st).parseClassFile(class_name,</p>
+
+<pre><code>                                                         loader_data,
+                                                         protection_domain,
+                                                         host_klass,
+                                                         cp_patches,
+                                                         parsed_name,
+                                                         true,
+                                                         THREAD);
+</code></pre>
+
+<p>...</p>
+
+<p>}</p>
+
+<p>ClassLoaderData* ClassLoaderData::anonymous_class_loader_data(oop loader, TRAPS) {
+  // Add a new class loader data to the graph.
+  return ClassLoaderDataGraph::add(loader, true, CHECK_NULL);
+}</p>
+
+<p>ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRAPS) {
+  // We need to allocate all the oops for the ClassLoaderData before allocating the
+  // actual ClassLoaderData object.
+  ClassLoaderData::Dependencies dependencies(CHECK_NULL);</p>
+
+<p>  No_Safepoint_Verifier no_safepoints; // we mustn't GC until we've installed the</p>
+
+<pre><code>                                   // ClassLoaderData in the graph since the CLD
+                                   // contains unhandled oops
+</code></pre>
+
+<p>  ClassLoaderData* cld = new ClassLoaderData(loader, is_anonymous, dependencies);</p>
+
+<p>...
+}
+```</p>
+
+<p>从上面的代码得知，只要走了unsafe的那个方法，都会为当前类加载器创建一个ClassLoaderData对象，并设置其<code>_is_anonymous</code>为true，也同时意味着<code>_keep_alive</code>的属性是true，并加入到ClassLoaderDataGraph中。</p>
+
+<p>试想如果创建的这个匿名类没有成功，也就是<code>anon_klass()==null</code>，那这个<code>_keep_alive</code>属性就永远无法设置为false了，这意味着这个ClassLoaderData对应的ClassLoader对象将永远都是GC ROOT的一部分，无法被回收，这种情况就是真正的僵尸类加载器了，不过目前我还没模拟出这种情况来，有兴趣的同学可以试一试，如果真的能模拟出来，这绝对是JDK里的一个BUG，可以提交给社区。</p>
+
+<h3>类加载器依赖导致的</h3>
+
+<p>这里说的类加载器依赖，并不是说ClassLoader里的parent建立的那种依赖关系，如果是这种关系，那其实通过mat或者zprofiler这样的工具都是可以分析出来的，但是还存在一种情况，那些工具都是分析不出来的，这种关系就是通过ClassLoaderData里的<code>_dependencies</code>属性得出来的，比如说如果A类加载器的<code>_dependencies</code>属性里记录了B类加载器，那当GC遍历A类加载器的时候也会遍历B类加载器，并将其标活，哪怕B类加载器其实是可以被回收了的，可以看下下面的代码</p>
+
+<p>```
+void ClassLoaderData::oops_do(OopClosure<em> f, KlassClosure</em> klass_closure, bool must_claim) {
+  if (must_claim &amp;&amp; !claim()) {</p>
+
+<pre><code>return;
+</code></pre>
+
+<p>  }</p>
+
+<p>  f->do_oop(&amp;<em>class_loader);
+  </em>dependencies.oops_do(f);
+  _handles->oops_do(f);
+  if (klass_closure != NULL) {</p>
+
+<pre><code>classes_do(klass_closure);
+</code></pre>
+
+<p>  }
+}
+```</p>
+
+<p>那问题来了，这种依赖关系是怎么记录的呢？其实我们上面的demo就模拟了这种情况，可以仔细去看看，我也针对这个demo描述下，比如加载AAA的类加载器TestLoader加载AAA后，并创建AAA对象，此时会看到有个类型是AAB的属性，此时会对常量池里的类型做一个解析，我们看到TestLoader的loadClass方法的时候做了一个判断，如果是AAB类型的类加载，那就创建一个新的类加载器对象从AAB.jar里去加载，当加载返回的时候，在jvm里其实就会记录这么一层依赖关系，认为AAA的类加载器依赖AAB的类加载器，并记录下来，但是纵观所有的hotspot代码，并没有一个地方来清理这种依赖关系的，也就是说只要这种依赖关系建立起来，会一直持续到AAA的类加载器被回收的时候，AAB的类加载器才会被回收，所以说这算一种伪僵尸类加载器，虽然从依赖关系上其实并不依赖了(比如demo里将AAA的aab属性做clear清空动作)，但是GC会一直认为他们是存在这种依赖关系的，会持续存在一段时间，具体持续多久就看AAA类加载器的情况了。</p>
+
+<p>针对这种情况个人认为需要一个类似引用计数的GC策略，当某两个类加载器确实没有任何依赖的时候，将其清理掉这种依赖关系，估计要实现这种改动的地方也挺多，没那么简单，所以当时的设计者或许因为这样并没有这么做了，我觉得这算是偷懒妥协的结果吧，当然这只是我的一种猜测。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之自定义类加载器如何拉长YGC]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/03/15/ygc-classloader/"/>
+    <updated>2016-03-15T13:51:58+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/03/15/ygc-classloader</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
+
+<!--more-->
+
+
+<p>再回到那个GC的问题，用的参数如下：</p>
+
+<p><code>
+-XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xms512m -Xmx512m -Xmn100m -XX:+UseConcMarkSweepGC
+</code></p>
+
+<p>demo程序如下：</p>
+
+<p>```
+import com.thoughtworks.xstream.XStream;</p>
+
+<p>public class XStreamTest {</p>
+
+<pre><code>public static void main(String[] args) throws Exception {
+    while(true){
+        XStream xs = new XStream();
+        xs.toString();
+        xs = null;
+    }
+}
+</code></pre>
+
+<p>}
+```</p>
+
+<p>执行效果如下</p>
+
+<p><code>
+2016-03-14T22:48:01.502+0800: [GC [ParNew: 327680K-&gt;4258K(368640K), 0.0179071 secs] 327680K-&gt;4258K(1007616K), 0.0179448 secs] [Times: user=0.06 sys=0.01, real=0.01 secs]
+2016-03-14T22:48:05.975+0800: [GC [ParNew: 331938K-&gt;10239K(368640K), 0.0336279 secs] 331938K-&gt;10239K(1007616K), 0.0336593 secs] [Times: user=0.13 sys=0.02, real=0.03 secs]
+2016-03-14T22:48:12.215+0800: [GC [ParNew: 337919K-&gt;14444K(368640K), 0.0471005 secs] 337919K-&gt;14444K(1007616K), 0.0471257 secs] [Times: user=0.19 sys=0.02, real=0.05 secs]
+2016-03-14T22:48:21.768+0800: [GC [ParNew: 342124K-&gt;19088K(368640K), 0.0605017 secs] 342124K-&gt;19088K(1007616K), 0.0605295 secs] [Times: user=0.26 sys=0.03, real=0.06 secs]
+2016-03-14T22:48:35.180+0800: [GC [ParNew: 346768K-&gt;20633K(368640K), 0.0993470 secs] 346768K-&gt;25248K(1007616K), 0.0993777 secs] [Times: user=0.34 sys=0.04, real=0.09 secs]
+</code></p>
+
+<p>发现gc的时间越来越长，但是gc触发的时机以及回收的效果都差不多，那问题究竟在哪里呢？</p>
+
+<h2>Demo分析</h2>
+
+<p>虽然这个demo代码逻辑很简单，但是其实这是一个特殊的demo，并不简单，如果我们将XStream对象换成Object对象，会发现不存在这个问题，既然如此那有必要进去看看这个XStream的构造函数：</p>
+
+<p>```
+ public XStream() {</p>
+
+<pre><code>    this((ReflectionProvider)null, (Mapper)((Mapper)null), (HierarchicalStreamDriver)(new XppDriver()));
+}
+
+/** @deprecated */
+public XStream(ReflectionProvider reflectionProvider, Mapper mapper, HierarchicalStreamDriver driver) {
+    this(reflectionProvider, driver, (ClassLoader)(new CompositeClassLoader()), mapper);
+}
+
+/** @deprecated */
+public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {
+    this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
+}
+
+public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoader, Mapper mapper, final DefaultConverterLookup defaultConverterLookup) {
+    this(reflectionProvider, driver, (ClassLoaderReference)classLoader, mapper, new ConverterLookup() {
+        public Converter lookupConverterForType(Class type) {
+            return defaultConverterLookup.lookupConverterForType(type);
+        }
+    }, new ConverterRegistry() {
+        public void registerConverter(Converter converter, int priority) {
+            defaultConverterLookup.registerConverter(converter, priority);
+        }
+    });
+}
+
+/** @deprecated */
+public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
+    this(reflectionProvider, driver, (ClassLoaderReference)(new ClassLoaderReference(classLoader)), mapper, converterLookup, converterRegistry);
+}
+
+public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoaderReference classLoaderReference, Mapper mapper, ConverterLookup converterLookup, ConverterRegistry converterRegistry) {
+    if(reflectionProvider == null) {
+        reflectionProvider = JVM.newReflectionProvider();
+    }
+
+    this.reflectionProvider = reflectionProvider;
+    this.hierarchicalStreamDriver = driver;
+    this.classLoaderReference = classLoaderReference;
+    this.converterLookup = converterLookup;
+    this.converterRegistry = converterRegistry;
+    this.mapper = mapper == null?this.buildMapper():mapper;
+    this.setupMappers();
+    this.setupSecurity();
+    this.setupAliases();
+    this.setupDefaultImplementations();
+    this.setupConverters();
+    this.setupImmutableTypes();
+    this.setMode(1003);
+}
+</code></pre>
+
+<p>```</p>
+
+<p>这个构造函数还是很复杂的，里面会创建很多的对象，上面还有一些方法实现我就不贴了，总之都是在不断构建各种大大小小的对象，一个XStream对象构建出来的时候大概好像有12M的样子。</p>
+
+<p>那到底是哪些对象会导致ygc不断增长呢，于是可能想到逐步替换上面这些逻辑，比如将最后一个构造函数里的那些逻辑都禁掉，然后我们再跑测试看看还会不会让ygc不断恶化，最终我们会发现，如果我们直接使用如下构造函数构造对象时，如果传入的classloader是AppClassLoader，那会发现这个问题不再出现了。</p>
+
+<p>```
+ public XStream(ReflectionProvider reflectionProvider, HierarchicalStreamDriver driver, ClassLoader classLoader, Mapper mapper) {</p>
+
+<pre><code>    this(reflectionProvider, driver, new ClassLoaderReference(classLoader), mapper, new DefaultConverterLookup());
+</code></pre>
+
+<p> }
+```</p>
+
+<p>测试代码如下：</p>
+
+<p>```    <br/>
+ public static void main(String[] args) throws Exception {</p>
+
+<pre><code>    int i=0;
+    while (true) {
+        XStream xs = new XStream(null,null, new ClassLoaderReference(XStreamTest.class.getClassLoader()),null, new DefaultConverterLookup());
+        xs.toString();
+        xs=null;
+    }
+</code></pre>
+
+<p>  }
+```</p>
+
+<p>gc日志如下：</p>
+
+<p><code>
+2016-03-14T23:10:33.537+0800: [GC [ParNew: 327680K-&gt;758K(368640K), 0.0019803 secs] 327680K-&gt;758K(1007616K), 0.0020182 secs] [Times: user=0.01 sys=0.00, real=0.00 secs]
+2016-03-14T23:10:35.189+0800: [GC [ParNew: 328438K-&gt;1066K(368640K), 0.0018641 secs] 328438K-&gt;1066K(1007616K), 0.0019055 secs] [Times: user=0.01 sys=0.00, real=0.01 secs]
+2016-03-14T23:10:36.465+0800: [GC [ParNew: 328746K-&gt;1156K(368640K), 0.0010304 secs] 328746K-&gt;1156K(1007616K), 0.0010519 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+2016-03-14T23:10:37.767+0800: [GC [ParNew: 328836K-&gt;1065K(368640K), 0.0011329 secs] 328836K-&gt;1065K(1007616K), 0.0011543 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+2016-03-14T23:10:39.035+0800: [GC [ParNew: 328745K-&gt;351K(368640K), 0.0043387 secs] 328745K-&gt;1127K(1007616K), 0.0043700 secs] [Times: user=0.01 sys=0.00, real=0.01 secs]
+2016-03-14T23:10:40.324+0800: [GC [ParNew: 328031K-&gt;160K(368640K), 0.0011579 secs] 328807K-&gt;936K(1007616K), 0.0011793 secs] [Times: user=0.01 sys=0.00, real=0.00 secs]
+2016-03-14T23:10:41.610+0800: [GC [ParNew: 327840K-&gt;31K(368640K), 0.0007010 secs] 328616K-&gt;826K(1007616K), 0.0007219 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+2016-03-14T23:10:42.919+0800: [GC [ParNew: 327711K-&gt;24K(368640K), 0.0011246 secs] 328506K-&gt;819K(1007616K), 0.0011450 secs] [Times: user=0.00 sys=0.00, real=0.01 secs]
+2016-03-14T23:10:44.196+0800: [GC [ParNew: 327704K-&gt;24K(368640K), 0.0006797 secs] 328499K-&gt;819K(1007616K), 0.0007586 secs] [Times: user=0.00 sys=0.00, real=0.00 secs]
+</code></p>
+
+<p>是不是觉得很神奇，由此可见，这个classloader至关重要。</p>
+
+<h2>不得不说的类加载器</h2>
+
+<p>这里着重要说的两个概念是<code>初始类加载器</code>和<code>定义类加载器</code>。举个栗子说吧，AClassLoader->BClassLoader->CClassLoader，表示AClassLoader在加载类的时候会委托BClassLoader类加载器来加载，BClassLoader加载类的时候会委托CClassLoader来加载，假如我们使用AClassLoader来加载X这个类，而X这个类最终是被CClassLoader来加载的，那么我们称CClassLoader为X类的定义类加载器，而AClassLoader为X类的初始类加载器，JVM在加载某个类的时候对AClassLoader和CClassLoader进行记录，记录的数据结构是一个叫做SystemDictionary的hashtable，其key是根据ClassLoader对象和类名算出来的hash值（其实是一个entry，可以根据这个hash值找到具体的index位置，然后构建一个包含kalssName和classloader对象的entry放到map里），而value是真正的由定义类加载器加载的Klass对象，因为初始类加载器和定义类加载器是不同的classloader，因此算出来的hash值也是不同的，因此在SystemDictionary里会有多项值的value都是指向同一个Klass对象。</p>
+
+<p>那么JVM为什么要分这两种类加载器呢，其实主要是为了快速找到已经加载的类，比如我们已经通过AClassLoader来触发了对X类的加载，当我们再次使用AClassLoader这个类加载器来加载X这个类的时候就不需要再委托给BClassLoader去找了，因为加载过的类在JVM里有这个类加载器的直接加载的记录，只需要直接返回对应的Klass对象即可。</p>
+
+<h2>Demo中的类加载器是否会加载类</h2>
+
+<p>我们的demo里发现构建了一个CompositeClassLoader的类加载器，那到底有没有用这个类加载器加载类呢，我们可以设置一个断点在CompositeClassLoader的loadClass方法上，于是看到下面的堆栈：</p>
+
+<p>```
+main@1, prio=5, in group 'main', status: 'RUNNING'</p>
+
+<pre><code>  at com.thoughtworks.xstream.core.util.CompositeClassLoader.loadClass(CompositeClassLoader.java:53)
+  at java.lang.Class.forName0(Class.java:-1)
+  at java.lang.Class.forName(Class.java:249)
+  at com.thoughtworks.xstream.XStream.buildMapperDynamically(XStream.java:191)
+  at com.thoughtworks.xstream.XStream.buildMapper(XStream.java:170)
+  at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:142)
+  at com.thoughtworks.xstream.XStream.&lt;init&gt;(XStream.java:116)
+  at com.BBBB.main(BBBB.java:15)
+</code></pre>
+
+<p>```</p>
+
+<p>可见确实有类加载的动作，根据类加载委托机制，在这个demo中我们能肯定类是交给AppClassLoader来加载的，这样一来CompositeClassLoader就变成了初始类加载器，而AppClassLoader会是定义类加载器，都会在SystemDictionary里存在，因此当我们不断new XStream的时候会不断new CompositeClassLoader对象，加载类的时候会不断往SystemDictionary里插入记录，从而使SystemDictionary越来越膨胀，那自然而然会想到如果GC过程不断去扫描这个SystemDictionary的话，那随着SystemDictionary不断膨胀，那么GC的效率也就越低，抱着验证下猜想的方式我们可以使用perf工具来看看，如果发现cpu占比排前的函数如果都是操作SystemDictionary的，那就基本验证了我们的说法，下面是perf工具的截图，基本证实了这一点。</p>
+
+<p><img src="/images/2016/03/ygc_classloader_perf.png"></p>
+
+<h2>SystemDictionary为什么会影响GC过程</h2>
+
+<p>想象一下这么个情况，我们加载了一个类，然后构建了一个对象(这个对象在eden里构建)当一个属性设置到这个类里，如果gc发生的时候，这个对象是不是要被找出来标活才行，那么自然而然我们加载的类肯定是我们一项重要的gc root，这样SystemDictionary就成为了gc过程中的被扫描对象了，事实也是如此，可以看vm的具体代码：</p>
+
+<p>```
+void SharedHeap::process_strong_roots(bool activate_scope,</p>
+
+<pre><code>                                  bool collecting_perm_gen,
+                                  ScanningOption so,
+                                  OopClosure* roots,
+                                  CodeBlobClosure* code_roots,
+                                  OopsInGenClosure* perm_blk) {
+</code></pre>
+
+<p>  StrongRootsScope srs(this, activate_scope);
+  // General strong roots.
+  assert(<em>strong_roots_parity != 0, "must have called prologue code");
+  // </em>n_termination for <em>process_strong_tasks should be set up stream
+  // in a method not running in a GC worker.  Otherwise the GC worker
+  // could be trying to change the termination condition while the task
+  // is executing in another GC worker.
+  if (!</em>process_strong_tasks->is_task_claimed(SH_PS_Universe_oops_do)) {</p>
+
+<pre><code>Universe::oops_do(roots);
+// Consider perm-gen discovered lists to be strong.
+//将perm gen的非强引用标记为root的一部分
+perm_gen()-&gt;ref_processor()-&gt;weak_oops_do(roots);
+</code></pre>
+
+<p>  }
+  // Global (strong) JNI handles
+  if (!_process_strong_tasks->is_task_claimed(SH_PS_JNIHandles_oops_do))</p>
+
+<pre><code>JNIHandles::oops_do(roots);
+</code></pre>
+
+<p>  // All threads execute this; the individual threads are task groups.
+  if (ParallelGCThreads > 0) {</p>
+
+<pre><code>Threads::possibly_parallel_oops_do(roots, code_roots);
+</code></pre>
+
+<p>  } else {</p>
+
+<pre><code>Threads::oops_do(roots, code_roots);
+</code></pre>
+
+<p>  }
+  if (!_process_strong_tasks-> is_task_claimed(SH_PS_ObjectSynchronizer_oops_do))</p>
+
+<pre><code>ObjectSynchronizer::oops_do(roots);
+</code></pre>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_FlatProfiler_oops_do))</p>
+
+<pre><code>FlatProfiler::oops_do(roots);
+</code></pre>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_Management_oops_do))</p>
+
+<pre><code>Management::oops_do(roots);
+</code></pre>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_jvmti_oops_do))</p>
+
+<pre><code>JvmtiExport::oops_do(roots);
+</code></pre>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_SystemDictionary_oops_do)) {</p>
+
+<pre><code>if (so &amp; SO_AllClasses) {
+  SystemDictionary::oops_do(roots);
+} else if (so &amp; SO_SystemClasses) {
+  SystemDictionary::always_strong_oops_do(roots);
+}
+</code></pre>
+
+<p>  }</p>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_StringTable_oops_do)) {</p>
+
+<pre><code>//JavaObjectsInPerm为false，那么String intern的对象已经class对象都是存在heap里的，否则都存在perm里  
+if (so &amp; SO_Strings || (!collecting_perm_gen &amp;&amp; !JavaObjectsInPerm)) {
+  //虽然不回收perm，但是interned的String对象不在perm里，那么还是需要遍历下StringTable里的String对象，因为这些对象在heap里
+  StringTable::oops_do(roots);
+}
+if (JavaObjectsInPerm) {
+  // Verify the string table contents are in the perm gen
+  NOT_PRODUCT(StringTable::oops_do(&amp;assert_is_perm_closure));
+}
+</code></pre>
+
+<p>  }</p>
+
+<p>  if (!_process_strong_tasks->is_task_claimed(SH_PS_CodeCache_oops_do)) {</p>
+
+<pre><code>if (so &amp; SO_CodeCache) {
+  // (Currently, CMSCollector uses this to do intermediate-strength collections.)
+  assert(collecting_perm_gen, "scanning all of code cache");
+  assert(code_roots != NULL, "must supply closure for code cache");
+  if (code_roots != NULL) {
+    CodeCache::blobs_do(code_roots);
+  }
+} else if (so &amp; (SO_SystemClasses|SO_AllClasses)) {
+  if (!collecting_perm_gen) {
+    // If we are collecting from class statics, but we are not going to
+    // visit all of the CodeCache, collect from the non-perm roots if any.
+    // This makes the code cache function temporarily as a source of strong
+    // roots for oops, until the next major collection.
+    //
+    // If collecting_perm_gen is true, we require that this phase will call
+    // CodeCache::do_unloading.  This will kill off nmethods with expired
+    // weak references, such as stale invokedynamic targets.
+    CodeCache::scavenge_root_nmethods_do(code_roots);
+  }
+}
+// Verify that the code cache contents are not subject to
+// movement by a scavenging collection.
+DEBUG_ONLY(CodeBlobToOopClosure assert_code_is_non_scavengable(&amp;assert_is_non_scavengable_closure, /*do_marking=*/ false));
+DEBUG_ONLY(CodeCache::asserted_non_scavengable_nmethods_do(&amp;assert_code_is_non_scavengable));
+</code></pre>
+
+<p>  }</p>
+
+<p>  if (!collecting_perm_gen) {</p>
+
+<pre><code>//如果是不回收perm，那找出所有perm指向new的对象  
+// All threads perform this; coordination is handled internally.
+rem_set()-&gt;younger_refs_iterate(perm_gen(), perm_blk);//perm的level是-1
+</code></pre>
+
+<p>  }
+  _process_strong_tasks->all_tasks_completed();
+}</p>
+
+<p>```</p>
+
+<p>看上面的<code>SH_PS_SystemDictionary_oops_do</code> task就知道了，这个就是对SystemDictionary进行扫描。</p>
+
+<p>但是这里要说的是虽然有对SystemDictionary进行扫描，但是ygc的过程并不会对SystemDictionary进行处理，如果要对它进行处理需要开启类卸载的vm参数，CMS算法下，CMS GC和Full GC在开启CMSClassUnloadingEnabled的情况下是可能对类做卸载动作的，此时会对SystemDictionary进行清理，所以当我们在跑上面demo的时候，通过<code>jmap -dump:live,format=b,file=heap.bin &lt;pid&gt;</code>命令执行完之后，ygc的时间瞬间降下来了，不过又会慢慢回去，这是因为jmap的这个命令会做一次gc，这个gc过程会对SystemDictionary进行清理。</p>
+
+<h2>修改VM代码验证</h2>
+
+<p>很遗憾hotspot目前没有对ygc的每个task做一个时间的统计，因此无法直接知道是不是<code>SH_PS_SystemDictionary_oops_do</code>这个task导致了ygc的时间变长，为了证明这个结论，我特地修改了一下代码，在上面的代码上加了一行：</p>
+
+<p>```
+if (!_process_strong_tasks->is_task_claimed(SH_PS_SystemDictionary_oops_do)) {</p>
+
+<pre><code>GCTraceTime t("SystemDictionary_OOPS_DO",PrintGCDetails,true,NULL);
+if (so &amp; SO_AllClasses) {
+  SystemDictionary::oops_do(roots);
+} else if (so &amp; SO_SystemClasses) {
+  SystemDictionary::always_strong_oops_do(roots);
+}
+</code></pre>
+
+<p>  }
+```</p>
+
+<p>然后重新编译，跑我们的demo，测试结果如下：</p>
+
+<p><code>
+2016-03-14T23:57:24.293+0800: [GC2016-03-14T23:57:24.294+0800: [ParNew2016-03-14T23:57:24.296+0800: [SystemDictionary_OOPS_DO, 0.0578430 secs]
+: 81920K-&gt;3184K(92160K), 0.0889740 secs] 81920K-&gt;3184K(514048K), 0.0900970 secs] [Times: user=0.27 sys=0.00, real=0.09 secs]
+2016-03-14T23:57:28.467+0800: [GC2016-03-14T23:57:28.468+0800: [ParNew2016-03-14T23:57:28.468+0800: [SystemDictionary_OOPS_DO, 0.0779210 secs]
+: 85104K-&gt;5175K(92160K), 0.1071520 secs] 85104K-&gt;5175K(514048K), 0.1080490 secs] [Times: user=0.65 sys=0.00, real=0.11 secs]
+2016-03-14T23:57:32.984+0800: [GC2016-03-14T23:57:32.984+0800: [ParNew2016-03-14T23:57:32.984+0800: [SystemDictionary_OOPS_DO, 0.1075680 secs]
+: 87095K-&gt;8188K(92160K), 0.1434270 secs] 87095K-&gt;8188K(514048K), 0.1439870 secs] [Times: user=0.90 sys=0.01, real=0.14 secs]
+2016-03-14T23:57:37.900+0800: [GC2016-03-14T23:57:37.900+0800: [ParNew2016-03-14T23:57:37.901+0800: [SystemDictionary_OOPS_DO, 0.1745390 secs]
+: 90108K-&gt;7093K(92160K), 0.2876260 secs] 90108K-&gt;9992K(514048K), 0.2884150 secs] [Times: user=1.44 sys=0.02, real=0.29 secs]
+</code>
+我们会发现YGC的时间变长的时候，SystemDictionary_OOPS_DO的时间也会相应变长多少，因此验证了我们的说法。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JDK的sql设计不合理导致的驱动类初始化死锁问题]]></title>
+    <link href="http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/"/>
+    <updated>2014-07-08T16:39:46+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock</id>
+    <content type="html"><![CDATA[<h2>问题描述</h2>
+
+<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
+
+<!--more-->
+
+
+
+
+<pre class="prettyPrint">
+
+import java.util.Iterator;
+
+import sun.misc.Service;
+
+public class Main {
+    public static void main(String[] args) throws ClassNotFoundException {
+        Thread1 thread1 = new Thread1();
+        Thread2 thread2 = new Thread2();
+        thread1.start();
+        thread2.start();
+    }
+}
+
+class Thread1 extends Thread {
+    public void run() {
+        try {
+            Class<?> clazz = Class.forName("com.mysql.jdbc.Driver", true, Thread.currentThread()
+                .getContextClassLoader());
+            System.out.println(clazz);
+        } catch (ClassNotFoundException e) {
+        }
+    }
+}
+
+class Thread2 extends Thread {
+    public void run() {
+        Iterator ps = Service.providers(java.sql.Driver.class);
+        try {
+            while (ps.hasNext()) {
+                System.out.println(ps.next());
+            } 
+        } catch (Throwable t) {
+           
+        }
+    }
+}
+</pre>
+
+
+<p>&#8195;&#8195;如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
+
+<p>&#8195;&#8195;先上两张图</p>
+
+<p><code>内存态线程堆栈</code></p>
+
+<p><img src="/images/2014/07/heap_thread_1.png"></p>
+
+<p><code>线程堆栈</code></p>
+
+<p><img src="/images/2014/07/thread_1.png"></p>
+
+<h2>存疑点</h2>
+
+<p>&#8195;&#8195;仔细看看上面的线程dump分析和内存dump分析里的线程分析模块，您可能会有如下两个疑惑：</p>
+
+<ul>
+<li><p>【为什么线程[Thread-0]一直卡在Class.forName的位置】：这有点出乎意料，做一个类加载要么找不到抛出ClassNotFoundException，要么找到直接返回，为什么会一直卡在这个位置呢？</p></li>
+<li><p>【明明[Thread-0]注册的是mysql驱动为什么会去加载Odbc的驱动类】：通过[Thread-0]在栈上看倒数第二帧展开看到传入Class.forName的参数是com.mysql.jdbc.Driver，然后展开栈上顺序第二帧，看到传入的参数是sun.jdbc.odbc.JdbcOdbcDriver，这意味着在对mysql驱动类做加载初始化的过程中又触发了JdbcOdbc驱动类的加载</p></li>
+</ul>
+
+
+<h2>疑惑点解释</h2>
+
+<h3>疑惑二：</h3>
+
+<p>&#8195;&#8195;第一个疑惑我们先留着，先解释下第二个疑惑，大家可以对照堆栈通过反编译rt.jar还有ojdbc6-11.2.0.3.0.jar看具体的代码</p>
+
+<p><code>驱动类加载过程简要介绍:</code></p>
+
+<p>&#8195;&#8195;当要注册某个sql驱动的时候是通过调用java.sql.DriverManager.registerDriver来实现的(注意这个方法加了synchronized关键字，后面解释第一个疑惑的时候是关键)，而这个方法在第一次执行过程中，会在当前线程classloader的classpath下寻找所有/META-INF/services/java.sql.Driver文件，这个文件在mysql和oracle驱动jar里都有，里面写的是对应的驱动实现类名，这种机制是jdk提供的spi实现，找到这些文件之后，依次使用Class.forName(driverClassName, true, this.loader)来对这些驱动类进行加载，其中第二个参数是true，意味着不仅仅做一次loadClass的动作，还会初始化该类，即调用包含静态块的&lt; clinit >方法，执行完之后才会返回，这样就解释了第二个疑惑，在mysql驱动注册过程中还会对odbc驱动类进行加载并初始化</p>
+
+<p><code>感想:</code></p>
+
+<p>&#8195;&#8195;其实我觉得这种设计有点傻，为什么要干和自己不相关的事情呢，画蛇添足的设计，首先类初始化的开销是否放到一起做并没有多大区别，其次正由于这种设计导致了今天这个死锁的发生</p>
+
+<h3>疑惑一：</h3>
+
+<p>&#8195;&#8195;现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示</p>
+
+<pre class="prettyPrint">
+----------------- 5738 -----------------
+0x003f67a2      _dl_sysinfo_int80 + 0x2
+0xb79a71ae      _ZN2os13PlatformEvent4parkEv + 0xee
+0xb7997acb      _ZN13ObjectMonitor4waitExbP6Thread + 0x5fb
+0xb7a73c53      _ZN18ObjectSynchronizer19waitUninterruptiblyE6HandlexP6Thread + 0x53
+0xb777eb34      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x74
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * sun.misc.Service$LazyIterator.next() bci:31 line:271 (Interpreted frame)
+0xb4329483      * java.sql.DriverService.run() bci:26 line:664 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb780aace      JVM_DoPrivileged + 0x40e
+0xb734b95d      Java_java_security_AccessController_doPrivileged__Ljava_security_PrivilegedAction_2 + 0x3d
+0xb433064a      * java.security.AccessController.doPrivileged(java.security.PrivilegedAction) bci:0 (Interpreted frame)
+0xb4328fa7      * java.sql.DriverManager.loadInitialDrivers() bci:31 line:506 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.initialize() bci:11 line:612 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.registerDriver(java.sql.Driver) bci:6 line:281 (Interpreted frame)
+0xb432910d      * com.mysql.jdbc.Driver.<clinit>() bci:7 line:65 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb77800c1      _ZN13instanceKlass27call_class_initializer_implE19instanceKlassHandleP6Thread + 0xa1
+0xb777ed8e      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x2ce
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * Thread1.run() bci:9 line:17 (Interpreted frame)
+
+</pre>
+
+
+<p>&#8195;&#8195;我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：</p>
+
+<pre class="prettyPrint">
+void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
+  // Make sure klass is linked (verified) before initialization
+  // A class could already be verified, since it has been reflected upon.
+  this_oop->link_class(CHECK);
+
+  DTRACE_CLASSINIT_PROBE(required, instanceKlass::cast(this_oop()), -1);
+
+  bool wait = false;
+
+  // refer to the JVM book page 47 for description of steps
+  // Step 1
+  { ObjectLocker ol(this_oop, THREAD);
+
+    Thread *self = THREAD; // it's passed the current thread
+
+    // Step 2
+    // If we were to use wait() instead of waitInterruptibly() then
+    // we might end up throwing IE from link/symbol resolution sites
+    // that aren't expected to throw.  This would wreak havoc.  See 6320309.
+    while(this_oop->is_being_initialized() && !this_oop->is_reentrant_initialization(self)) {
+        wait = true;
+      ol.waitUninterruptibly(CHECK);
+    }
+
+    // Step 3
+    if (this_oop->is_being_initialized() && this_oop->is_reentrant_initialization(self)) {
+      DTRACE_CLASSINIT_PROBE_WAIT(recursive, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 4
+    if (this_oop->is_initialized()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(concurrent, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 5
+    if (this_oop->is_in_error_state()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(erroneous, instanceKlass::cast(this_oop()), -1,wait);
+      ResourceMark rm(THREAD);
+      const char* desc = "Could not initialize class ";
+      const char* className = this_oop->external_name();
+      size_t msglen = strlen(desc) + strlen(className) + 1;
+      char* message = NEW_RESOURCE_ARRAY(char, msglen);
+      if (NULL == message) {
+        // Out of memory: can't create detailed error message
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), className);
+      } else {
+        jio_snprintf(message, msglen, "%s%s", desc, className);
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), message);
+      }
+    }
+
+    // Step 6
+    this_oop->set_init_state(being_initialized);
+    this_oop->set_init_thread(self);
+  }
+  ...
+}
+</pre>
+
+
+<p><code>类的初始化过程:</code></p>
+
+<p>&#8195;&#8195;当某个线程获得机会对某个类进行初始化的时候(请看上面的Step 6)，会设置这个类的init_state属性为being_initialized(如果初始化好了会设置为fully_initialized，异常的话会设置为initialization_error)，还会设置init_thread属性为当前线程，在这个设置过程中是有针对这个类提供了一把互斥锁的，因此当有别的线程进来的时候会被拦截在外面，如果设置完了，这把互斥锁也释放了，但是因为这个类的状态被设置了，因此并发问题也得到了解决，当另外一个线程也尝试初始化这个类的时候会判断这个类的状态是不是being_initialized，并且其init_thread不是当前线程，那么就会一直卡在那里，也就是此次线程dump的线程所处的状态，正在初始化类的线程会调用&lt; clinit >方法，如果正常结束了，那么就设置其状态为fully_initialized，并且通知之前卡在那里等待初始化完成的线程，然他们继续往下走(下一个动作就是再判断下状态，发现完成了就直接return了)</p>
+
+<p><code>猜想:</code></p>
+
+<p>&#8195;&#8195;在了解了上面的过程之后，于是我们猜测两种可能</p>
+
+<ul>
+<li>第一，这个类的状态还是being_intialized，还在while循环里没有跳出来</li>
+<li>第二，事件通知机制出现了问题，也就是pthread_cond_wait和pthread_cond_signal之间的通信过程出现了问题。</li>
+</ul>
+
+
+<p>&#8195;&#8195;不过第二种可能性非常小，比较linux久经考验了，那接下来我们验证其实是第一个猜想</p>
+
+<p><code>验证：</code></p>
+
+<p>&#8195;&#8195;我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14</p>
+
+<pre class="prettyPrint">
+(gdb) info threads
+  17 process 5724  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  16 process 6878  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  15 process 5739  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  14 process 5738  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  13 process 5737  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  12 process 5736  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  11 process 5735  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  10 process 5734  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  9 process 5733  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  8 process 5732  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  7 process 5731  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  6 process 5730  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  5 process 5729  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  4 process 5728  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  3 process 5727  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  2 process 5726  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  1 process 5725  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+</pre>
+
+
+<p>
+&#8195;&#8195;然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里</p>
+
+<pre class="prettyPrint">
+(gdb) thread 14
+[Switching to thread 14 (process 5738)]#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+(gdb) bt
+#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+#1  0x005e0d76 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#2  0x005e13ee in pthread_cond_wait@GLIBC_2.0 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#3  0xb79a71ae in os::PlatformEvent::park () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#4  0xb7997acb in ObjectMonitor::wait () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#5  0xb7a73c53 in ObjectSynchronizer::waitUninterruptibly () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#6  0xb777eb34 in instanceKlass::initialize_impl () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#7  0xb777e288 in instanceKlass::initialize () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#8  0xb7821ad9 in find_class_from_class_loader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#9  0xb7807d99 in JVM_FindClassFromClassLoader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#10 0xb734c236 in Java_java_lang_Class_forName0 () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/libjava.so
+#11 0xb433064a in ?? ()
+#12 0x0813b120 in ?? ()
+#13 0x70aaa690 in ?? ()
+#14 0x70aaa6a0 in ?? ()
+#15 0x00000001 in ?? ()
+#16 0x70aaa698 in ?? ()
+#17 0x00000000 in ?? ()
+
+</pre>
+
+
+<p>&#8195;&#8195;我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编</p>
+
+<pre class="prettyPrint">
+0xb777eaed <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45>:  lea    0xfffffff4(%ebp),%esp    //将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
+0xb777eaf0 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+48>:  pop    %ebx
+0xb777eaf1 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+49>:  pop    %esi
+0xb777eaf2 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+50>:  pop    %edi
+0xb777eaf3 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+51>:  pop    %ebp
+0xb777eaf4 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+52>:  ret
+0xb777eaf5 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+53>:  push   $0x1
+0xb777eaf7 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+55>:  lea    0xffffffd8(%ebp),%edx
+0xb777eafa <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+58>:  push   %esi
+0xb777eafb <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+59>:  push   %ebx
+0xb777eafc <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+60>:  push   %edx
+0xb777eafd <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+61>:  call   0xb7a73a80 <_ZN12ObjectLockerC1E6HandleP6Threadb>
+0xb777eb02 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+66>:  add    $0x10,%esp
+0xb777eb05 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+69>:  xor    %eax,%eax
+0xb777eb07 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+71>:  test   %ebx,%ebx
+0xb777eb09 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+73>:  je     0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>
+0xb777eb0b <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+75>:  mov    (%ebx),%eax      //将%ebx的值移到%eax
+0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>:  cmpl   $0x4,0xe0(%eax)  //对比%eax偏移0xe0位置的值和0x4(这个值其实就是上面提到的being_initialized状态，这就说明了%eax偏移0xe0位置其实存的就是初始化类的初始化状态)
+0xb777eb14 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+84>:  jne    0xb777eb4f <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+143>
+</pre>
+
+
+<p>&#8195;&#8195;从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
+
+<pre class="prettyPrint">
+(gdb) x $ebp + 0xfffffff4
+0x70aaa45c: 0x71af2180
+(gdb) x/3w 0x71af2180 + 0xe0
+0x71af2260: 0x00000004  0x0813c800  0x0000001a
+</pre>
+
+
+<p>    <br/>
+&#8195;&#8195;而4其实代表的就是being_initialized这个状态，代码如下</p>
+
+<pre class="prettyPrint">
+  enum ClassState {
+    unparsable_by_gc = 0,               
+    allocated,                          
+    loaded,                             
+    linked,                             
+    being_initialized,                  
+    fully_initialized,                  
+    initialization_error                
+  };
+</pre>
+
+
+<p>
+&#8195;&#8195;从这于是我们验证了第一个猜想，其实是状态一直没有变更，因此一直卡在那里，为了更进一步确认这个问题，要是我们能找到该类的init_thread线程id就更清楚了，拿到这个ID我们就能看到这个线程栈，就知道它在干什么了，但是很遗憾，这个很难获取到，至少我一直没有找到办法，因为线程ID在线程对象里一直没有存，都是调用的os函数来获取的，得换个思路。</p>
+
+<p>&#8195;&#8195;突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB</p>
+
+<pre class="prettyPrint">
+(gdb) x/100w 0x0813c800
+0x813c800:  0xb7bc06e8  0x00000000  0x00000000  0x00000000
+0x813c810:  0x0813c488  0x0813d2c8  0x00000000  0x00000000
+0x813c820:  0x080f9bf8  0x080f8b50  0x70a59b60  0x00000000
+0x813c830:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c840:  0x00014148  0x00000505  0x00000000  0x00000000
+0x813c850:  0x00000000  0x00000000  0x00000000  0x3f800021
+0x813c860:  0x00000001  0x00000023  0x3f800021  0x0001b530
+0x813c870:  0x00000000  0x00000000  0x00000000  0x080ffdc0
+0x813c880:  0x00000001  0x00000000  0x080ffe24  0x00000014
+0x813c890:  0x00000031  0x00000000  0x00000000  0x0813dab0
+0x813c8a0:  0x0813c428  0x0813ce98  0x70a5b000  0x00051000
+0x813c8b0:  0x00000000  0xffffffff  0x00000000  0x080ffdc0
+0x813c8c0:  0x00002bad  0x0813d400  0x0813d500  0x0813d700
+0x813c8d0:  0x0813d800  0x00000000  0x00000000  0x104aa1ad
+0x813c8e0:  0x544a5ab2  0x32378fc7  0x00008767  0x00000000
+0x813c8f0:  0x00000000  0x00000000  0x0ee9547d  0x00000000
+0x813c900:  0x00000000  0x00000000  0x0813b000  0x75878760
+0x813c910:  0x70a59a94  0x00000000  0x70a59abc  0xb7829020
+0x813c920:  0xb7bb7100  0x00000000  0x00000000  0x00000000
+0x813c930:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c940:  0x00000000  0x00000000  0x00000000  0x00000000
+0x813c950:  0x00000000  0x00000000  0x00000000  0x0000000a
+0x813c960:  0x0813da98  0x00000000  0x0000deab  0x00000001
+0x813c970:  0x00000000  0x00000000  0x00000002  0x00000000
+0x813c980:  0x00000000  0x00000000  0x00000000  0x00000000
+</pre>
+
+
+<p>&#8195;&#8195;因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
+
+<pre class="prettyPrint">
+ public:                                    
+  volatile JavaThreadState _thread_state;
+ private:
+  ThreadSafepointState *_safepoint_state;        
+  address               _saved_exception_pc;    
+  volatile TerminatedTypes _terminated;
+</pre>
+
+
+<p><code>JavaThreadState</code></p>
+
+<pre class="prettyPrint">
+ enum JavaThreadState {
+  _thread_uninitialized     =  0, 
+  _thread_new               =  2, 
+  _thread_new_trans         =  3, 
+  _thread_in_native         =  4, 
+  _thread_in_native_trans   =  5, 
+  _thread_in_vm             =  6, 
+  _thread_in_vm_trans       =  7, 
+  _thread_in_Java           =  8, 
+  _thread_in_Java_trans     =  9, 
+  _thread_blocked           = 10, 
+  _thread_blocked_trans     = 11, 
+  _thread_max_state         = 12  
+};
+</pre>
+
+
+<p>&#8195;&#8195;这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
+
+<p>&#8195;&#8195;于是我们展开<code>Thread-1</code>，看到<code>- waiting to lock &lt;0x71ae2ec0&gt; (a java.lang.Class for java.sql.DriverManager)</code>，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被<code>Thread-0</code>线程持有的，从<code>Thread-1</code>这个线程堆栈来看它其实也是在做Class.forName动作，并且通过<code>Thread-1</code>,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver</p>
+
+<p><code>问题现场遐想:</code></p>
+
+<p>&#8195;&#8195;于是我们大胆设想一个场景，<code>Thread-1</code>先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，<code>Thread-0</code>这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态</p>
+
+<h3>解决方案</h3>
+
+<p>&#8195;&#8195;解决方案目前想到的是将驱动类的加载过程变成单线程加载，不存在并发情况就没问题了</p>
+]]></content>
+  </entry>
+  
+</feed>

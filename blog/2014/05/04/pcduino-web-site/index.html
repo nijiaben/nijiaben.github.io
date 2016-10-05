@@ -1,0 +1,332 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>pcduino搭建web站点IP映射解决方案 - 你假笨</title>
+  <meta name="author" content="你假笨">
+
+   
+  <meta name="description" content="技术宅改变世界">
+  
+  <meta name="keywords" content="">
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site">
+  <link href="/favicon.ico" rel="icon">
+  <!--
+  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
+  -->
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/bootstrap-collapse.js"></script>
+  <script src="/js/modernizr-2.0.js"></script>
+  <script src="/js/octopress.js" type="text/javascript"></script>
+  <script src="/js/application.js"></script>
+  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
+  <script type="text/javascript"]]>
+    	$(function(){     
+		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
+	         window.prettyPrint && prettyPrint();
+                 $('table').addClass('table')});
+  </script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+-->
+
+  
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-52812422-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
+
+</head>
+
+<body   >
+  <div class="navbar navbar-inverse navbar-static-top">
+  	<div class="navbar-inner">
+  	  <div class="container">
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
+          <span class="fui-menu-24"></span>
+        </a>
+  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
+  	      <ul class="nav">
+    
+        <li ><a href="/">博客</a></li>
+    
+        <li ><a href="/archives/index.html">目录</a></li>
+    
+        <li ><a href="/comments/latest.html">最新评论</a></li>
+    
+        <li ><a href="/about/index.html">关于你假笨</a></li>
+    
+</ul>
+
+<ul class="nav pull-right">
+    
+    
+    
+    
+    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
+    
+    
+    
+    
+    
+    
+    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
+    
+
+    
+</ul>
+
+  	    </div>
+  	  </div>
+  	</div>
+  </div>
+  <div class="container" id="main">
+      <div class="row-fluid">
+        <div id="content">
+          <div>
+<article class="hentry" role="article">
+  
+
+  <header>
+  <div class="jumbotron">
+    pcduino搭建web站点IP映射解决方案
+	<h5>
+
+
+
+
+
+
+
+
+  
+
+
+<i class="icon-calendar-empty"></i> <time datetime="2014-05-04T10:43:57+08:00" pubdate data-updated="true">May 4<span>th</span>, 2014</time></h5>
+  </div>
+</header>
+  <div class="row-fluid">
+    <div class="span12">
+      <p>&#8195;&#8195;在pcduino上搭建站点，有两个问题首先需要解决</p>
+
+<ul>
+<li> 域名绑定</li>
+<li> 端口映射</li>
+</ul>
+
+
+<p>&#8195;&#8195;如果你的pcduino连的路由器的IP已经是公网IP，按照如下步骤查看</p>
+
+<ul>
+<li> 打开路由器管理页面，比如<code>192.168.1.1</code>，查看运行状态里WAN显示的IP地址</li>
+<li> 打开<code>www.ip138.com</code>，上面会显示你的公网IP</li>
+<li> 如果以上两者相等，说明你的路由器就是直接连的公网，否则外面可能还有一层或者几层路由器，这个就比较麻烦了，你必须要有操作他们的权限才能继续往下走</li>
+</ul>
+
+
+<!--more-->
+
+
+<h2>域名绑定解决方案</h2>
+
+<ul>
+<li> 自己在域名管理处设置A记录指向你的公网IP，该IP如果是静态的(可以通过重启路由器查看你的公网IP是否有变化来测试)，这个就好说了，如果是动态变化的，那么要么你的A记录跟着变，要么参考下一条方案</li>
+<li> 针对动态IP，一般采用花生壳的方案，一般的路由器都带有嵌入式的花生壳，在路由器里登录花生壳就好了，域名的管理需要在花生壳官网配置，同时要到你的域名商那里修改dns，指向花生壳的dns，如<code>ns1.dnsoray.net</code>和<code>ns2.dnsoray.net</code>，这样基本就可以了，同时在花生壳官网你可以看到你的域名自动帮你A记录到你的公网IP，如果显示的IP不是你的公网IP，就麻烦了，下面具体描述下这种情况</li>
+</ul>
+
+
+<p>&#8195;&#8195;某些互联网宽带服务运营商(简称为ISP)为了扩展所属地区的相关信息业务,或基于其他的技术原因,在用户拥有“公网IP”的同时，在ISP出口作出一个特殊的技术手段处理 —— NAT转发，受到被ISP 做NAT转发的用户苦不堪言,明明拥有公网IP地址，在使用大部分动态域名解析软件时却出现被解析到另外一个莫名其妙的公网IP地址。目前免费的花生壳用户是不提供此类解决方案的，除非你成为付费用户，几百块一年吧，我其实就是处于这种情况，我自己目前方案是第一种（我的比这个还复杂点，我的pcduino是处在多重局域网中，下面正要说的），比较蛋疼，没有想到好的解决方案，万一路由器重启了，我必须重新改变A记录指向，屌丝总想省点钱(空间服务费省了，要是域名服务费也能省了就好了)。</p>
+
+<h2>端口转发的设置过程</h2>
+
+<ul>
+<li> pcduino所连的路由器直接处于广域网中的情况，在你的路由器管理页面里选择&#8221;转发规则&#8221;->&#8221;虚拟服务器&#8221;里添加新条目(假如你使用的是tplink，其他的路由器也类似)，里面有几个选项，直接看帮助就知道什么意思了，该设置主要实现的功能是针对某个端口来的所有请求都转发给对应的内网机器，比如80来的web请求都转给<code>192.168.1.10</code>，这个IP就是pcduino的IP，下面会介绍pcduino上如果进行静态IP的设置</li>
+<li> 对于网中网的情况，那么就必须要有从分配了公网IP的路由器到pcduino的路由器之间涉及的所有路由器都要有操作权限，也就是通过类似上面的方法一层层指定下来，比如公网里80端口来的服务首先转到路由器1的80端口，然后再转给路由器2的80端口&#8230;以此类推，直到你的pcduino的80端口</li>
+<li> 如果嫌设置端口映射麻烦，那还有一个方案，那就是通过设置每个路由器的dmz主机，上层路由器的dmz主机指向下层路由器的IP或者pcduino的IP，这样相当于将pcduino整个暴露给公网了，当然你中间的路由器也是类似的情况，安全性有待考验</li>
+</ul>
+
+
+<h2>pcduino设置静态IP的操作</h2>
+
+<p>&#8195;&#8195;我的pcduino弄了一个<a href="http://item.jd.com/509932.html`">无usb无线网卡</a>，即插即用，很方便</p>
+
+<ul>
+<li> 首先确保你正确连接了你的无线网络，通过<code>iwlist wlan3 scan</code>查看你的无线网络参数，ESSID指定的值就是你的无线网名字，不要选错了   <br/>
+<pre class="prettyPrint">
+root@ubuntu:/etc/network# iwlist wlan3 scan       <br/>
+    wlan3     Scan completed :
+              ESSID:"RJB"   <br/>
+              Protocol:IEEE 802.11bgn         <br/>
+              Mode:Master
+              Frequency:2.452 GHz (Channel 9)
+              Encryption key:on
+              Bit Rates:150 Mb/s
+</pre></li>
+<li> 通过上面我们看到几个关键参数，<code>wlan3</code>(网卡名)，<code>ESSID</code>(网络名)，<code>Channel 9</code>(信道)</li>
+<li><p> 于是编辑/etc/network/interface，加入如下内容
+<pre class="prettyPrint">
+auto wlan3<br/>
+iface wlan3 inet static<br/>
+address 192.168.1.10<br/>
+netmask 255.255.255.0<br/>
+gateway 192.168.1.1<br/>
+wpa-ssid RJB（要连接的wlan ssid）<br/>
+wpa-passphrase wlan密码<br/>
+wireless-channel 9（信道号）
+</pre></p></li>
+<li><p> 修改dns服务器地址</p>
+
+<ul>
+<li><p>拷贝<code>/etc/resolv.conf</code>里面的内容出来，然后删除该文件</p></li>
+<li><p>新建上面的这个文件，将拷贝的内容复制进去，同时增加<code>nameserver 8.8.8.8</code></p></li>
+<li><p>执行命令<code>chattr +i /etc/resolv.conf</code>，之所以执行该步骤，是为了不让<code>resolv.conf</code>了的内容被覆盖</p></li>
+<li>重启网络<code>/etc/init.d/networking restart</code> ，抑或重启系统<code>shutdown -r now</code></li>
+</ul>
+
+
+<p> 通过以上方式就可以将你的pcduino地址绑定到静态地址了，这样这个地址你就可以放心地在路由器上配置端口转发规则了</p></li>
+</ul>
+
+
+    </div>
+  </div>
+
+
+
+  <footer>
+    <hr>
+    
+    <div class="row-fluid">
+      
+      <div class="span6">
+        <p class="meta">
+        
+        
+
+
+
+  <a href="/blog/categories/pcduino/"><span class="badge">PCDUINO</span></a>
+
+  <a href="/blog/categories/web/"><span class="badge">WEB</span></a>
+
+
+
+
+        </p>
+      </div>
+      
+      <div class="span6 social-sharing">
+        <div class="sharing">
+  <div class="addthis_toolbox addthis_default_style ">
+  
+  
+  
+  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
+  
+  <a class="addthis_counter addthis_pill_style"></a>
+  </div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+      </div>
+      
+      
+    </div>
+    
+    <div class="row-fluid">
+      <div class="span12">
+        <p class="meta">
+          
+            <a class="basic-alignment left" href="/blog/2014/04/23/new-begin/" title="Previous Post: Octopress新纪元">&laquo; Octopress新纪元</a>
+          
+          
+            <a class="basic-alignment right" href="/blog/2014/05/20/tcp-broken-pipe/" title="Next Post: 从tcp原理角度理解Broken pipe和Connection reset by peer的区别">从tcp原理角度理解Broken pipe和Connection reset by peer的区别 &raquo;</a>
+          
+        </p>
+      </div>
+    </div>
+  </footer>
+</article>
+
+ 
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+
+
+        </div>
+      </div>
+      <div class="row-fluid">
+        <footer class="footer-page" role="contentinfo">
+          <p>
+  Copyright &copy; 2016 - 你假笨 -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
+</p>
+
+
+        </footer>
+      </div>
+  </div>
+  
+
+
+
+
+
+  <script type="text/javascript">
+//    (function() {
+ //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
+   //   script.src = 'https://apis.google.com/js/plusone.js';
+    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
+   // })();
+  </script>
+
+
+
+
+
+
+
+</body>
+</html>

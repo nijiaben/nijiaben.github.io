@@ -1,0 +1,722 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: JDK8 | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/jdk8/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-05-18T23:46:24+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之JDK8下的僵尸(无法回收)类加载器]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/04/24/classloader-unload/"/>
+    <updated>2016-04-24T11:21:24+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/04/24/classloader-unload</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>这篇文章基于最近在排查的一个问题，花了我们团队不少时间来排查这个问题，现象是有一些类加载器是作为key放到WeakHashMap里的，但是经历过多次full gc之后，依然坚挺地存在内存里，但是从代码上来说这些类加载器是应该被回收的，因为没有任何强引用可以到达这些类加载器了，于是我们做了内存dump，分析了下内存，发现除了一个WeakHashMap外并没有别的GC ROOT途径达到这些类加载器了，那这样一来经过多次FULL GC肯定是可以被回收的，但是事实却不是这样，为了让这个问题听起来更好理解，还是照例先上个Demo，完全模拟了这种场景。</p>
+
+<!--more-->
+
+
+<h2>Demo</h2>
+
+<p>首先我们创建两个类AAA和AAB，分别打包到两个不同jar里，比如AAA.jar和AAB.jar，这两个类之间是有关系的，AAA里有个属性是AAB类型的，注意这两个jar不要放到classpath里让appClassLoader加载到：</p>
+
+<p>```
+public class AAA {</p>
+
+<pre><code>    private AAB aab;
+    public AAA(){
+            aab=new AAB();
+    }
+    public void clear(){
+            aab=null;
+    }
+</code></pre>
+
+<p>}</p>
+
+<p>public class AAB {}
+```</p>
+
+<p>接着我们创建一个类加载TestLoader，里面存一个WeakHashMap，专门来存TestLoader的，并且复写loadClass方法，如果是加载AAB这个类，就创建一个新的TestLoader来从AAB.jar里加载这个类</p>
+
+<p>```
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.WeakHashMap;</p>
+
+<p>public class TestLoader extends URLClassLoader {</p>
+
+<pre><code>    public static WeakHashMap&lt;TestLoader,Object&gt; map=new WeakHashMap&lt;TestLoader,Object&gt;();
+    private static int count=0;
+    public TestLoader(URL[] urls){
+            super(urls);
+            map.put(this, new Object());
+    }
+    @SuppressWarnings("resource")
+    public Class&lt;?&gt; loadClass(String name) throws ClassNotFoundException {
+            if(name.equals("AAB") &amp;&amp; count==0){
+                    try {
+                            count=1;
+                URL[] urls = new URL[1];
+                urls[0] = new URL("file:///home/nijiaben/tmp/AAB.jar");
+                return new TestLoader(urls).loadClass("AAB");
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+            }else{
+                    return super.loadClass(name);
+            }
+            return null;
+    }
+</code></pre>
+
+<p>}
+```</p>
+
+<p>再看我们的主类TTest，一些说明都写在类里了：</p>
+
+<p>```
+import java.lang.reflect.Method;
+import java.net.URL;</p>
+
+<p>/<em>*
+ * Created by nijiaben on 4/22/16.
+ </em>/
+public class TTest {</p>
+
+<pre><code>private Object aaa;
+public static void main(String args[]){
+    try {
+        TTest tt = new TTest();
+        //将对象移到old，并置空aaa的aab属性
+        test(tt);
+        //清理掉aab对象
+        System.gc();
+        System.out.println("finished");
+    }catch (Exception e){
+        e.printStackTrace();
+    }
+}
+
+@SuppressWarnings("resource")
+    public static void test(TTest tt){
+    try {
+        //创建一个新的类加载器，从AAA.jar里加载AAA类
+        URL[] urls = new URL[1];
+        urls[0] = new URL("file:///home/nijiaben/tmp/AAA.jar");
+        tt.aaa=new TestLoader(urls).loadClass("AAA").newInstance();
+        //保证类加载器对象能进入到old里，因为ygc是不会对classLoader做清理的
+        for(int i=0;i&lt;10;i++){
+            System.gc();
+            Thread.sleep(1000);
+        }
+        //将aaa里的aab属性清空掉，以便在后面gc的时候能清理掉aab对象，这样AAB的类加载器其实就没有什么地方有强引用了，在full gc的时候能被回收
+        Method[] methods=tt.aaa.getClass().getDeclaredMethods();
+        for(Method m:methods){
+            if(m.getName().equals("clear")){
+                    m.invoke(tt.aaa);
+                    break;
+            }
+        }
+    }catch (Exception e){
+        e.printStackTrace();
+    }
+}
+</code></pre>
+
+<p>}
+```</p>
+
+<p>运行的时候请跑在JDK8下，打个断点在<code>System.out.println("finished")</code>的地方，然后做一次内存dump。</p>
+
+<p>从上面的例子中我们得知，TTest是类加载器AppClassLoader加载的，其属性aaa的对象类型是通过TestLoader从AAA.jar里加载的，而aaa里的aab属性是从一个全新的类加载器TestLoader从AAB.jar里加载的，当我们做了多次System GC之后，这些对象会移到old，在做最后一次GC之后，aab对象会从内存里移除，其类加载器此时已经是没有任何地方的强引用了，只有一个WeakHashMap引用它，理论上做GC的时候也应该被回收，但是事实时这个AAB的这个类加载器并没有被回收，从分析结果来看，GC ROOT路径是WeakHashMap，如图所示：</p>
+
+<p><img src="/images/2016/04/mat.png"></p>
+
+<h2>JDK8里的metaspace</h2>
+
+<p>这里不得不提的一个概念是JDK8里的metaspace，它是为了取代perm的，至于好处是什么，我个人觉得不是那么明显，有点费力不讨好的感觉，代码改了很多，但是实际收益并不明显，据说是oracle内部斗争的一个结果。</p>
+
+<p>在JDK8里虽然没了perm，但是klass的信息还是要有地方存，jvm里为此分配了两块内存，一块是紧挨着heap来的，就和perm一样，专门用来存klass的信息，可以通过<code>-XX:CompressedClassSpaceSize</code>来设置大小，另外一块和它们不一定连着，主要是存非klass之外的其他信息，比如常量池什么的，可以通过<code>-XX:InitialBootClassLoaderMetaspaceSize</code>来设置，同时我们还可以通过<code>-XX:MaxMetaspaceSize</code>来设置触发metaspace回收的阈值。</p>
+
+<p>每个类加载器都会从全局的metaspace空间里取一些metaChunk管理起来，当有类定义的时候，其实就是从这些内存里分配的，当不够的时候再去全局的metaspace里分配一块并管理起来。</p>
+
+<p>这块具体的情况后面可以专门写一篇文章来介绍，包括内存结构，内存分配，GC等。</p>
+
+<h2>JDK8里的ClassLoaderDataGraph</h2>
+
+<p>每个类加载器都会对应一个ClassLoaderData的数据结构，里面会存譬如具体的类加载器对象，加载的klass，管理内存的metaspace等，它是一个链式结构，会链到下一个ClassLoaderData上，gc的时候通过ClassLoaderDataGraph来遍历这些ClassLoaderData，ClassLoaderDataGraph的第一个ClassLoaderData是bootstrapClassLoader的</p>
+
+<p>```
+class ClassLoaderData : public CHeapObj<mtClass> {
+  ...
+  static ClassLoaderData * _the_null_class_loader_data;</p>
+
+<p>  oop _class_loader;          // oop used to uniquely identify a class loader</p>
+
+<pre><code>                          // class loader or a canonical class path
+</code></pre>
+
+<p>  Dependencies _dependencies; // holds dependencies from this class loader</p>
+
+<pre><code>                          // data to others.
+</code></pre>
+
+<p>  Metaspace * _metaspace;  // Meta-space where meta-data defined by the</p>
+
+<pre><code>                       // classes in the class loader are allocated.
+</code></pre>
+
+<p>  Mutex* <em>metaspace_lock;  // Locks the metaspace for allocations and setup.
+  bool </em>unloading;         // true if this class loader goes away
+  bool <em>keep_alive;        // if this CLD is kept alive without a keep_alive_object().
+  bool </em>is_anonymous;      // if this CLD is for an anonymous class
+  volatile int _claimed;   // true if claimed, for example during GC traces.</p>
+
+<pre><code>                       // To avoid applying oop closure more than once.
+                       // Has to be an int because we cas it.
+</code></pre>
+
+<p>  Klass* _klasses;         // The classes defined by the class loader.</p>
+
+<p>  JNIHandleBlock* _handles; // Handles to constant pool arrays</p>
+
+<p>  // These method IDs are created for the class loader and set to NULL when the
+  // class loader is unloaded.  They are rarely freed, only for redefine classes
+  // and if they lose a data race in InstanceKlass.
+  JNIMethodBlock*                  _jmethod_ids;</p>
+
+<p>  // Metadata to be deallocated when it's safe at class unloading, when
+  // this class loader isn't unloaded itself.
+  GrowableArray&lt;Metadata<em>></em>      _deallocate_list;</p>
+
+<p>  // Support for walking class loader data objects
+  ClassLoaderData* _next; /// Next loader_datas created</p>
+
+<p>  // ReadOnly and ReadWrite metaspaces (static because only on the null
+  // class loader for now).
+  static Metaspace<em> _ro_metaspace;
+  static Metaspace</em> _rw_metaspace;</p>
+
+<p>  ...</p>
+
+<p>}
+```</p>
+
+<p>这里提几个属性：</p>
+
+<ul>
+<li><code>_class_loader</code> : 就是对应的类加载器对象</li>
+<li><code>_keep_alive</code> : 如果这个值是true，那这个类加载器会认为是活的，会将其做为GC ROOT的一部分，gc的时候不会被回收</li>
+<li><code>_unloading</code> : 表示这个类加载是否需要卸载的</li>
+<li><code>_is_anonymous</code> : 是否匿名，这种ClassLoaderData主要是在lambda表达式里用的，这个我后面会详细说</li>
+<li><code>_next</code> : 指向下一个ClassLoaderData，在gc的时候方便遍历</li>
+<li><code>_dependencies</code> : 这个属性也是本文的重点，后面会细说</li>
+</ul>
+
+
+<p>再来看下构造函数：</p>
+
+<p>```
+ClassLoaderData::ClassLoaderData(Handle h_class_loader, bool is_anonymous, Dependencies dependencies) :
+  <em>class_loader(h_class_loader()),
+  </em>is_anonymous(is_anonymous),
+  // An anonymous class loader data doesn't have anything to keep
+  // it from being unloaded during parsing of the anonymous class.
+  // The null-class-loader should always be kept alive.
+  <em>keep_alive(is_anonymous || h_class_loader.is_null()),
+  </em>metaspace(NULL), <em>unloading(false), </em>klasses(NULL),
+  <em>claimed(0), </em>jmethod_ids(NULL), <em>handles(NULL), </em>deallocate_list(NULL),
+  <em>next(NULL), </em>dependencies(dependencies),
+  _metaspace_lock(new Mutex(Monitor::leaf+1, "Metaspace allocation lock", true)) {</p>
+
+<pre><code>// empty
+</code></pre>
+
+<p>}
+<code>``
+可见，</code><em>keep_ailve<code>属性的值是根据</code></em>is_anonymous`以及当前类加载器是不是bootstrapClassLoader来的。</p>
+
+<p><code>_keep_alive</code>到底用在哪？其实是在GC的的时候，来决定要不要用Closure或者用什么Closure来扫描对应的ClassLoaderData。</p>
+
+<p>```
+void ClassLoaderDataGraph::roots_cld_do(CLDClosure<em> strong, CLDClosure</em> weak) {
+  //从最后一个创建的classloader到bootstrapClassloader<br/>
+  for (ClassLoaderData* cld = <em>head;  cld != NULL; cld = cld-></em>next) {</p>
+
+<pre><code>//如果是ygc，那weak和strong是一样的，对所有的类加载器都做扫描，保证它们都是活的 
+//如果是cms initmark阶段，如果要unload_classes了(should_unload_classes()返回true)，则weak为null，那就只遍历bootstrapclassloader以及正在做匿名类加载的类加载  
+CLDClosure* closure = cld-&gt;keep_alive() ? strong : weak;
+if (closure != NULL) {
+  closure-&gt;do_cld(cld);
+}
+</code></pre>
+
+<p>  }
+```</p>
+
+<h2>类加载器什么时候被回收</h2>
+
+<p>类加载器是否需要被回收，其实就是看这个类加载器对象是否是活的，所谓活的就是这个类加载器加载的任何一个类或者这些类的对象是强可达的，当然还包括这个类加载器本身就是GC ROOT一部分或者有GC ROOT可达的路径，那这个类加载器就肯定不会被回收。</p>
+
+<p>从各种GC情况来看：</p>
+
+<ul>
+<li>如果是YGC，类加载器是作为GC ROOT的，也就是都不会被回收</li>
+<li>如果是Full GC，只要是死的就会被回收</li>
+<li>如果是CMS GC，CMS GC过程也是会做标记的（这是默认情况，不过可以通过一些参数来改变），但是不会做真正的清理，真正的清理动作是发生在下次进入安全点的时候。</li>
+</ul>
+
+
+<h2>僵尸类加载器如何产生</h2>
+
+<p>如果类加载器是与GC ROOT的对象存在真正依赖的这种关系，这种类加载器对象是活的无可厚非，我们通过zprofiler或者mat都可以分析出来，可以将链路绘出来，但是有两种情况例外：</p>
+
+<h3>lambda匿名类加载</h3>
+
+<p>lambda匿名类加载走的是unsafe的defineAnonymousClass方法，这个方法在vm里对应的是下面的方法</p>
+
+<p>```
+UNSAFE_ENTRY(jclass, Unsafe_DefineAnonymousClass(JNIEnv *env, jobject unsafe, jclass host_class, jbyteArray data, jobjectArray cp_patches_jh))
+{
+  instanceKlassHandle anon_klass;
+  jobject res_jh = NULL;</p>
+
+<p>  UnsafeWrapper("Unsafe_DefineAnonymousClass");
+  ResourceMark rm(THREAD);</p>
+
+<p>  HeapWord* temp_alloc = NULL;</p>
+
+<p>  anon_klass = Unsafe_DefineAnonymousClass_impl(env, host_class, data,</p>
+
+<pre><code>                                            cp_patches_jh,
+                                               &amp;temp_alloc, THREAD);
+</code></pre>
+
+<p>  if (anon_klass() != NULL)</p>
+
+<pre><code>res_jh = JNIHandles::make_local(env, anon_klass-&gt;java_mirror());
+</code></pre>
+
+<p>  // try/finally clause:
+  if (temp_alloc != NULL) {</p>
+
+<pre><code>FREE_C_HEAP_ARRAY(HeapWord, temp_alloc, mtInternal);
+</code></pre>
+
+<p>  }</p>
+
+<p>  // The anonymous class loader data has been artificially been kept alive to
+  // this point.   The mirror and any instances of this class have to keep
+  // it alive afterwards.
+  if (anon_klass() != NULL) {</p>
+
+<pre><code>anon_klass-&gt;class_loader_data()-&gt;set_keep_alive(false);
+</code></pre>
+
+<p>  }</p>
+
+<p>  // let caller initialize it as needed...</p>
+
+<p>  return (jclass) res_jh;
+}
+UNSAFE_END
+}</p>
+
+<p><code>``
+可见，在创建成功匿名类之后，会将对应的ClassLoaderData的</code><em>keep_alive<code>属性设置为false，那是不是意味着</code></em>keep_alive<code>属性在这之前都是true呢？下面的</code>parse_stream`方法是从上面的方法最终会调下来的方法</p>
+
+<p>```
+Klass<em> SystemDictionary::parse_stream(Symbol</em> class_name,</p>
+
+<pre><code>                                  Handle class_loader,
+                                  Handle protection_domain,
+                                  ClassFileStream* st,
+                                  KlassHandle host_klass,
+                                  GrowableArray&lt;Handle&gt;* cp_patches,
+                                  TRAPS) {
+</code></pre>
+
+<p>  TempNewSymbol parsed_name = NULL;</p>
+
+<p>  Ticks class_load_start_time = Ticks::now();</p>
+
+<p>  ClassLoaderData* loader_data;
+  if (host_klass.not_null()) {</p>
+
+<pre><code>// Create a new CLD for anonymous class, that uses the same class loader
+// as the host_klass
+assert(EnableInvokeDynamic, "");
+guarantee(host_klass-&gt;class_loader() == class_loader(), "should be the same");
+guarantee(!DumpSharedSpaces, "must not create anonymous classes when dumping");
+loader_data = ClassLoaderData::anonymous_class_loader_data(class_loader(), CHECK_NULL);
+loader_data-&gt;record_dependency(host_klass(), CHECK_NULL);
+</code></pre>
+
+<p>  } else {</p>
+
+<pre><code>loader_data = ClassLoaderData::class_loader_data(class_loader());
+</code></pre>
+
+<p>  }</p>
+
+<p>  instanceKlassHandle k = ClassFileParser(st).parseClassFile(class_name,</p>
+
+<pre><code>                                                         loader_data,
+                                                         protection_domain,
+                                                         host_klass,
+                                                         cp_patches,
+                                                         parsed_name,
+                                                         true,
+                                                         THREAD);
+</code></pre>
+
+<p>...</p>
+
+<p>}</p>
+
+<p>ClassLoaderData* ClassLoaderData::anonymous_class_loader_data(oop loader, TRAPS) {
+  // Add a new class loader data to the graph.
+  return ClassLoaderDataGraph::add(loader, true, CHECK_NULL);
+}</p>
+
+<p>ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRAPS) {
+  // We need to allocate all the oops for the ClassLoaderData before allocating the
+  // actual ClassLoaderData object.
+  ClassLoaderData::Dependencies dependencies(CHECK_NULL);</p>
+
+<p>  No_Safepoint_Verifier no_safepoints; // we mustn't GC until we've installed the</p>
+
+<pre><code>                                   // ClassLoaderData in the graph since the CLD
+                                   // contains unhandled oops
+</code></pre>
+
+<p>  ClassLoaderData* cld = new ClassLoaderData(loader, is_anonymous, dependencies);</p>
+
+<p>...
+}
+```</p>
+
+<p>从上面的代码得知，只要走了unsafe的那个方法，都会为当前类加载器创建一个ClassLoaderData对象，并设置其<code>_is_anonymous</code>为true，也同时意味着<code>_keep_alive</code>的属性是true，并加入到ClassLoaderDataGraph中。</p>
+
+<p>试想如果创建的这个匿名类没有成功，也就是<code>anon_klass()==null</code>，那这个<code>_keep_alive</code>属性就永远无法设置为false了，这意味着这个ClassLoaderData对应的ClassLoader对象将永远都是GC ROOT的一部分，无法被回收，这种情况就是真正的僵尸类加载器了，不过目前我还没模拟出这种情况来，有兴趣的同学可以试一试，如果真的能模拟出来，这绝对是JDK里的一个BUG，可以提交给社区。</p>
+
+<h3>类加载器依赖导致的</h3>
+
+<p>这里说的类加载器依赖，并不是说ClassLoader里的parent建立的那种依赖关系，如果是这种关系，那其实通过mat或者zprofiler这样的工具都是可以分析出来的，但是还存在一种情况，那些工具都是分析不出来的，这种关系就是通过ClassLoaderData里的<code>_dependencies</code>属性得出来的，比如说如果A类加载器的<code>_dependencies</code>属性里记录了B类加载器，那当GC遍历A类加载器的时候也会遍历B类加载器，并将其标活，哪怕B类加载器其实是可以被回收了的，可以看下下面的代码</p>
+
+<p>```
+void ClassLoaderData::oops_do(OopClosure<em> f, KlassClosure</em> klass_closure, bool must_claim) {
+  if (must_claim &amp;&amp; !claim()) {</p>
+
+<pre><code>return;
+</code></pre>
+
+<p>  }</p>
+
+<p>  f->do_oop(&amp;<em>class_loader);
+  </em>dependencies.oops_do(f);
+  _handles->oops_do(f);
+  if (klass_closure != NULL) {</p>
+
+<pre><code>classes_do(klass_closure);
+</code></pre>
+
+<p>  }
+}
+```</p>
+
+<p>那问题来了，这种依赖关系是怎么记录的呢？其实我们上面的demo就模拟了这种情况，可以仔细去看看，我也针对这个demo描述下，比如加载AAA的类加载器TestLoader加载AAA后，并创建AAA对象，此时会看到有个类型是AAB的属性，此时会对常量池里的类型做一个解析，我们看到TestLoader的loadClass方法的时候做了一个判断，如果是AAB类型的类加载，那就创建一个新的类加载器对象从AAB.jar里去加载，当加载返回的时候，在jvm里其实就会记录这么一层依赖关系，认为AAA的类加载器依赖AAB的类加载器，并记录下来，但是纵观所有的hotspot代码，并没有一个地方来清理这种依赖关系的，也就是说只要这种依赖关系建立起来，会一直持续到AAA的类加载器被回收的时候，AAB的类加载器才会被回收，所以说这算一种伪僵尸类加载器，虽然从依赖关系上其实并不依赖了(比如demo里将AAA的aab属性做clear清空动作)，但是GC会一直认为他们是存在这种依赖关系的，会持续存在一段时间，具体持续多久就看AAA类加载器的情况了。</p>
+
+<p>针对这种情况个人认为需要一个类似引用计数的GC策略，当某两个类加载器确实没有任何依赖的时候，将其清理掉这种依赖关系，估计要实现这种改动的地方也挺多，没那么简单，所以当时的设计者或许因为这样并没有这么做了，我觉得这算是偷懒妥协的结果吧，当然这只是我的一种猜测。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JDK8在泛型类型推导上的变化]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/04/03/type-inference/"/>
+    <updated>2016-04-03T12:50:39+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/04/03/type-inference</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>最近公司在大面积推广JDK8，整体来说升级上来算顺利的，大部分问题可能在编译期就碰到了，但是有些时候比较蛋疼，编译期没有出现问题，但是在运行期就出了问题，比如今天要说的这个话题，所以大家再升级的时候还是要多测测再上线，当然JDK8给我们带来了不少收益，花点时间升级上来还是值得的。</p>
+
+<!--more-->
+
+
+<h2>问题描述</h2>
+
+<p>还是老规矩，先上demo，让大家直观地知道我们要说的问题。</p>
+
+<p>```
+public class Test {</p>
+
+<pre><code>  static &lt;T extends Number&gt; T getObject() {
+        return (T)Long.valueOf(1L);
+  }
+
+  public static void main(String... args) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getObject());
+  }
+</code></pre>
+
+<p>}
+```
+demo很简单，就是有个使用了泛型的函数getObject，其返回类型是Number的子类，然后我们将函数返回值传给StringBuilder的多态方法append，我们知道append方法有很多，参数类型也很多，但是唯独没有参数是Number的append方法，如果有的话，大家应该猜到会优先选择这个方法了，既然没有，那到底会选哪个呢，我们分别用jdk6(jdk7类似)和jdk8来编译下上面的类，然后用javap看看输出结果（只看main方法）：</p>
+
+<p>jdk6编译的字节码：</p>
+
+<p>```
+public static void main(java.lang.String...) throws java.lang.Exception;</p>
+
+<pre><code>flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+Code:
+  stack=2, locals=2, args_size=1
+     0: new           #3                  // class java/lang/StringBuilder
+     3: dup
+     4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
+     7: astore_1
+     8: aload_1
+     9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+    12: invokevirtual #6                  // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+    15: pop
+    16: return
+  LineNumberTable:
+    line 8: 0
+    line 9: 8
+    line 10: 16
+Exceptions:
+  throws java.lang.Exception
+</code></pre>
+
+<p>```</p>
+
+<p>jdk8编译的字节码：</p>
+
+<p>```
+public static void main(java.lang.String...) throws java.lang.Exception;</p>
+
+<pre><code>descriptor: ([Ljava/lang/String;)V
+flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+Code:
+  stack=2, locals=2, args_size=1
+     0: new           #3                  // class java/lang/StringBuilder
+     3: dup
+     4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
+     7: astore_1
+     8: aload_1
+     9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+    12: checkcast     #6                  // class java/lang/CharSequence
+    15: invokevirtual #7                  // Method java/lang/StringBuilder.append:(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;
+    18: pop
+    19: return
+  LineNumberTable:
+    line 8: 0
+    line 9: 8
+    line 10: 19
+Exceptions:
+  throws java.lang.Exception
+</code></pre>
+
+<p>```</p>
+
+<p>对比上面那个的差异，我们看到bci从12开始变了，jdk8里多了下面这行表示要对栈顶的数据做一次类型检查看是不是CharSequence类型：</p>
+
+<p><code>
+ 12: checkcast     #6                  // class java/lang/CharSequence
+</code></p>
+
+<p>另外调用的StringBuilder的append方法也是不一样的，jdk7里是调用的参数为Object类型的append方法，而jdk8里调用的是CharSequence类型的append方法。</p>
+
+<p>最主要的是在jdk6和jdk8下运行上面的代码，在jdk6下是正常跑过的，但是在jdk8下是直接抛出异常的：</p>
+
+<p>```
+Exception in thread "main" java.lang.ClassCastException: java.lang.Long cannot be cast to java.lang.CharSequence</p>
+
+<pre><code>at Test.main(Test.java:9)
+</code></pre>
+
+<p>```</p>
+
+<p>至此问题整个应该描述清楚了。</p>
+
+<h2>问题分析</h2>
+
+<p>先来说说如果要我们来做这个java编译器实现这个功能，我们要怎么来做，其他的都是很明确的，重点在于如下这段如何来确定append的方法使用哪个：</p>
+
+<p><code>
+sb.append(getObject());
+</code>
+我们知道getObject()返回的是个泛型对象，这个对象是Number的子类，因此我们首先会去遍历StringBuilder的所有可见的方法，包括从父类继承过来的，找是不是存在一个方法叫做append，并且参数类型是Number的方法，如果有，那就直接使用这个方法，如果没有，那我们得想办法找到一个最合适的方法，关键就在于这个合适怎么定义，比如说我们看到有个append的方法，其参数是Object类型的，Number是Object的子类，所以我们选择这个方法肯定没问题，假如说另外有个append方法，其参数是Serializable类型(当然其实并没有这种参数的方法)，Number实现了这个接口，我们选择这个方法也是没问题的，那到底是Object参数的更合适还是Serializable的更合适呢，还有更甚者，我们知道StringBuilder有个方法，其参数是CharSequence，假如我们传进去的参数其实既是Number的子类，同时又实现了CharSequence这个接口，那我们究竟要不要选它呢？这些问题我们都需要去考虑，而且各有各的理由，说起来都感觉挺合理的。</p>
+
+<h2>JDK6里泛型的类型推导</h2>
+
+<p>这里分析的是jdk6的javac代码，不过大致看了下jdk7的这块针对这个问题的逻辑也差不多，所以就以这块为例了，jdk6里的泛型类型推导其实比较简单，从上面的输出结果我们也猜到了，其实就是选了参数为Object类型的append方法，它觉得它是最合适的：</p>
+
+<p>```
+private Symbol findMethod(Env<AttrContext> env,</p>
+
+<pre><code>                          Type site,
+                          Name name,
+                          List&lt;Type&gt; argtypes,
+                          List&lt;Type&gt; typeargtypes,
+                          Type intype,
+                          boolean abstractok,
+                          Symbol bestSoFar,
+                          boolean allowBoxing,
+                          boolean useVarargs,
+                          boolean operator) {
+    for (Type ct = intype; ct.tag == CLASS; ct = types.supertype(ct)) {
+        ClassSymbol c = (ClassSymbol)ct.tsym;
+        if ((c.flags() &amp; (ABSTRACT | INTERFACE | ENUM)) == 0)
+            abstractok = false;
+        for (Scope.Entry e = c.members().lookup(name);
+             e.scope != null;
+             e = e.next()) {
+            //- System.out.println(" e " + e.sym);
+            if (e.sym.kind == MTH &amp;&amp;
+                (e.sym.flags_field &amp; SYNTHETIC) == 0) {
+                bestSoFar = selectBest(env, site, argtypes, typeargtypes,
+                                       e.sym, bestSoFar,
+                                       allowBoxing,
+                                       useVarargs,
+                                       operator);
+            }
+        }
+        //- System.out.println(" - " + bestSoFar);
+        if (abstractok) {
+            Symbol concrete = methodNotFound;
+            if ((bestSoFar.flags() &amp; ABSTRACT) == 0)
+                concrete = bestSoFar;
+            for (List&lt;Type&gt; l = types.interfaces(c.type);
+                 l.nonEmpty();
+                 l = l.tail) {
+                bestSoFar = findMethod(env, site, name, argtypes,
+                                       typeargtypes,
+                                       l.head, abstractok, bestSoFar,
+                                       allowBoxing, useVarargs, operator);
+            }
+        if (concrete != bestSoFar &amp;&amp;
+                concrete.kind &lt; ERR  &amp;&amp; bestSoFar.kind &lt; ERR &amp;&amp;
+                types.isSubSignature(concrete.type, bestSoFar.type))
+                bestSoFar = concrete;
+        }
+    }
+    return bestSoFar;
+}
+</code></pre>
+
+<p>```</p>
+
+<p>上面的逻辑大概是遍历当前类(比如这个例子中的StringBuilder)及其父类，依次从他们的方法里找出一个最合适的方法返回，重点就落在了selectBest这个方法上:</p>
+
+<p>```
+Symbol selectBest(Env<AttrContext> env,</p>
+
+<pre><code>                  Type site,
+                  List&lt;Type&gt; argtypes,
+                  List&lt;Type&gt; typeargtypes,
+                  Symbol sym,
+                  Symbol bestSoFar,
+                  boolean allowBoxing,
+                  boolean useVarargs,
+                  boolean operator) {
+    if (sym.kind == ERR) return bestSoFar;
+    if (!sym.isInheritedIn(site.tsym, types)) return bestSoFar;
+    assert sym.kind &lt; AMBIGUOUS;
+    try {
+        if (rawInstantiate(env, site, sym, argtypes, typeargtypes,
+                           allowBoxing, useVarargs, Warner.noWarnings) == null) {
+            // inapplicable
+            switch (bestSoFar.kind) {
+            case ABSENT_MTH: return wrongMethod.setWrongSym(sym);
+            case WRONG_MTH: return wrongMethods;
+            default: return bestSoFar;
+            }
+        }
+    } catch (Infer.NoInstanceException ex) {
+        switch (bestSoFar.kind) {
+        case ABSENT_MTH:
+            return wrongMethod.setWrongSym(sym, ex.getDiagnostic());
+        case WRONG_MTH:
+            return wrongMethods;
+        default:
+            return bestSoFar;
+        }
+    }
+    if (!isAccessible(env, site, sym)) {
+        return (bestSoFar.kind == ABSENT_MTH)
+            ? new AccessError(env, site, sym)
+            : bestSoFar;
+    }
+    return (bestSoFar.kind &gt; AMBIGUOUS)
+        ? sym
+        : mostSpecific(sym, bestSoFar, env, site,
+                       allowBoxing &amp;&amp; operator, useVarargs);
+}
+</code></pre>
+
+<p>```
+这个方法的主要逻辑落在rawInstantiate这个方法里(具体代码不贴了，有兴趣的去看下代码，我将最终最关键的调用方法argumentsAcceptable贴出来，主要做参数的匹配)，如果当前方法也合适，那就和之前挑出来的最好的方法做一个比较看谁最适合，这个选择过程在最后的mostSpecific方法里，其实就和冒泡排序差不多，不过是找最接近的那个类型(逐层找对应是父类的方法，和最小公倍数有点类似)。</p>
+
+<p>```</p>
+
+<pre><code>boolean argumentsAcceptable(List&lt;Type&gt; argtypes,
+                            List&lt;Type&gt; formals,
+                            boolean allowBoxing,
+                            boolean useVarargs,
+                            Warner warn) {
+    Type varargsFormal = useVarargs ? formals.last() : null;
+    while (argtypes.nonEmpty() &amp;&amp; formals.head != varargsFormal) {
+        boolean works = allowBoxing
+            ? types.isConvertible(argtypes.head, formals.head, warn)
+            : types.isSubtypeUnchecked(argtypes.head, formals.head, warn);
+        if (!works) return false;
+        argtypes = argtypes.tail;
+        formals = formals.tail;
+    }
+    if (formals.head != varargsFormal) return false; // not enough args
+    if (!useVarargs)
+        return argtypes.isEmpty();
+    Type elt = types.elemtype(varargsFormal);
+    while (argtypes.nonEmpty()) {
+        if (!types.isConvertible(argtypes.head, elt, warn))
+            return false;
+        argtypes = argtypes.tail;
+    }
+    return true;
+}    
+</code></pre>
+
+<p>```
+针对具体的例子其实就是看StringBuilder里的哪个方法的参数是Number的父类，如果不是就表示没有找到，如果参数都符合期望就表示找到，然后返回。</p>
+
+<p>所以jdk6里的这块的逻辑相对来说比较简单。</p>
+
+<h2>JDK8里泛型的类型推导</h2>
+
+<p>jdk8里的推导相对来说比较复杂，不过大部分逻辑和上面的都差不多，但是argumentsAcceptable这块的变动比较大，增加了一些数据结构，规则变得更加复杂，考虑的场景也更多了，因为代码嵌套层数很深，具体的代码我就不贴了，有兴趣的自己去跟下代码（具体变化可以从AbstractMethodCheck.argumentsAcceptable这个方法开始）。</p>
+
+<p>针对具体这个demo，如果getObject返回的对象既实现了CharSequence，又是Number的子类，那它认为这种情况其实选择参数为CharSequence类型的append方法比参数为Object类型的方法更合适，看起来是要求更严格一些了，适用范围收窄了一些，不是去匹配大而范的接口方法，因此其多加了一层checkcast的检查，不过我个人观点是觉得这块有点太激进了。</p>
+
+<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
+  
+</feed>
