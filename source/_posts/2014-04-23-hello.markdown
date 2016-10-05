@@ -1,8 +1,0 @@
----
-layout: post
-title: "Hello"
-date: 2014-04-23 19:50:55 +0800
-comments: true
-categories: 
----
-大家好啊

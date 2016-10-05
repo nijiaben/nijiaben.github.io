@@ -1,0 +1,384 @@
+---
+layout: post
+title: "JDK的sql设计不合理导致的驱动类初始化死锁问题"
+date: 2014-07-08 16:39:46 +0800
+comments: true
+categories: DeadLock JVM ClassLoader
+---
+
+## 问题描述
+
+&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。
+<!--more-->
+
+<pre class="prettyPrint">
+
+import java.util.Iterator;
+
+import sun.misc.Service;
+
+public class Main {
+    public static void main(String[] args) throws ClassNotFoundException {
+        Thread1 thread1 = new Thread1();
+        Thread2 thread2 = new Thread2();
+        thread1.start();
+        thread2.start();
+    }
+}
+
+class Thread1 extends Thread {
+    public void run() {
+        try {
+            Class<?> clazz = Class.forName("com.mysql.jdbc.Driver", true, Thread.currentThread()
+                .getContextClassLoader());
+            System.out.println(clazz);
+        } catch (ClassNotFoundException e) {
+        }
+    }
+}
+
+class Thread2 extends Thread {
+    public void run() {
+        Iterator ps = Service.providers(java.sql.Driver.class);
+        try {
+            while (ps.hasNext()) {
+                System.out.println(ps.next());
+            } 
+        } catch (Throwable t) {
+           
+        }
+    }
+}
+</pre>
+
+&#8195;&#8195;如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。
+
+&#8195;&#8195;先上两张图
+
+`内存态线程堆栈`
+
+{% img /images/2014/07/heap_thread_1.png %}
+
+`线程堆栈`
+
+{% img /images/2014/07/thread_1.png %}
+## 存疑点
+
+&#8195;&#8195;仔细看看上面的线程dump分析和内存dump分析里的线程分析模块，您可能会有如下两个疑惑：
+
+* 【为什么线程[Thread-0]一直卡在Class.forName的位置】：这有点出乎意料，做一个类加载要么找不到抛出ClassNotFoundException，要么找到直接返回，为什么会一直卡在这个位置呢？
+
+* 【明明[Thread-0]注册的是mysql驱动为什么会去加载Odbc的驱动类】：通过[Thread-0]在栈上看倒数第二帧展开看到传入Class.forName的参数是com.mysql.jdbc.Driver，然后展开栈上顺序第二帧，看到传入的参数是sun.jdbc.odbc.JdbcOdbcDriver，这意味着在对mysql驱动类做加载初始化的过程中又触发了JdbcOdbc驱动类的加载
+
+## 疑惑点解释
+
+### 疑惑二：
+
+&#8195;&#8195;第一个疑惑我们先留着，先解释下第二个疑惑，大家可以对照堆栈通过反编译rt.jar还有ojdbc6-11.2.0.3.0.jar看具体的代码
+
+`驱动类加载过程简要介绍:`
+
+&#8195;&#8195;当要注册某个sql驱动的时候是通过调用java.sql.DriverManager.registerDriver来实现的(注意这个方法加了synchronized关键字，后面解释第一个疑惑的时候是关键)，而这个方法在第一次执行过程中，会在当前线程classloader的classpath下寻找所有/META-INF/services/java.sql.Driver文件，这个文件在mysql和oracle驱动jar里都有，里面写的是对应的驱动实现类名，这种机制是jdk提供的spi实现，找到这些文件之后，依次使用Class.forName(driverClassName, true, this.loader)来对这些驱动类进行加载，其中第二个参数是true，意味着不仅仅做一次loadClass的动作，还会初始化该类，即调用包含静态块的< clinit >方法，执行完之后才会返回，这样就解释了第二个疑惑，在mysql驱动注册过程中还会对odbc驱动类进行加载并初始化
+		
+`感想:`
+
+&#8195;&#8195;其实我觉得这种设计有点傻，为什么要干和自己不相关的事情呢，画蛇添足的设计，首先类初始化的开销是否放到一起做并没有多大区别，其次正由于这种设计导致了今天这个死锁的发生
+
+
+### 疑惑一：
+
+&#8195;&#8195;现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示
+
+<pre class="prettyPrint">
+----------------- 5738 -----------------
+0x003f67a2      _dl_sysinfo_int80 + 0x2
+0xb79a71ae      _ZN2os13PlatformEvent4parkEv + 0xee
+0xb7997acb      _ZN13ObjectMonitor4waitExbP6Thread + 0x5fb
+0xb7a73c53      _ZN18ObjectSynchronizer19waitUninterruptiblyE6HandlexP6Thread + 0x53
+0xb777eb34      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x74
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * sun.misc.Service$LazyIterator.next() bci:31 line:271 (Interpreted frame)
+0xb4329483      * java.sql.DriverService.run() bci:26 line:664 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb780aace      JVM_DoPrivileged + 0x40e
+0xb734b95d      Java_java_security_AccessController_doPrivileged__Ljava_security_PrivilegedAction_2 + 0x3d
+0xb433064a      * java.security.AccessController.doPrivileged(java.security.PrivilegedAction) bci:0 (Interpreted frame)
+0xb4328fa7      * java.sql.DriverManager.loadInitialDrivers() bci:31 line:506 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.initialize() bci:11 line:612 (Interpreted frame)
+0xb432910d      * java.sql.DriverManager.registerDriver(java.sql.Driver) bci:6 line:281 (Interpreted frame)
+0xb432910d      * com.mysql.jdbc.Driver.<clinit>() bci:7 line:65 (Interpreted frame)
+0xb43263e6      <StubRoutines>
+0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
+0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
+0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
+0xb77800c1      _ZN13instanceKlass27call_class_initializer_implE19instanceKlassHandleP6Thread + 0xa1
+0xb777ed8e      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x2ce
+0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
+0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
+0xb7807d99      JVM_FindClassFromClassLoader + 0x269
+0xb734c236      Java_java_lang_Class_forName0 + 0x116
+0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
+0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
+0xb4328fa7      * Thread1.run() bci:9 line:17 (Interpreted frame)
+
+</pre>
+
+&#8195;&#8195;我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：
+
+<pre class="prettyPrint">
+void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
+  // Make sure klass is linked (verified) before initialization
+  // A class could already be verified, since it has been reflected upon.
+  this_oop->link_class(CHECK);
+
+  DTRACE_CLASSINIT_PROBE(required, instanceKlass::cast(this_oop()), -1);
+
+  bool wait = false;
+
+  // refer to the JVM book page 47 for description of steps
+  // Step 1
+  { ObjectLocker ol(this_oop, THREAD);
+
+    Thread *self = THREAD; // it's passed the current thread
+
+    // Step 2
+    // If we were to use wait() instead of waitInterruptibly() then
+    // we might end up throwing IE from link/symbol resolution sites
+    // that aren't expected to throw.  This would wreak havoc.  See 6320309.
+    while(this_oop->is_being_initialized() && !this_oop->is_reentrant_initialization(self)) {
+        wait = true;
+      ol.waitUninterruptibly(CHECK);
+    }
+
+    // Step 3
+    if (this_oop->is_being_initialized() && this_oop->is_reentrant_initialization(self)) {
+      DTRACE_CLASSINIT_PROBE_WAIT(recursive, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 4
+    if (this_oop->is_initialized()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(concurrent, instanceKlass::cast(this_oop()), -1,wait);
+      return;
+    }
+
+    // Step 5
+    if (this_oop->is_in_error_state()) {
+      DTRACE_CLASSINIT_PROBE_WAIT(erroneous, instanceKlass::cast(this_oop()), -1,wait);
+      ResourceMark rm(THREAD);
+      const char* desc = "Could not initialize class ";
+      const char* className = this_oop->external_name();
+      size_t msglen = strlen(desc) + strlen(className) + 1;
+      char* message = NEW_RESOURCE_ARRAY(char, msglen);
+      if (NULL == message) {
+        // Out of memory: can't create detailed error message
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), className);
+      } else {
+        jio_snprintf(message, msglen, "%s%s", desc, className);
+        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), message);
+      }
+    }
+
+    // Step 6
+    this_oop->set_init_state(being_initialized);
+    this_oop->set_init_thread(self);
+  }
+  ...
+}
+</pre>
+
+`类的初始化过程:`
+
+&#8195;&#8195;当某个线程获得机会对某个类进行初始化的时候(请看上面的Step 6)，会设置这个类的init_state属性为being_initialized(如果初始化好了会设置为fully_initialized，异常的话会设置为initialization_error)，还会设置init_thread属性为当前线程，在这个设置过程中是有针对这个类提供了一把互斥锁的，因此当有别的线程进来的时候会被拦截在外面，如果设置完了，这把互斥锁也释放了，但是因为这个类的状态被设置了，因此并发问题也得到了解决，当另外一个线程也尝试初始化这个类的时候会判断这个类的状态是不是being_initialized，并且其init_thread不是当前线程，那么就会一直卡在那里，也就是此次线程dump的线程所处的状态，正在初始化类的线程会调用< clinit >方法，如果正常结束了，那么就设置其状态为fully_initialized，并且通知之前卡在那里等待初始化完成的线程，然他们继续往下走(下一个动作就是再判断下状态，发现完成了就直接return了)
+
+`猜想:`	
+	
+&#8195;&#8195;在了解了上面的过程之后，于是我们猜测两种可能
+
+* 第一，这个类的状态还是being_intialized，还在while循环里没有跳出来
+* 第二，事件通知机制出现了问题，也就是pthread_cond_wait和pthread_cond_signal之间的通信过程出现了问题。
+
+&#8195;&#8195;不过第二种可能性非常小，比较linux久经考验了，那接下来我们验证其实是第一个猜想
+		
+`验证：`
+
+&#8195;&#8195;我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14
+
+<pre class="prettyPrint">
+(gdb) info threads
+  17 process 5724  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  16 process 6878  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  15 process 5739  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  14 process 5738  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  13 process 5737  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  12 process 5736  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  11 process 5735  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  10 process 5734  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  9 process 5733  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  8 process 5732  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  7 process 5731  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  6 process 5730  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  5 process 5729  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  4 process 5728  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  3 process 5727  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  2 process 5726  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+  1 process 5725  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+</pre>	
+&#8195;&#8195;然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里
+
+<pre class="prettyPrint">
+(gdb) thread 14
+[Switching to thread 14 (process 5738)]#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+(gdb) bt
+#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
+#1  0x005e0d76 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#2  0x005e13ee in pthread_cond_wait@GLIBC_2.0 () from /lib/tls/i686/nosegneg/libpthread.so.0
+#3  0xb79a71ae in os::PlatformEvent::park () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#4  0xb7997acb in ObjectMonitor::wait () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#5  0xb7a73c53 in ObjectSynchronizer::waitUninterruptibly () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#6  0xb777eb34 in instanceKlass::initialize_impl () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#7  0xb777e288 in instanceKlass::initialize () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#8  0xb7821ad9 in find_class_from_class_loader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#9  0xb7807d99 in JVM_FindClassFromClassLoader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
+#10 0xb734c236 in Java_java_lang_Class_forName0 () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/libjava.so
+#11 0xb433064a in ?? ()
+#12 0x0813b120 in ?? ()
+#13 0x70aaa690 in ?? ()
+#14 0x70aaa6a0 in ?? ()
+#15 0x00000001 in ?? ()
+#16 0x70aaa698 in ?? ()
+#17 0x00000000 in ?? ()
+
+</pre>
+		
+&#8195;&#8195;我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编
+
+<pre class="prettyPrint">
+0xb777eaed <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45>:	lea    0xfffffff4(%ebp),%esp	//将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
+0xb777eaf0 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+48>:	pop    %ebx
+0xb777eaf1 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+49>:	pop    %esi
+0xb777eaf2 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+50>:	pop    %edi
+0xb777eaf3 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+51>:	pop    %ebp
+0xb777eaf4 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+52>:	ret
+0xb777eaf5 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+53>:	push   $0x1
+0xb777eaf7 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+55>:	lea    0xffffffd8(%ebp),%edx
+0xb777eafa <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+58>:	push   %esi
+0xb777eafb <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+59>:	push   %ebx
+0xb777eafc <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+60>:	push   %edx
+0xb777eafd <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+61>:	call   0xb7a73a80 <_ZN12ObjectLockerC1E6HandleP6Threadb>
+0xb777eb02 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+66>:	add    $0x10,%esp
+0xb777eb05 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+69>:	xor    %eax,%eax
+0xb777eb07 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+71>:	test   %ebx,%ebx
+0xb777eb09 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+73>:	je     0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>
+0xb777eb0b <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+75>:	mov    (%ebx),%eax 		//将%ebx的值移到%eax
+0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>:	cmpl   $0x4,0xe0(%eax)	//对比%eax偏移0xe0位置的值和0x4(这个值其实就是上面提到的being_initialized状态，这就说明了%eax偏移0xe0位置其实存的就是初始化类的初始化状态)
+0xb777eb14 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+84>:	jne    0xb777eb4f <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+143>
+</pre>
+&#8195;&#8195;从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4
+
+<pre class="prettyPrint">
+(gdb) x $ebp + 0xfffffff4
+0x70aaa45c:	0x71af2180
+(gdb) x/3w 0x71af2180 + 0xe0
+0x71af2260:	0x00000004	0x0813c800	0x0000001a
+</pre>		
+&#8195;&#8195;而4其实代表的就是being_initialized这个状态，代码如下
+
+<pre class="prettyPrint">
+  enum ClassState {
+    unparsable_by_gc = 0,               
+    allocated,                          
+    loaded,                             
+    linked,                             
+    being_initialized,                  
+    fully_initialized,                  
+    initialization_error                
+  };
+</pre> 
+&#8195;&#8195;从这于是我们验证了第一个猜想，其实是状态一直没有变更，因此一直卡在那里，为了更进一步确认这个问题，要是我们能找到该类的init_thread线程id就更清楚了，拿到这个ID我们就能看到这个线程栈，就知道它在干什么了，但是很遗憾，这个很难获取到，至少我一直没有找到办法，因为线程ID在线程对象里一直没有存，都是调用的os函数来获取的，得换个思路。
+
+&#8195;&#8195;突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB
+
+<pre class="prettyPrint">
+(gdb) x/100w 0x0813c800
+0x813c800:	0xb7bc06e8	0x00000000	0x00000000	0x00000000
+0x813c810:	0x0813c488	0x0813d2c8	0x00000000	0x00000000
+0x813c820:	0x080f9bf8	0x080f8b50	0x70a59b60	0x00000000
+0x813c830:	0x00000000	0x00000000	0x00000000	0x00000000
+0x813c840:	0x00014148	0x00000505	0x00000000	0x00000000
+0x813c850:	0x00000000	0x00000000	0x00000000	0x3f800021
+0x813c860:	0x00000001	0x00000023	0x3f800021	0x0001b530
+0x813c870:	0x00000000	0x00000000	0x00000000	0x080ffdc0
+0x813c880:	0x00000001	0x00000000	0x080ffe24	0x00000014
+0x813c890:	0x00000031	0x00000000	0x00000000	0x0813dab0
+0x813c8a0:	0x0813c428	0x0813ce98	0x70a5b000	0x00051000
+0x813c8b0:	0x00000000	0xffffffff	0x00000000	0x080ffdc0
+0x813c8c0:	0x00002bad	0x0813d400	0x0813d500	0x0813d700
+0x813c8d0:	0x0813d800	0x00000000	0x00000000	0x104aa1ad
+0x813c8e0:	0x544a5ab2	0x32378fc7	0x00008767	0x00000000
+0x813c8f0:	0x00000000	0x00000000	0x0ee9547d	0x00000000
+0x813c900:	0x00000000	0x00000000	0x0813b000	0x75878760
+0x813c910:	0x70a59a94	0x00000000	0x70a59abc	0xb7829020
+0x813c920:	0xb7bb7100	0x00000000	0x00000000	0x00000000
+0x813c930:	0x00000000	0x00000000	0x00000000	0x00000000
+0x813c940:	0x00000000	0x00000000	0x00000000	0x00000000
+0x813c950:	0x00000000	0x00000000	0x00000000	0x0000000a
+0x813c960:	0x0813da98	0x00000000	0x0000deab	0x00000001
+0x813c970:	0x00000000	0x00000000	0x00000002	0x00000000
+0x813c980:	0x00000000	0x00000000	0x00000000	0x00000000
+</pre>
+&#8195;&#8195;因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态
+
+<pre class="prettyPrint">
+ public:                                    
+  volatile JavaThreadState _thread_state;
+ private:
+  ThreadSafepointState *_safepoint_state;        
+  address               _saved_exception_pc;    
+  volatile TerminatedTypes _terminated;
+</pre>
+ 
+`JavaThreadState`
+ 
+<pre class="prettyPrint">
+ enum JavaThreadState {
+  _thread_uninitialized     =  0, 
+  _thread_new               =  2, 
+  _thread_new_trans         =  3, 
+  _thread_in_native         =  4, 
+  _thread_in_native_trans   =  5, 
+  _thread_in_vm             =  6, 
+  _thread_in_vm_trans       =  7, 
+  _thread_in_Java           =  8, 
+  _thread_in_Java_trans     =  9, 
+  _thread_blocked           = 10, 
+  _thread_blocked_trans     = 11, 
+  _thread_max_state         = 12  
+};
+</pre>
+
+&#8195;&#8195;这样一来查看下线程dump，发现`Thread-1`正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明`Thread-0`和`Thread-1`成功互锁了
+		
+&#8195;&#8195;于是我们展开`Thread-1`，看到`- waiting to lock <0x71ae2ec0> (a java.lang.Class for java.sql.DriverManager)`，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被`Thread-0`线程持有的，从`Thread-1`这个线程堆栈来看它其实也是在做Class.forName动作，并且通过`Thread-1`,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver
+
+`问题现场遐想:`
+		
+&#8195;&#8195;于是我们大胆设想一个场景，`Thread-1`先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，`Thread-0`这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态
+		
+### 解决方案
+
+&#8195;&#8195;解决方案目前想到的是将驱动类的加载过程变成单线程加载，不存在并发情况就没问题了		
+		
+
+		
+		
+		
+		

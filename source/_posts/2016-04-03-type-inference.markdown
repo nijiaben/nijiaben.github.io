@@ -1,0 +1,247 @@
+---
+layout: post
+title: "JDK8在泛型类型推导上的变化"
+date: 2016-04-03 12:50:39 +0800
+comments: true
+categories: JVM JDK8 TypeInference
+---
+##概述
+最近公司在大面积推广JDK8，整体来说升级上来算顺利的，大部分问题可能在编译期就碰到了，但是有些时候比较蛋疼，编译期没有出现问题，但是在运行期就出了问题，比如今天要说的这个话题，所以大家再升级的时候还是要多测测再上线，当然JDK8给我们带来了不少收益，花点时间升级上来还是值得的。
+<!--more-->
+##问题描述
+还是老规矩，先上demo，让大家直观地知道我们要说的问题。
+
+```
+public class Test {
+      static <T extends Number> T getObject() {
+      		return (T)Long.valueOf(1L);
+      }
+
+      public static void main(String... args) throws Exception {
+      		StringBuilder sb = new StringBuilder();
+      		sb.append(getObject());
+      }
+}
+```
+demo很简单，就是有个使用了泛型的函数getObject，其返回类型是Number的子类，然后我们将函数返回值传给StringBuilder的多态方法append，我们知道append方法有很多，参数类型也很多，但是唯独没有参数是Number的append方法，如果有的话，大家应该猜到会优先选择这个方法了，既然没有，那到底会选哪个呢，我们分别用jdk6(jdk7类似)和jdk8来编译下上面的类，然后用javap看看输出结果（只看main方法）：
+
+jdk6编译的字节码：
+
+```
+public static void main(java.lang.String...) throws java.lang.Exception;
+    flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #3                  // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #4                  // Method java/lang/StringBuilder."<init>":()V
+         7: astore_1
+         8: aload_1
+         9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+        12: invokevirtual #6                  // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+        15: pop
+        16: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 8
+        line 10: 16
+    Exceptions:
+      throws java.lang.Exception
+```
+
+jdk8编译的字节码：
+
+```
+public static void main(java.lang.String...) throws java.lang.Exception;
+    descriptor: ([Ljava/lang/String;)V
+    flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #3                  // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #4                  // Method java/lang/StringBuilder."<init>":()V
+         7: astore_1
+         8: aload_1
+         9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+        12: checkcast     #6                  // class java/lang/CharSequence
+        15: invokevirtual #7                  // Method java/lang/StringBuilder.append:(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;
+        18: pop
+        19: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 8
+        line 10: 19
+    Exceptions:
+      throws java.lang.Exception
+```
+
+对比上面那个的差异，我们看到bci从12开始变了，jdk8里多了下面这行表示要对栈顶的数据做一次类型检查看是不是CharSequence类型：
+
+```
+ 12: checkcast     #6                  // class java/lang/CharSequence
+```
+
+另外调用的StringBuilder的append方法也是不一样的，jdk7里是调用的参数为Object类型的append方法，而jdk8里调用的是CharSequence类型的append方法。
+
+最主要的是在jdk6和jdk8下运行上面的代码，在jdk6下是正常跑过的，但是在jdk8下是直接抛出异常的：
+
+```
+Exception in thread "main" java.lang.ClassCastException: java.lang.Long cannot be cast to java.lang.CharSequence
+	at Test.main(Test.java:9)
+```
+
+至此问题整个应该描述清楚了。
+
+##问题分析
+先来说说如果要我们来做这个java编译器实现这个功能，我们要怎么来做，其他的都是很明确的，重点在于如下这段如何来确定append的方法使用哪个：
+
+```
+sb.append(getObject());
+```
+我们知道getObject()返回的是个泛型对象，这个对象是Number的子类，因此我们首先会去遍历StringBuilder的所有可见的方法，包括从父类继承过来的，找是不是存在一个方法叫做append，并且参数类型是Number的方法，如果有，那就直接使用这个方法，如果没有，那我们得想办法找到一个最合适的方法，关键就在于这个合适怎么定义，比如说我们看到有个append的方法，其参数是Object类型的，Number是Object的子类，所以我们选择这个方法肯定没问题，假如说另外有个append方法，其参数是Serializable类型(当然其实并没有这种参数的方法)，Number实现了这个接口，我们选择这个方法也是没问题的，那到底是Object参数的更合适还是Serializable的更合适呢，还有更甚者，我们知道StringBuilder有个方法，其参数是CharSequence，假如我们传进去的参数其实既是Number的子类，同时又实现了CharSequence这个接口，那我们究竟要不要选它呢？这些问题我们都需要去考虑，而且各有各的理由，说起来都感觉挺合理的。
+
+##JDK6里泛型的类型推导
+这里分析的是jdk6的javac代码，不过大致看了下jdk7的这块针对这个问题的逻辑也差不多，所以就以这块为例了，jdk6里的泛型类型推导其实比较简单，从上面的输出结果我们也猜到了，其实就是选了参数为Object类型的append方法，它觉得它是最合适的：
+
+```
+private Symbol findMethod(Env<AttrContext> env,
+                              Type site,
+                              Name name,
+                              List<Type> argtypes,
+                              List<Type> typeargtypes,
+                              Type intype,
+                              boolean abstractok,
+                              Symbol bestSoFar,
+                              boolean allowBoxing,
+                              boolean useVarargs,
+                              boolean operator) {
+        for (Type ct = intype; ct.tag == CLASS; ct = types.supertype(ct)) {
+            ClassSymbol c = (ClassSymbol)ct.tsym;
+            if ((c.flags() & (ABSTRACT | INTERFACE | ENUM)) == 0)
+                abstractok = false;
+            for (Scope.Entry e = c.members().lookup(name);
+                 e.scope != null;
+                 e = e.next()) {
+                //- System.out.println(" e " + e.sym);
+                if (e.sym.kind == MTH &&
+                    (e.sym.flags_field & SYNTHETIC) == 0) {
+                    bestSoFar = selectBest(env, site, argtypes, typeargtypes,
+                                           e.sym, bestSoFar,
+                                           allowBoxing,
+                                           useVarargs,
+                                           operator);
+                }
+            }
+            //- System.out.println(" - " + bestSoFar);
+            if (abstractok) {
+                Symbol concrete = methodNotFound;
+                if ((bestSoFar.flags() & ABSTRACT) == 0)
+                    concrete = bestSoFar;
+                for (List<Type> l = types.interfaces(c.type);
+                     l.nonEmpty();
+                     l = l.tail) {
+                    bestSoFar = findMethod(env, site, name, argtypes,
+                                           typeargtypes,
+                                           l.head, abstractok, bestSoFar,
+                                           allowBoxing, useVarargs, operator);
+                }
+         	if (concrete != bestSoFar &&
+                    concrete.kind < ERR  && bestSoFar.kind < ERR &&
+                    types.isSubSignature(concrete.type, bestSoFar.type))
+                    bestSoFar = concrete;
+            }
+        }
+        return bestSoFar;
+    }
+```
+
+上面的逻辑大概是遍历当前类(比如这个例子中的StringBuilder)及其父类，依次从他们的方法里找出一个最合适的方法返回，重点就落在了selectBest这个方法上:
+
+```
+Symbol selectBest(Env<AttrContext> env,
+                      Type site,
+                      List<Type> argtypes,
+                      List<Type> typeargtypes,
+                      Symbol sym,
+                      Symbol bestSoFar,
+                      boolean allowBoxing,
+                      boolean useVarargs,
+                      boolean operator) {
+        if (sym.kind == ERR) return bestSoFar;
+        if (!sym.isInheritedIn(site.tsym, types)) return bestSoFar;
+        assert sym.kind < AMBIGUOUS;
+        try {
+            if (rawInstantiate(env, site, sym, argtypes, typeargtypes,
+                               allowBoxing, useVarargs, Warner.noWarnings) == null) {
+                // inapplicable
+                switch (bestSoFar.kind) {
+                case ABSENT_MTH: return wrongMethod.setWrongSym(sym);
+                case WRONG_MTH: return wrongMethods;
+                default: return bestSoFar;
+                }
+            }
+        } catch (Infer.NoInstanceException ex) {
+            switch (bestSoFar.kind) {
+            case ABSENT_MTH:
+                return wrongMethod.setWrongSym(sym, ex.getDiagnostic());
+            case WRONG_MTH:
+                return wrongMethods;
+            default:
+                return bestSoFar;
+            }
+        }
+        if (!isAccessible(env, site, sym)) {
+            return (bestSoFar.kind == ABSENT_MTH)
+                ? new AccessError(env, site, sym)
+                : bestSoFar;
+        }
+        return (bestSoFar.kind > AMBIGUOUS)
+            ? sym
+            : mostSpecific(sym, bestSoFar, env, site,
+                           allowBoxing && operator, useVarargs);
+    }
+```
+这个方法的主要逻辑落在rawInstantiate这个方法里(具体代码不贴了，有兴趣的去看下代码，我将最终最关键的调用方法argumentsAcceptable贴出来，主要做参数的匹配)，如果当前方法也合适，那就和之前挑出来的最好的方法做一个比较看谁最适合，这个选择过程在最后的mostSpecific方法里，其实就和冒泡排序差不多，不过是找最接近的那个类型(逐层找对应是父类的方法，和最小公倍数有点类似)。
+
+```    
+    boolean argumentsAcceptable(List<Type> argtypes,
+                                List<Type> formals,
+                                boolean allowBoxing,
+                                boolean useVarargs,
+                                Warner warn) {
+        Type varargsFormal = useVarargs ? formals.last() : null;
+        while (argtypes.nonEmpty() && formals.head != varargsFormal) {
+            boolean works = allowBoxing
+                ? types.isConvertible(argtypes.head, formals.head, warn)
+                : types.isSubtypeUnchecked(argtypes.head, formals.head, warn);
+            if (!works) return false;
+            argtypes = argtypes.tail;
+            formals = formals.tail;
+        }
+        if (formals.head != varargsFormal) return false; // not enough args
+        if (!useVarargs)
+            return argtypes.isEmpty();
+        Type elt = types.elemtype(varargsFormal);
+        while (argtypes.nonEmpty()) {
+            if (!types.isConvertible(argtypes.head, elt, warn))
+                return false;
+            argtypes = argtypes.tail;
+        }
+        return true;
+    }    
+```
+针对具体的例子其实就是看StringBuilder里的哪个方法的参数是Number的父类，如果不是就表示没有找到，如果参数都符合期望就表示找到，然后返回。
+
+所以jdk6里的这块的逻辑相对来说比较简单。
+
+
+##JDK8里泛型的类型推导
+
+jdk8里的推导相对来说比较复杂，不过大部分逻辑和上面的都差不多，但是argumentsAcceptable这块的变动比较大，增加了一些数据结构，规则变得更加复杂，考虑的场景也更多了，因为代码嵌套层数很深，具体的代码我就不贴了，有兴趣的自己去跟下代码（具体变化可以从AbstractMethodCheck.argumentsAcceptable这个方法开始）。
+
+针对具体这个demo，如果getObject返回的对象既实现了CharSequence，又是Number的子类，那它认为这种情况其实选择参数为CharSequence类型的append方法比参数为Object类型的方法更合适，看起来是要求更严格一些了，适用范围收窄了一些，不是去匹配大而范的接口方法，因此其多加了一层checkcast的检查，不过我个人观点是觉得这块有点太激进了。
+
+
+#欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章
+
+{% img /images/gzh.jpg 200 200 %}

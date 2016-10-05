@@ -1,0 +1,24 @@
+---
+layout: page
+title: ""
+date: 2014-07-15 00:57
+comments: true
+sharing: true
+footer: true
+---
+<h1>最近评论</h1>
+<ul class="ds-recent-comments" data-num-items="100" data-show-title="1" data-show-admin="1" data-show-avatars="1" data-show-time="1">
+</ul>
+<!--多说js加载开始，一个页面只需要加载一次 -->
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"nijiaben"};
+(function() {
+var ds = document.createElement('script');
+ds.type = 'text/javascript';
+ds.async = true;
+ds.src = 'http://static.duoshuo.com/embed.js';
+ds.charset = 'UTF-8';
+(document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds);
+})();
+</script>
+

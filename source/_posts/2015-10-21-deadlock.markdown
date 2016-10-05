@@ -1,0 +1,317 @@
+---
+layout: post
+title: "消失的死锁"
+date: 2015-10-21 18:54:01 +0800
+comments: true
+categories: JVM DeadLock
+---
+##问题描述
+如果java层面发生了死锁，当我们使用`jstack`命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似`Found one Java-level deadlock:`的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来，这次碰到一个系统就发生类似的问题，不过这个dump文档里虽然提到了如下的死锁信息：
+
+<!--more-->
+
+```
+Found one Java-level deadlock:
+=============================
+"worker-1-thread-121":
+  waiting to lock monitor 0x00007f3758209dc8 (object 0x0000000764cd2b20, a java.util.concurrent.ConcurrentHashMap),
+  which is held by "HSFBizProcessor-4-thread-4"
+"HSFBizProcessor-4-thread-4":
+  waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+  which is held by "HSFBizProcessor-4-thread-5"
+"HSFBizProcessor-4-thread-5":
+  waiting to lock monitor 0x00007f3758253420 (object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+  which is held by "HSFBizProcessor-4-thread-4"
+```
+
+但是我们在堆栈里搜索对应的锁的时候并没发现，也就是上面提到的
+
+```
+object 0x00000007608e6fc8 which is held by "HSFBizProcessor-4-thread-4"
+```
+
+我们在`HSFBizProcessor-4-thread-4`这个线程的堆栈里并没有看到对应的持锁信息。
+
+附上线程dump详情
+
+```
+Found one Java-level deadlock:
+=============================
+"worker-1-thread-121":
+  waiting to lock monitor 0x00007f3758209dc8 (object 0x0000000764cd2b20, a java.util.concurrent.ConcurrentHashMap),
+  which is held by "HSFBizProcessor-4-thread-4"
+"HSFBizProcessor-4-thread-4":
+  waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+  which is held by "HSFBizProcessor-4-thread-5"
+"HSFBizProcessor-4-thread-5":
+  waiting to lock monitor 0x00007f3758253420 (object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+  which is held by "HSFBizProcessor-4-thread-4"
+
+Java stack information for the threads listed above:
+===================================================
+"worker-1-thread-121":
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:180)
+	- waiting to lock <0x0000000764cd2b20> (a java.util.concurrent.ConcurrentHashMap)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.isTypeMatch(AbstractBeanFactory.java:455)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBeanNamesForType(DefaultListableBeanFactory.java:317)
+	......
+	at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+	at java.lang.Thread.run(Thread.java:662)
+"HSFBizProcessor-4-thread-4":
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+	- waiting to lock <0x000000076073ddc8> (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.SingleSourcePackage.loadClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+	at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+	at org.springframework.scripting.groovy.GroovyScriptFactory.executeScript(GroovyScriptFactory.java:238)
+	......
+	at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+	at java.lang.Thread.run(Thread.java:662)
+"HSFBizProcessor-4-thread-5":
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+	- waiting to lock <0x00000007608e6fc8> (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.buddy.DependentPolicy.loadClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.buddy.PolicyHandler.doBuddyClassLoading(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+	at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+	at java.lang.Class.forName0(Native Method)
+	at java.lang.Class.forName(Class.java:169)
+	at groovy.lang.MetaClassRegistry$MetaClassCreationHandle.createWithCustomLookup(MetaClassRegistry.java:127)
+	at groovy.lang.MetaClassRegistry$MetaClassCreationHandle.create(MetaClassRegistry.java:122)
+    ......
+	at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+	at java.lang.Thread.run(Thread.java:662)
+
+Found 1 deadlock.
+```
+
+##类加载的问题？
+首先应该怀疑类加载的问题，因为我们看到导致死锁的对象是一个classloader对象：
+
+```
+waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+```
+
+然后我们再来分析下堆栈
+
+###HSFBizProcessor-4-thread-4
+
+```
+"HSFBizProcessor-4-thread-4":
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+	- waiting to lock <0x000000076073ddc8> (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.SingleSourcePackage.loadClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+	at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+	at org.springframework.scripting.groovy.GroovyScriptFactory.executeScript(GroovyScriptFactory.java:238)
+	at org.springframework.scripting.groovy.GroovyScriptFactory.getScriptedObject(GroovyScriptFactory.java:185)
+```
+
+我这里只把关键的线程栈贴出来，从栈顶知道正在等一把锁：
+
+```
+    - waiting to lock <0x000000076073ddc8> (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+
+```
+
+这把锁的对象是一个ClassLoader对象，我们找到对应的代码，确实存在synchronized的操作：
+
+```
+private Class<?> findLoadedClass(String classname) {
+    if ((LOCK_CLASSNAME) || (this.isParallelClassLoader)) {
+      boolean initialLock = lockClassName(classname);
+      try {
+        return this.classloader.publicFindLoaded(classname);
+      } finally {
+        if (initialLock)
+          unlockClassName(classname);
+      }
+    }
+    synchronized (this.classloader) {
+      return this.classloader.publicFindLoaded(classname);
+    }
+  }
+
+```
+
+另外我们还知道它正在执行loadClass的动作，并且是从groovy调用来的，同样找到对应的代码：
+
+
+```
+protected Object executeScript(ScriptSource scriptSource, Class scriptClass)
+    throws ScriptCompilationException
+  {
+    try
+    {
+      GroovyObject goo = (GroovyObject)scriptClass.newInstance();//line 238
+
+      if (this.groovyObjectCustomizer != null)
+      {
+        this.groovyObjectCustomizer.customize(goo);
+      }
+
+      if ((goo instanceof Script))
+      {
+        return ((Script)goo).run();
+      }
+
+      return goo;
+    }
+    catch (InstantiationException ex)
+    {
+      throw new ScriptCompilationException(
+        scriptSource, "Could not instantiate Groovy script class: " + scriptClass.getName(), ex);
+    }
+    catch (IllegalAccessException ex) {
+      throw new ScriptCompilationException(
+        scriptSource, "Could not access Groovy script constructor: " + scriptClass.getName(), ex);
+    }
+  }
+```
+
+执行到第238行的时候
+
+```
+GroovyObject goo = (GroovyObject)scriptClass.newInstance();//line 238
+```
+
+突然发现调用了
+
+```
+java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+```
+
+而我们看到上面第238行的逻辑其实就是实例化一个对象，然后进行强转，我们看看对应的字节码：
+
+```
+ 0: aload_2
+ 1: invokevirtual #164                // Method java/lang/Class.newInstance:()Ljava/lang/Object;
+ 4: checkcast     #168                // class groovy/lang/GroovyObject
+ 7: astore_3
+```
+
+其实就对应这么几条字节码指令，其实在jvm里当我们执行checkcast指令的时候会触发类加载的动作：
+
+```
+void TemplateTable::checkcast() {
+	...
+	call_VM(rax, CAST_FROM_FN_PTR(address, InterpreterRuntime::quicken_io_cc));
+	...
+}
+
+IRT_ENTRY(void, InterpreterRuntime::quicken_io_cc(JavaThread* thread))
+  // Force resolving; quicken the bytecode
+  int which = get_index_u2(thread, Bytecodes::_checkcast);
+  constantPoolOop cpool = method(thread)->constants();
+  // We'd expect to assert that we're only here to quicken bytecodes, but in a multithreaded
+  // program we might have seen an unquick'd bytecode in the interpreter but have another
+  // thread quicken the bytecode before we get here.
+  // assert( cpool->tag_at(which).is_unresolved_klass(), "should only come here to quicken bytecodes" );
+  klassOop klass = cpool->klass_at(which, CHECK);
+  thread->set_vm_result(klass);
+IRT_END
+
+klassOop klass_at(int which, TRAPS) {
+    constantPoolHandle h_this(THREAD, this);
+    return klass_at_impl(h_this, which, CHECK_NULL);
+}
+
+klassOop constantPoolOopDesc::klass_at_impl(constantPoolHandle this_oop, int which, TRAPS) {
+	...
+    klassOop k_oop = SystemDictionary::resolve_or_fail(name, loader, h_prot, true, THREAD);
+	...
+}	
+
+//SystemDictionary::resolve_or_fail最终会调用到下面这个方法
+klassOop SystemDictionary::resolve_instance_class_or_null(Symbol* name, Handle class_loader, Handle protection_domain, TRAPS) {
+  ...
+  // Class is not in SystemDictionary so we have to do loading.
+  // Make sure we are synchronized on the class loader before we proceed
+  Handle lockObject = compute_loader_lock_object(class_loader, THREAD);
+  check_loader_lock_contention(lockObject, THREAD);
+  ObjectLocker ol(lockObject, THREAD, DoObjectLock);
+  ...
+  //此时会调用ClassLoader.loadClass来加载类了
+  ...
+}
+
+Handle SystemDictionary::compute_loader_lock_object(Handle class_loader, TRAPS) {
+  // If class_loader is NULL we synchronize on _system_loader_lock_obj
+  if (class_loader.is_null()) {
+    return Handle(THREAD, _system_loader_lock_obj);
+  } else {
+    return class_loader;
+  }
+}
+```
+
+`SystemDictionary::resolve_instance_class_or_null`这个方法非常关键了，在里面我们看到会获取一把锁ObjectLocker，其相当于我们java代码里的`synchronized`关键字，而对象对应的是lockObject，这个对象是上面的`SystemDictionary::compute_loader_lock_object`方法返回的，从代码可知只要不是bootstrapClassloader加载的类就会返回当前classloader对象，也就是说当我们在加载一个类的时候其实是会持有当前类加载对象的锁的，在获取了这把锁之后就会调用ClassLoader.loadClass来加载类了。这其实就解释了`HSFBizProcessor-4-thread-4`这个线程为什么持有了
+```
+object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader
+```
+这个类加载的锁，不过遗憾的是因为这把锁不是java层面来显示加载的，因此我们在`jstack`线程dump的输出里居然看不到这把锁的存在.
+
+###HSFBizProcessor-4-thread-5
+先上堆栈：
+
+```
+"HSFBizProcessor-4-thread-5":
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+	- waiting to lock <0x00000007608e6fc8> (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+	at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.buddy.DependentPolicy.loadClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.buddy.PolicyHandler.doBuddyClassLoading(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+	at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+	at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+	at java.lang.Class.forName0(Native Method)
+	at java.lang.Class.forName(Class.java:169)
+```
+
+这个线程栈其实和之前那个线程差不多，只是等的锁不一样，另外触发类加载的动作是`Class.forName`，获取大家也猜到了，其实是在下面两行堆栈之间同样获取了一把类加载器的锁
+
+```
+    at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+    at java.lang.Class.forName0(Native Method)
+```
+
+这里的代码我也不细贴了，最终调用的jvm里的方法都是一样的，获取锁的逻辑也是一样的
+
+##总结
+想象下这种场景，两个线程分别使用不同的classloader对两个类进行类加载，然而由于osgi类加载机制的缘故，在loadClass过程中可能会委托给别的classloader去加载，而正巧，这两个线程在获取当前classloader的锁之后，然后分别委托对方的classloader去加载，可以看到文章开头列的那个findLoadedClass方法，而synchronized的那个classloader正好是对方的classloader，从而导致了死锁

@@ -1,0 +1,137 @@
+---
+layout: post
+title: "如何定位消耗CPU最多的线程"
+date: 2016-03-31 18:27:35 +0800
+comments: true
+categories: JVM CPU 
+---
+
+之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。
+<!--more-->
+话不多说了，先来看代码吧
+
+```
+public class Test{
+        public static void main(String args[]){
+                for(int i=0;i<10;i++){
+                        new Thread(){
+                                public void run(){
+                                        try{
+                                                Thread.sleep(100000);
+                                        }catch(Exception e){}
+                                }
+                        }.start();
+                }
+                Thread t=new Thread(){
+                        public void run(){
+                                int i=0;
+                                while(true){
+                                        i=(i++)/100;
+                                }
+                        }
+                };
+                t.setName("Busiest Thread");
+                t.start();
+        }
+}
+```
+
+这个例子里新创建了11个线程，其中10个线程没干什么事，主要是sleep，另外有一个线程在循环里一直跑着，可以想象这个线程是这个进程里最耗cpu的线程了，那怎么把这个线程给抓出来呢？
+
+首先我们可以通过`top -Hp <pid>`来看这个进程里所有线程的cpu消耗情况，得到类似下面的数据
+
+```
+$ top -Hp 18207
+top - 19:11:43 up 573 days,  2:43,  2 users,  load average: 3.03, 3.03, 3.02
+Tasks:  44 total,   1 running,  43 sleeping,   0 stopped,   0 zombie
+Cpu(s): 18.8%us,  0.0%sy,  0.0%ni, 81.1%id,  0.0%wa,  0.0%hi,  0.0%si,  0.0%st
+Mem:  99191752k total, 98683576k used,   508176k free,   128248k buffers
+Swap:  1999864k total,   191064k used,  1808800k free, 17413760k cached
+
+  PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND
+18250 admin     20   0 26.1g  28m  10m R 99.9  0.0   0:19.50 java Test
+18207 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18208 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.09 java Test
+18209 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18210 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18211 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18212 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18213 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18214 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18215 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18216 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18217 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18218 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18219 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18220 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18221 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18222 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18223 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18224 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18225 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18226 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+18227 admin     20   0 26.1g  28m  10m S  0.0  0.0   0:00.00 java Test
+```
+
+拿到这个结果之后，我们可以看到cpu最高的线程是pid为18250的线程，占了99.9%：
+
+```
+ PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND
+18250 admin     20   0 26.1g  28m  10m R 99.9  0.0   0:19.50 java Test
+```
+
+接着我们可以通过`jstack <pid>`的输出来看各个线程栈:
+
+```
+$ jstack 18207
+2016-03-30 19:12:23
+Full thread dump OpenJDK 64-Bit Server VM (25.66-b60 mixed mode):
+
+"Attach Listener" #30 daemon prio=9 os_prio=0 tid=0x00007fb90be13000 nid=0x47d7 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"DestroyJavaVM" #29 prio=5 os_prio=0 tid=0x00007fb96245b800 nid=0x4720 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Busiest Thread" #28 prio=5 os_prio=0 tid=0x00007fb91498d000 nid=0x474a runnable [0x00007fb9065fe000]
+   java.lang.Thread.State: RUNNABLE
+	at Test$2.run(Test.java:18)
+
+"Thread-9" #27 prio=5 os_prio=0 tid=0x00007fb91498c800 nid=0x4749 waiting on condition [0x00007fb906bfe000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at Test$1.run(Test.java:9)
+
+"Thread-8" #26 prio=5 os_prio=0 tid=0x00007fb91498b800 nid=0x4748 waiting on condition [0x00007fb906ffe000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at Test$1.run(Test.java:9)
+
+"Thread-7" #25 prio=5 os_prio=0 tid=0x00007fb91498b000 nid=0x4747 waiting on condition [0x00007fb9073fe000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at Test$1.run(Test.java:9)
+
+"Thread-6" #24 prio=5 os_prio=0 tid=0x00007fb91498a000 nid=0x4746 waiting on condition [0x00007fb9077fe000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at Test$1.run(Test.java:9)
+...	
+```
+
+上面的线程栈我们注意到nid的值其实就是线程ID，它是十六进制的，我们将消耗cpu最高的线程`18250`，转成十六进制`0x474a`，然后从上面的线程栈里找到`nid=0x474a`的线程，其栈为：
+
+```
+
+"Busiest Thread" #28 prio=5 os_prio=0 tid=0x00007fb91498d000 nid=0x474a runnable [0x00007fb9065fe000]
+   java.lang.Thread.State: RUNNABLE
+	at Test$2.run(Test.java:18)
+```
+
+即将最耗cpu的线程找出来了，是`Businest Thread`
+
+
+#欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章
+
+{% img /images/gzh.jpg 200 200 %}
+
