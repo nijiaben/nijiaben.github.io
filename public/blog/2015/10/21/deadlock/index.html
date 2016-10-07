@@ -1,0 +1,680 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>消失的死锁 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="消失的死锁 问题描述 如果java层面发生了死锁，当我们使用jstack命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似Found one Java-level deadlock:的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来， &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2015/10/21/deadlock/">
+	<link href="/favicon.png" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/' ><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /> </a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+  <li><a href="/">文章</a></li>
+  <li><a href="/blog/archives">归档</a></li>
+  <li><a href="/comments/latest.html">最新评论</a></li>
+  <li><a href="/about/index.html">关于你假笨</a></li>
+</ul>
+
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav>
+	<img src="/images/gzh.jpg" width="200" height="200">
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">消失的死锁</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>问题描述</h2>
+
+<p>如果java层面发生了死锁，当我们使用<code>jstack</code>命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似<code>Found one Java-level deadlock:</code>的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来，这次碰到一个系统就发生类似的问题，不过这个dump文档里虽然提到了如下的死锁信息：</p>
+
+<!--more-->
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Found one Java-level deadlock:
+</span><span class='line'>=============================
+</span><span class='line'>"worker-1-thread-121":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758209dc8 (object 0x0000000764cd2b20, a java.util.concurrent.ConcurrentHashMap),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-4"
+</span><span class='line'>"HSFBizProcessor-4-thread-4":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-5"
+</span><span class='line'>"HSFBizProcessor-4-thread-5":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758253420 (object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-4"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>但是我们在堆栈里搜索对应的锁的时候并没发现，也就是上面提到的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>object 0x00000007608e6fc8 which is held by "HSFBizProcessor-4-thread-4"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们在<code>HSFBizProcessor-4-thread-4</code>这个线程的堆栈里并没有看到对应的持锁信息。</p>
+
+<p>附上线程dump详情</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Found one Java-level deadlock:
+</span><span class='line'>=============================
+</span><span class='line'>"worker-1-thread-121":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758209dc8 (object 0x0000000764cd2b20, a java.util.concurrent.ConcurrentHashMap),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-4"
+</span><span class='line'>"HSFBizProcessor-4-thread-4":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-5"
+</span><span class='line'>"HSFBizProcessor-4-thread-5":
+</span><span class='line'>  waiting to lock monitor 0x00007f3758253420 (object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader),
+</span><span class='line'>  which is held by "HSFBizProcessor-4-thread-4"
+</span><span class='line'>
+</span><span class='line'>Java stack information for the threads listed above:
+</span><span class='line'>===================================================
+</span><span class='line'>"worker-1-thread-121":
+</span><span class='line'>  at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:180)
+</span><span class='line'>  - waiting to lock &lt;0x0000000764cd2b20&gt; (a java.util.concurrent.ConcurrentHashMap)
+</span><span class='line'>  at org.springframework.beans.factory.support.AbstractBeanFactory.isTypeMatch(AbstractBeanFactory.java:455)
+</span><span class='line'>  at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBeanNamesForType(DefaultListableBeanFactory.java:317)
+</span><span class='line'>  ......
+</span><span class='line'>  at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+</span><span class='line'>  at java.lang.Thread.run(Thread.java:662)
+</span><span class='line'>"HSFBizProcessor-4-thread-4":
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+</span><span class='line'>  - waiting to lock &lt;0x000000076073ddc8&gt; (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.SingleSourcePackage.loadClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+</span><span class='line'>  at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+</span><span class='line'>  at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+</span><span class='line'>  at org.springframework.scripting.groovy.GroovyScriptFactory.executeScript(GroovyScriptFactory.java:238)
+</span><span class='line'>  ......
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+</span><span class='line'>  at java.lang.Thread.run(Thread.java:662)
+</span><span class='line'>"HSFBizProcessor-4-thread-5":
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+</span><span class='line'>  - waiting to lock &lt;0x00000007608e6fc8&gt; (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.buddy.DependentPolicy.loadClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.buddy.PolicyHandler.doBuddyClassLoading(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+</span><span class='line'>  at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+</span><span class='line'>  at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+</span><span class='line'>  at java.lang.Class.forName0(Native Method)
+</span><span class='line'>  at java.lang.Class.forName(Class.java:169)
+</span><span class='line'>  at groovy.lang.MetaClassRegistry$MetaClassCreationHandle.createWithCustomLookup(MetaClassRegistry.java:127)
+</span><span class='line'>  at groovy.lang.MetaClassRegistry$MetaClassCreationHandle.create(MetaClassRegistry.java:122)
+</span><span class='line'>    ......
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:886)
+</span><span class='line'>  at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:908)
+</span><span class='line'>  at java.lang.Thread.run(Thread.java:662)
+</span><span class='line'>
+</span><span class='line'>Found 1 deadlock.</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>类加载的问题？</h2>
+
+<p>首先应该怀疑类加载的问题，因为我们看到导致死锁的对象是一个classloader对象：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>waiting to lock monitor 0x00007f3758289260 (object 0x000000076073ddc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后我们再来分析下堆栈</p>
+
+<h3>HSFBizProcessor-4-thread-4</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"HSFBizProcessor-4-thread-4":
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+</span><span class='line'>  - waiting to lock &lt;0x000000076073ddc8&gt; (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.SingleSourcePackage.loadClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+</span><span class='line'>  at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+</span><span class='line'>  at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+</span><span class='line'>  at org.springframework.scripting.groovy.GroovyScriptFactory.executeScript(GroovyScriptFactory.java:238)
+</span><span class='line'>  at org.springframework.scripting.groovy.GroovyScriptFactory.getScriptedObject(GroovyScriptFactory.java:185)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我这里只把关键的线程栈贴出来，从栈顶知道正在等一把锁：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>- waiting to lock &lt;0x000000076073ddc8&gt; (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这把锁的对象是一个ClassLoader对象，我们找到对应的代码，确实存在synchronized的操作：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private Class&lt;?&gt; findLoadedClass(String classname) {
+</span><span class='line'>    if ((LOCK_CLASSNAME) || (this.isParallelClassLoader)) {
+</span><span class='line'>      boolean initialLock = lockClassName(classname);
+</span><span class='line'>      try {
+</span><span class='line'>        return this.classloader.publicFindLoaded(classname);
+</span><span class='line'>      } finally {
+</span><span class='line'>        if (initialLock)
+</span><span class='line'>          unlockClassName(classname);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>    synchronized (this.classloader) {
+</span><span class='line'>      return this.classloader.publicFindLoaded(classname);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外我们还知道它正在执行loadClass的动作，并且是从groovy调用来的，同样找到对应的代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected Object executeScript(ScriptSource scriptSource, Class scriptClass)
+</span><span class='line'>    throws ScriptCompilationException
+</span><span class='line'>  {
+</span><span class='line'>    try
+</span><span class='line'>    {
+</span><span class='line'>      GroovyObject goo = (GroovyObject)scriptClass.newInstance();//line 238
+</span><span class='line'>
+</span><span class='line'>      if (this.groovyObjectCustomizer != null)
+</span><span class='line'>      {
+</span><span class='line'>        this.groovyObjectCustomizer.customize(goo);
+</span><span class='line'>      }
+</span><span class='line'>
+</span><span class='line'>      if ((goo instanceof Script))
+</span><span class='line'>      {
+</span><span class='line'>        return ((Script)goo).run();
+</span><span class='line'>      }
+</span><span class='line'>
+</span><span class='line'>      return goo;
+</span><span class='line'>    }
+</span><span class='line'>    catch (InstantiationException ex)
+</span><span class='line'>    {
+</span><span class='line'>      throw new ScriptCompilationException(
+</span><span class='line'>        scriptSource, "Could not instantiate Groovy script class: " + scriptClass.getName(), ex);
+</span><span class='line'>    }
+</span><span class='line'>    catch (IllegalAccessException ex) {
+</span><span class='line'>      throw new ScriptCompilationException(
+</span><span class='line'>        scriptSource, "Could not access Groovy script constructor: " + scriptClass.getName(), ex);
+</span><span class='line'>    }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>执行到第238行的时候</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GroovyObject goo = (GroovyObject)scriptClass.newInstance();//line 238</span></code></pre></td></tr></table></div></figure>
+
+
+<p>突然发现调用了</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>java.lang.ClassLoader.loadClass(ClassLoader.java:247)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而我们看到上面第238行的逻辑其实就是实例化一个对象，然后进行强转，我们看看对应的字节码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> 0: aload_2
+</span><span class='line'> 1: invokevirtual #164                // Method java/lang/Class.newInstance:()Ljava/lang/Object;
+</span><span class='line'> 4: checkcast     #168                // class groovy/lang/GroovyObject
+</span><span class='line'> 7: astore_3</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实就对应这么几条字节码指令，其实在jvm里当我们执行checkcast指令的时候会触发类加载的动作：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void TemplateTable::checkcast() {
+</span><span class='line'>  ...
+</span><span class='line'>  call_VM(rax, CAST_FROM_FN_PTR(address, InterpreterRuntime::quicken_io_cc));
+</span><span class='line'>  ...
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>IRT_ENTRY(void, InterpreterRuntime::quicken_io_cc(JavaThread* thread))
+</span><span class='line'>  // Force resolving; quicken the bytecode
+</span><span class='line'>  int which = get_index_u2(thread, Bytecodes::_checkcast);
+</span><span class='line'>  constantPoolOop cpool = method(thread)-&gt;constants();
+</span><span class='line'>  // We'd expect to assert that we're only here to quicken bytecodes, but in a multithreaded
+</span><span class='line'>  // program we might have seen an unquick'd bytecode in the interpreter but have another
+</span><span class='line'>  // thread quicken the bytecode before we get here.
+</span><span class='line'>  // assert( cpool-&gt;tag_at(which).is_unresolved_klass(), "should only come here to quicken bytecodes" );
+</span><span class='line'>  klassOop klass = cpool-&gt;klass_at(which, CHECK);
+</span><span class='line'>  thread-&gt;set_vm_result(klass);
+</span><span class='line'>IRT_END
+</span><span class='line'>
+</span><span class='line'>klassOop klass_at(int which, TRAPS) {
+</span><span class='line'>    constantPoolHandle h_this(THREAD, this);
+</span><span class='line'>    return klass_at_impl(h_this, which, CHECK_NULL);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>klassOop constantPoolOopDesc::klass_at_impl(constantPoolHandle this_oop, int which, TRAPS) {
+</span><span class='line'>  ...
+</span><span class='line'>    klassOop k_oop = SystemDictionary::resolve_or_fail(name, loader, h_prot, true, THREAD);
+</span><span class='line'>  ...
+</span><span class='line'>} 
+</span><span class='line'>
+</span><span class='line'>//SystemDictionary::resolve_or_fail最终会调用到下面这个方法
+</span><span class='line'>klassOop SystemDictionary::resolve_instance_class_or_null(Symbol* name, Handle class_loader, Handle protection_domain, TRAPS) {
+</span><span class='line'>  ...
+</span><span class='line'>  // Class is not in SystemDictionary so we have to do loading.
+</span><span class='line'>  // Make sure we are synchronized on the class loader before we proceed
+</span><span class='line'>  Handle lockObject = compute_loader_lock_object(class_loader, THREAD);
+</span><span class='line'>  check_loader_lock_contention(lockObject, THREAD);
+</span><span class='line'>  ObjectLocker ol(lockObject, THREAD, DoObjectLock);
+</span><span class='line'>  ...
+</span><span class='line'>  //此时会调用ClassLoader.loadClass来加载类了
+</span><span class='line'>  ...
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>Handle SystemDictionary::compute_loader_lock_object(Handle class_loader, TRAPS) {
+</span><span class='line'>  // If class_loader is NULL we synchronize on _system_loader_lock_obj
+</span><span class='line'>  if (class_loader.is_null()) {
+</span><span class='line'>    return Handle(THREAD, _system_loader_lock_obj);
+</span><span class='line'>  } else {
+</span><span class='line'>    return class_loader;
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>SystemDictionary::resolve_instance_class_or_null</code>这个方法非常关键了，在里面我们看到会获取一把锁ObjectLocker，其相当于我们java代码里的<code>synchronized</code>关键字，而对象对应的是lockObject，这个对象是上面的<code>SystemDictionary::compute_loader_lock_object</code>方法返回的，从代码可知只要不是bootstrapClassloader加载的类就会返回当前classloader对象，也就是说当我们在加载一个类的时候其实是会持有当前类加载对象的锁的，在获取了这把锁之后就会调用ClassLoader.loadClass来加载类了。这其实就解释了<code>HSFBizProcessor-4-thread-4</code>这个线程为什么持有了</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>object 0x00000007608e6fc8, a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个类加载的锁，不过遗憾的是因为这把锁不是java层面来显示加载的，因此我们在<code>jstack</code>线程dump的输出里居然看不到这把锁的存在.</p>
+
+<h3>HSFBizProcessor-4-thread-5</h3>
+
+<p>先上堆栈：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"HSFBizProcessor-4-thread-5":
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLoadedClass(Unknown Source)
+</span><span class='line'>  - waiting to lock &lt;0x00000007608e6fc8&gt; (a com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader)
+</span><span class='line'>  at org.eclipse.osgi.baseadaptor.loader.ClasspathManager.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findLocalClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.buddy.DependentPolicy.loadClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.buddy.PolicyHandler.doBuddyClassLoading(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClassInternal(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.loader.BundleLoader.findClass(Unknown Source)
+</span><span class='line'>  at org.eclipse.osgi.internal.baseadaptor.DefaultClassLoader.loadClass(Unknown Source)
+</span><span class='line'>  at com.alipay.cloudengine.extensions.equinox.KernelBundleClassLoader.loadClass(KernelBundleClassLoader.java:121)
+</span><span class='line'>  at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+</span><span class='line'>  at java.lang.Class.forName0(Native Method)
+</span><span class='line'>  at java.lang.Class.forName(Class.java:169)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个线程栈其实和之前那个线程差不多，只是等的锁不一样，另外触发类加载的动作是<code>Class.forName</code>，获取大家也猜到了，其实是在下面两行堆栈之间同样获取了一把类加载器的锁</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>at java.lang.ClassLoader.loadClass(ClassLoader.java:247)
+</span><span class='line'>at java.lang.Class.forName0(Native Method)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里的代码我也不细贴了，最终调用的jvm里的方法都是一样的，获取锁的逻辑也是一样的</p>
+
+<h2>总结</h2>
+
+<p>想象下这种场景，两个线程分别使用不同的classloader对两个类进行类加载，然而由于osgi类加载机制的缘故，在loadClass过程中可能会委托给别的classloader去加载，而正巧，这两个线程在获取当前classloader的锁之后，然后分别委托对方的classloader去加载，可以看到文章开头列的那个findLoadedClass方法，而synchronized的那个classloader正好是对方的classloader，从而导致了死锁</p>
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

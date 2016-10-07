@@ -12,7 +12,7 @@ categories: JVM ClassLoader JDK8
 ##Demo
 首先我们创建两个类AAA和AAB，分别打包到两个不同jar里，比如AAA.jar和AAB.jar，这两个类之间是有关系的，AAA里有个属性是AAB类型的，注意这两个jar不要放到classpath里让appClassLoader加载到：
 
-```
+{% codeblock lang:c %}
 public class AAA {
         private AAB aab;
         public AAA(){
@@ -24,11 +24,11 @@ public class AAA {
 }
 
 public class AAB {}
-```
+{% endcodeblock %}
 
 接着我们创建一个类加载TestLoader，里面存一个WeakHashMap，专门来存TestLoader的，并且复写loadClass方法，如果是加载AAB这个类，就创建一个新的TestLoader来从AAB.jar里加载这个类
 
-```
+{% codeblock lang:c %}
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.WeakHashMap;
@@ -58,11 +58,11 @@ public class TestLoader extends URLClassLoader {
                 return null;
         }
 }
-```
+{% endcodeblock %}
 
 再看我们的主类TTest，一些说明都写在类里了：
 
-```
+{% codeblock lang:c %}
 import java.lang.reflect.Method;
 import java.net.URL;
 
@@ -109,7 +109,7 @@ public class TTest {
         }
     }
 }
-```
+{% endcodeblock %}
 
 运行的时候请跑在JDK8下，打个断点在`System.out.println("finished")`的地方，然后做一次内存dump。
 
@@ -130,7 +130,7 @@ public class TTest {
 ##JDK8里的ClassLoaderDataGraph
 每个类加载器都会对应一个ClassLoaderData的数据结构，里面会存譬如具体的类加载器对象，加载的klass，管理内存的metaspace等，它是一个链式结构，会链到下一个ClassLoaderData上，gc的时候通过ClassLoaderDataGraph来遍历这些ClassLoaderData，ClassLoaderDataGraph的第一个ClassLoaderData是bootstrapClassLoader的
 
-```
+{% codeblock lang:c %}
 class ClassLoaderData : public CHeapObj<mtClass> {
   ...
   static ClassLoaderData * _the_null_class_loader_data;
@@ -173,7 +173,7 @@ class ClassLoaderData : public CHeapObj<mtClass> {
   ...
 
 }
-```
+{% endcodeblock %}
 
 这里提几个属性：
 
@@ -186,7 +186,7 @@ class ClassLoaderData : public CHeapObj<mtClass> {
 
 再来看下构造函数：
 
-```
+{% codeblock lang:c %}
 ClassLoaderData::ClassLoaderData(Handle h_class_loader, bool is_anonymous, Dependencies dependencies) :
   _class_loader(h_class_loader()),
   _is_anonymous(is_anonymous),
@@ -200,12 +200,12 @@ ClassLoaderData::ClassLoaderData(Handle h_class_loader, bool is_anonymous, Depen
   _metaspace_lock(new Mutex(Monitor::leaf+1, "Metaspace allocation lock", true)) {
     // empty
 }
-```
+{% endcodeblock %}
 可见，`_keep_ailve`属性的值是根据`_is_anonymous`以及当前类加载器是不是bootstrapClassLoader来的。
 
 `_keep_alive`到底用在哪？其实是在GC的的时候，来决定要不要用Closure或者用什么Closure来扫描对应的ClassLoaderData。
 
-```
+{% codeblock lang:c %}
 void ClassLoaderDataGraph::roots_cld_do(CLDClosure* strong, CLDClosure* weak) {
   //从最后一个创建的classloader到bootstrapClassloader  
   for (ClassLoaderData* cld = _head;  cld != NULL; cld = cld->_next) {
@@ -216,7 +216,7 @@ void ClassLoaderDataGraph::roots_cld_do(CLDClosure* strong, CLDClosure* weak) {
       closure->do_cld(cld);
     }
   }
-```
+{% endcodeblock %}
 
 
 ##类加载器什么时候被回收
@@ -235,7 +235,7 @@ void ClassLoaderDataGraph::roots_cld_do(CLDClosure* strong, CLDClosure* weak) {
 ###lambda匿名类加载
 lambda匿名类加载走的是unsafe的defineAnonymousClass方法，这个方法在vm里对应的是下面的方法
 
-```
+{% codeblock lang:c %}
 UNSAFE_ENTRY(jclass, Unsafe_DefineAnonymousClass(JNIEnv *env, jobject unsafe, jclass host_class, jbyteArray data, jobjectArray cp_patches_jh))
 {
   instanceKlassHandle anon_klass;
@@ -271,10 +271,10 @@ UNSAFE_ENTRY(jclass, Unsafe_DefineAnonymousClass(JNIEnv *env, jobject unsafe, jc
 UNSAFE_END
 }
 
-```
+{% endcodeblock %}
 可见，在创建成功匿名类之后，会将对应的ClassLoaderData的`_keep_alive`属性设置为false，那是不是意味着`_keep_alive`属性在这之前都是true呢？下面的`parse_stream`方法是从上面的方法最终会调下来的方法
 
-```
+{% codeblock lang:c %}
 Klass* SystemDictionary::parse_stream(Symbol* class_name,
                                       Handle class_loader,
                                       Handle protection_domain,
@@ -329,7 +329,7 @@ ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRA
 
 ...
 }
-```
+{% endcodeblock %}
 
 从上面的代码得知，只要走了unsafe的那个方法，都会为当前类加载器创建一个ClassLoaderData对象，并设置其`_is_anonymous`为true，也同时意味着`_keep_alive`的属性是true，并加入到ClassLoaderDataGraph中。
 
@@ -339,7 +339,7 @@ ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRA
 ###类加载器依赖导致的
 这里说的类加载器依赖，并不是说ClassLoader里的parent建立的那种依赖关系，如果是这种关系，那其实通过mat或者zprofiler这样的工具都是可以分析出来的，但是还存在一种情况，那些工具都是分析不出来的，这种关系就是通过ClassLoaderData里的`_dependencies`属性得出来的，比如说如果A类加载器的`_dependencies`属性里记录了B类加载器，那当GC遍历A类加载器的时候也会遍历B类加载器，并将其标活，哪怕B类加载器其实是可以被回收了的，可以看下下面的代码
 
-```
+{% codeblock lang:c %}
 void ClassLoaderData::oops_do(OopClosure* f, KlassClosure* klass_closure, bool must_claim) {
   if (must_claim && !claim()) {
     return;
@@ -352,7 +352,7 @@ void ClassLoaderData::oops_do(OopClosure* f, KlassClosure* klass_closure, bool m
     classes_do(klass_closure);
   }
 }
-```
+{% endcodeblock %}
 
 那问题来了，这种依赖关系是怎么记录的呢？其实我们上面的demo就模拟了这种情况，可以仔细去看看，我也针对这个demo描述下，比如加载AAA的类加载器TestLoader加载AAA后，并创建AAA对象，此时会看到有个类型是AAB的属性，此时会对常量池里的类型做一个解析，我们看到TestLoader的loadClass方法的时候做了一个判断，如果是AAB类型的类加载，那就创建一个新的类加载器对象从AAB.jar里去加载，当加载返回的时候，在jvm里其实就会记录这么一层依赖关系，认为AAA的类加载器依赖AAB的类加载器，并记录下来，但是纵观所有的hotspot代码，并没有一个地方来清理这种依赖关系的，也就是说只要这种依赖关系建立起来，会一直持续到AAA的类加载器被回收的时候，AAB的类加载器才会被回收，所以说这算一种伪僵尸类加载器，虽然从依赖关系上其实并不依赖了(比如demo里将AAA的aab属性做clear清空动作)，但是GC会一直认为他们是存在这种依赖关系的，会持续存在一段时间，具体持续多久就看AAA类加载器的情况了。
 
@@ -361,3 +361,5 @@ void ClassLoaderData::oops_do(OopClosure* f, KlassClosure* klass_closure, bool m
 #欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章
 
 {% img /images/gzh.jpg 200 200 %}
+
+

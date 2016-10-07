@@ -1,0 +1,409 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>从日志上理解JAVA调试机制 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="从日志上理解JAVA调试机制 &#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。 &#8195;&#8195; &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2014/07/19/java-debug-log/">
+	<link href="/favicon.png" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/' ><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /> </a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+  <li><a href="/">文章</a></li>
+  <li><a href="/blog/archives">归档</a></li>
+  <li><a href="/comments/latest.html">最新评论</a></li>
+  <li><a href="/about/index.html">关于你假笨</a></li>
+</ul>
+
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav>
+	<img src="/images/gzh.jpg" width="200" height="200">
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">从日志上理解JAVA调试机制</h1>
+	<div class="entry-content" itemprop="articleBody"><p>&#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。</p>
+
+<!--more-->
+
+
+<p>&#8195;&#8195;大家都是一点IDE里面的调试按钮，就轻松建立了调试环境，IDE其实是帮你做了些你可能不知道的事，请看如下图</p>
+
+<p><img src="/images/2014/07/debug.jpg"></p>
+
+<p>&#8195;&#8195;你将会看到如下内容</p>
+
+<p><img src="/images/2014/07/eclipse_command.jpg"></p>
+
+<p>&#8195;&#8195;其实这就是eclipse为你构建的命令行，从中筛选出如下命令行语句</p>
+
+<pre class="prettyPrint">
+-agentlib:jdwp=transport=dt_socket,suspend=y,address=localhost:51823 
+</pre>
+
+
+<p>&#8195;&#8195;这就是关键了，熟悉agent的人应该都知道这是加载了一个叫做jdwp的agent，也就是说vm会去找一个叫做<code>libjdwp.so/libjdwp.dylib</code>的动态库，于是通过nm看看里面究竟有些什么方法？</p>
+
+<pre class="prettyPrint">
+nijiaben@nijiaben : ~/Developer/open_source/openjdk/jdk7u/build/macosx-x86_64-debug/lib
+[0] % nm libjdwp.dylib
+00000000000152b0 T _Agent_OnLoad
+0000000000016520 T _Agent_OnUnload
+00000000000531c0 D _ArrayReference_Cmds
+00000000000531e0 D _ArrayType_Cmds
+0000000000053230 D _ClassLoaderReference_Cmds
+0000000000053240 D _ClassObjectReference_Cmds
+0000000000053200 D _ClassType_Cmds
+0000000000053260 D _EventRequest_Cmds
+0000000000053f88 S _Field_Cmds
+0000000000053280 D _Method_Cmds
+0000000000053668 b _NullString
+00000000000532c0 D _ObjectReference_Cmds
+0000000000053320 D _ReferenceType_Cmds
+00000000000533c0 D _StackFrame_Cmds
+00000000000533f0 D _StringReference_Cmds
+0000000000053400 D _ThreadGroupReference_Cmds
+0000000000053420 D _ThreadReference_Cmds
+00000000000534c0 D _VirtualMachine_Cmds
+</pre>
+
+
+<p>&#8195;&#8195;赫然看到了Agent的几个方法，<em>Agent_OnLoad和</em>Agent_OnUnLoad，于是更加肯定这个动态库就是一个agent实例了。
+有了它自然想看看这个Agent加载的时候干了些什么事。先不急于看里面的实现，一个好的模块或者应用，往往通过详细的日志就可以知道它的大致情况，其实jdwp也是有详细的日志可看的，在上面的-agentlib:jdwp后面再加上一个参数logflags=0xfff，即-agentlib:jdwp=transport=dt_socket,suspend=y,logflags=0xfff，然后再次执行java命令，你将会在你的当前目录下生成一个类似jdwp.log.297的文件，297其实是进程的ID，那当我们仅仅是启动，还没有做任何操作的时候jdwp都干了些什么？</p>
+
+<pre class="prettyPrint">
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugInit.c":296;;PID=297;THR=t@60821504|:Onload: transport=dt_socket,address=8000,server=y,suspend=n,logflags=0xfff|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":300;;PID=297;THR=t@60821504|:GetPotentialCapabilities()|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":359;;PID=297;THR=t@60821504|:AddCapabilities()|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":128;;PID=297;THR=t@60821504|:SetEventNotificationMode()|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":128;;PID=297;THR=t@60821504|:SetEventNotificationMode()|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":390;;PID=297;THR=t@60821504|:SetEventCallbacks()|#]
+[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugInit.c":398;;PID=297;THR=t@60821504|:OnLoad: DONE|#]
+</pre>
+
+
+<p>&#8195;&#8195;由于篇幅的问题，就只把部分日志列出来解释下，从上面我们可以获得的执行的时间，执行的环境类型，执行的哪个文件的哪一行，进程ID，线程地址，然后就是真正的日志信息等。
+首先看看LOC，是location_type的简称，那么它包括多少种呢，我想从下面的宏定义上可以看出来</p>
+
+<pre class="prettyPrint">
+#define    JDWP_LOG_JVM         0x00000001
+#define    JDWP_LOG_JNI         0x00000002
+#define    JDWP_LOG_JVMTI       0x00000004
+#define    JDWP_LOG_MISC        0x00000008
+#define    JDWP_LOG_STEP        0x00000010
+#define    JDWP_LOG_LOC         0x00000020
+#define    JDWP_LOG_CB          0x00000040
+#define    JDWP_LOG_ERROR       0x00000080
+#define    JDWP_LOG_ALL         0xffffffff
+</pre>
+
+
+<p>&#8195;&#8195;agent的实现离不开jvmti，jdwp也同样如此，那么它究竟想利用jvmti里的哪些能力呢，从下面的代码基本可以看出来了</p>
+
+<pre class="prettyPrint">
+   /* Fill in ones that we must have */
+    (void)memset(&needed_capabilities,0,sizeof(needed_capabilities));
+    needed_capabilities.can_access_local_variables              = 1;
+    needed_capabilities.can_generate_single_step_events         = 1;
+    needed_capabilities.can_generate_exception_events           = 1;
+    needed_capabilities.can_generate_frame_pop_events           = 1;
+    needed_capabilities.can_generate_breakpoint_events          = 1;
+    needed_capabilities.can_suspend                             = 1;
+    needed_capabilities.can_generate_method_entry_events        = 1;
+    needed_capabilities.can_generate_method_exit_events         = 1;
+    needed_capabilities.can_generate_garbage_collection_events  = 1;
+    needed_capabilities.can_maintain_original_method_order      = 1;
+    needed_capabilities.can_generate_monitor_events             = 1;
+    needed_capabilities.can_tag_objects                         = 1;
+
+    /* And what potential ones that would be nice to have */
+    needed_capabilities.can_force_early_return
+                = potential_capabilities.can_force_early_return;
+    needed_capabilities.can_generate_field_modification_events
+                = potential_capabilities.can_generate_field_modification_events;
+    needed_capabilities.can_generate_field_access_events
+                = potential_capabilities.can_generate_field_access_events;
+    needed_capabilities.can_get_bytecodes
+                = potential_capabilities.can_get_bytecodes;
+    needed_capabilities.can_get_synthetic_attribute
+                = potential_capabilities.can_get_synthetic_attribute;
+    needed_capabilities.can_get_owned_monitor_info
+                = potential_capabilities.can_get_owned_monitor_info;
+    needed_capabilities.can_get_current_contended_monitor
+                = potential_capabilities.can_get_current_contended_monitor;
+    needed_capabilities.can_get_monitor_info
+                = potential_capabilities.can_get_monitor_info;
+    needed_capabilities.can_pop_frame
+                = potential_capabilities.can_pop_frame;
+    needed_capabilities.can_redefine_classes
+                = potential_capabilities.can_redefine_classes;
+    needed_capabilities.can_redefine_any_class
+                = potential_capabilities.can_redefine_any_class;
+    needed_capabilities.can_get_owned_monitor_stack_depth_info
+        = potential_capabilities.can_get_owned_monitor_stack_depth_info;
+    needed_capabilities.can_get_constant_pool
+                = potential_capabilities.can_get_constant_pool;
+    {
+        needed_capabilities.can_get_source_debug_extension      = 1;
+        needed_capabilities.can_get_source_file_name            = 1;
+        needed_capabilities.can_get_line_numbers                = 1;
+        needed_capabilities.can_signal_thread
+                = potential_capabilities.can_signal_thread;
+    }
+</pre>
+
+
+<p>  <br/>
+&#8195;&#8195;这就对为什么我们可以通过调试体系可以看到本地变量的值，可以一步一步push/pop frame等能力不足为奇了。
+因为agent是在vm初始化过程中加载的，vm的环境其实很多还没准备好，所以jvmti提供了一种能力&mdash;事件通知，在某个特定事件发生的时候，agent可以通过注册一些回调事件来做一些特殊的工作，比如在vm初始化完成之后，在类文件加载之后，在类被加载之后等等都可以做一些相关的事情，jdwp主要注册了几个回调事件，重点是vm初始化的回调函数，此时才是真正的完成jdwp的初始化动作，这也是为什么我们的调试体系不能对所有的java代码进行跟踪的原因了，比如说AppClassLoader的创建过程，这个其实都是在vm初始化过程中创建的，但是这个时候jdwp还没有初始化呢，自然也无法完成我们的debug过程了。</p>
+
+<pre class="prettyPrint">
+    gdata->callbacks.VMInit             = &cbEarlyVMInit;
+    gdata->callbacks.VMDeath            = &cbEarlyVMDeath;
+    gdata->callbacks.Exception  = &cbEarlyException;
+</pre>
+
+
+<p>&#8195;&#8195;在cbEarlyVMInit中干的事就不细说了，可以通过jdwp的日志大概知道干了些啥，但是有点还是要说下，假设要大家去设计实现这个功能，大家应该都会想到它的通信场景，类似命令模式，客户端不断发命令到服务端，服务端收到命令之后然后将请求结果反馈回来，比如说我们把鼠标放到某个变量上面，我们会看到弹出个小提示板，会把这个对象的值树状列出来，其实jdwp也就是这么实现的，那我们就可能想知道jdwp到底提供了哪些命令</p>
+
+<pre class="prettyPrint">
+l1Array[JDWP_COMMAND_SET(VirtualMachine)] = (void *)VirtualMachine_Cmds;
+    l1Array[JDWP_COMMAND_SET(ReferenceType)] = (void *)ReferenceType_Cmds;
+    l1Array[JDWP_COMMAND_SET(ClassType)] = (void *)ClassType_Cmds;
+    l1Array[JDWP_COMMAND_SET(ArrayType)] = (void *)ArrayType_Cmds;
+
+    l1Array[JDWP_COMMAND_SET(Field)] = (void *)Field_Cmds;
+    l1Array[JDWP_COMMAND_SET(Method)] = (void *)Method_Cmds;
+    l1Array[JDWP_COMMAND_SET(ObjectReference)] = (void *)ObjectReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(StringReference)] = (void *)StringReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(ThreadReference)] = (void *)ThreadReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(ThreadGroupReference)] = (void *)ThreadGroupReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(ClassLoaderReference)] = (void *)ClassLoaderReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(ArrayReference)] = (void *)ArrayReference_Cmds;
+    l1Array[JDWP_COMMAND_SET(EventRequest)] = (void *)EventRequest_Cmds;
+    l1Array[JDWP_COMMAND_SET(StackFrame)] = (void *)StackFrame_Cmds;
+    l1Array[JDWP_COMMAND_SET(ClassObjectReference)] = (void *)ClassObjectReference_Cmds;
+</pre>
+
+
+<p>&#8195;&#8195;从上面我们基本看到列出的都是分类，比如我们想看字段的，执行方法的，甚至vm的，那每个分类势必包含一些关键的命令，比如</p>
+
+<pre class="prettyPrint">
+void *VirtualMachine_Cmds[] = { (void *)21
+    ,(void *)version
+    ,(void *)classesForSignature
+    ,(void *)allClasses
+    ,(void *)getAllThreads
+    ,(void *)topLevelThreadGroups
+    ,(void *)dispose
+    ,(void *)idSizes
+    ,(void *)suspend
+    ,(void *)resume
+    ,(void *)doExit
+    ,(void *)createString
+    ,(void *)capabilities
+    ,(void *)classPaths
+    ,(void *)disposeObjects
+    ,(void *)holdEvents
+    ,(void *)releaseEvents
+    ,(void *)capabilitiesNew
+    ,(void *)redefineClasses
+    ,(void *)setDefaultStratum
+    ,(void *)allClassesWithGeneric
+    ,(void *)instanceCounts
+};
+</pre>
+
+
+<p>&#8195;&#8195;这就列出了我们想看vm相关信息或者操作的一些命令，其实这些都是一些function</p>
+
+<pre class="prettyPrint">
+[#|29.05.2013 21:21:22.439 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugLoop.c":153;;PID=297;THR=t@290471936|:Command set 1, command 10|#]
+</pre>
+
+
+<p>&#8195;&#8195;假如我们操作之后有上面这么一条日志，我们看到取的指令集合是1，想执行这个集合中的第10条命令，指令集合为1，说明取的是上面的llArray[1]，也就是上面的VirtualMachine指令集合，10表示我们找的是 VirtualMachine中的doExit这条指令，也就是说客户端希望你服务端执行这条指令，</p>
+
+<pre class="prettyPrint">
+static jboolean
+doExit(PacketInputStream *in, PacketOutputStream *out)
+{
+    jint exitCode;
+
+    exitCode = inStream_readInt(in);
+    if (gdata->vmDead) {
+        /* quietly ignore */
+        return JNI_FALSE;
+    }
+
+    /* We send the reply from here because we are about to exit. */
+    if (inStream_error(in)) {
+        outStream_setError(out, inStream_error(in));
+    }
+    outStream_sendReply(out);
+
+    forceExit(exitCode);
+
+    /* Shouldn't get here */
+    JDI_ASSERT(JNI_FALSE);
+
+    /* Shut up the compiler */
+    return JNI_FALSE;
+
+}
+/* All process exit() calls come from here */
+void
+forceExit(int exit_code)
+{
+    /* make sure the transport is closed down before we exit() */
+    transport_close();
+    exit(exit_code);
+}
+</pre>
+
+
+<p>&#8195;&#8195;大家也猜到了，这其实就是退出vm，其实这也是我今天想写这篇文章的一个原因，我们这边线下环境一个系统，运行一段时间之后就突然间进程消失了，没有任何的日志，排除了人为的kill，System.exit，没有crash日志，更没有coredump，实在是诡异，跟了两天，突然在远程调试的时候发现了如下选项</p>
+
+<p><img src="/images/2014/07/eclipse_debug_kill.jpg"></p>
+
+<p>&#8195;&#8195;所以我不得不猜想是它导致的，经过自己测试，当我点击</p>
+
+<p><img src="/images/2014/07/eclipse_debug_kill_button.jpg"></p>
+
+<p>&#8195;&#8195;这个的时候，进程果然退出了，没有任何迹象，所以晚上花了点时间写了这篇文章记录下这诡异的问题</p>
+
+<p>&#8195;&#8195;这个暂时就介绍到这里，虽然还比较肤浅，有机会再从原理角度介绍jdwp的具体实现。</p>
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

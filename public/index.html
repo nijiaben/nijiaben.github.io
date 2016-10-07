@@ -5,12 +5,12 @@
 
 <head>
 	<meta charset="utf-8">
-	<title>你假笨（寒泉子）</title>
+	<title>你假笨</title>
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="gc, jvm YGC前后新生代变大？ 问题描述 我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的： 1
-2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): &hellip;">
+	<meta name="description" content="gc, jvm Comments jvm gc YGC前后新生代变大？ 问题描述 我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的： 1
+2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,7 +18,7 @@
   <meta name="MobileOptimized" content="320">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-	<link href="/atom.xml" rel="alternate" title="你假笨（寒泉子）" type="application/atom+xml">
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
 	
 	<link rel="canonical" href="http://nijiaben.github.io/">
 	<link href="/favicon.png" rel="shortcut icon">
@@ -42,7 +42,7 @@
 	<script src="/javascripts/md5.js"></script>
 	<script type="text/javascript">
 		$(function(){
-			$('.profilepic').append("<img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' />");
+			$('.profilepic').append("<a href='/' ><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /> </a>");
 		});
 	</script>
 	
@@ -57,7 +57,7 @@
 
 <section class="aboutme">
   <p>
-    欢迎关注个人公众号“你假笨”，主要围绕JVM写相关文章
+    技术宅改变世界
   </p>
 </section>
 </nav>
@@ -121,6 +121,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/05/18/ygc-worse/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/gc/"><span class="badge">gc</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/05/18/ygc-worse/" itemprop="url">YGC前后新生代变大？</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -129,7 +142,8 @@
 <p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): 636088K-&gt;690555K(707840K), 0.2958900 secs][CMS: 1019739K-&gt;1019733K(1310720K), 2.6208600 secs] 1655820K-&gt;1655820K(2018560K), [CMS Perm : 205486K-&gt;205486K(262144K)], 2.9174390 secs] [Times: user=3.74 sys=0.01, real=2.91 secs]</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="mi">2016</span><span class="o">-</span><span class="mo">05</span><span class="o">-</span><span class="mi">18</span><span class="nl">T15</span><span class="p">:</span><span class="mo">06</span><span class="o">:</span><span class="mf">13.011</span><span class="o">+</span><span class="mi">0800</span><span class="o">:</span> <span class="p">[</span><span class="n">GC</span> <span class="p">[</span><span class="n">ParNew</span> <span class="p">(</span><span class="n">promotion</span> <span class="n">failed</span><span class="p">)</span><span class="o">:</span> <span class="mi">636088</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">690555</span><span class="n">K</span><span class="p">(</span><span class="mi">707840</span><span class="n">K</span><span class="p">),</span> <span class="mf">0.2958900</span> <span class="n">secs</span><span class="p">][</span><span class="nl">CMS</span><span class="p">:</span> <span class="mi">1019739</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1019733</span><span class="n">K</span><span class="p">(</span><span class="mi">1310720</span><span class="n">K</span><span class="p">),</span> <span class="mf">2.6208600</span> <span class="n">secs</span><span class="p">]</span> <span class="mi">1655820</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1655820</span><span class="n">K</span><span class="p">(</span><span class="mi">2018560</span><span class="n">K</span><span class="p">),</span> <span class="p">[</span><span class="n">CMS</span> <span class="nl">Perm</span> <span class="p">:</span> <span class="mi">205486</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">205486</span><span class="n">K</span><span class="p">(</span><span class="mi">262144</span><span class="n">K</span><span class="p">)],</span> <span class="mf">2.9174390</span> <span class="n">secs</span><span class="p">]</span> <span class="p">[</span><span class="nl">Times</span><span class="p">:</span> <span class="n">user</span><span class="o">=</span><span class="mf">3.74</span> <span class="n">sys</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">real</span><span class="o">=</span><span class="mf">2.91</span> <span class="n">secs</span><span class="p">]</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
@@ -165,6 +179,21 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/04/24/classloader-unload/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/classloader/"><span class="badge">classloader</span></a>
+          
+          <a href="/blog/categories/jdk8/"><span class="badge">jdk8</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/04/24/classloader-unload/" itemprop="url">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -203,6 +232,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/04/19/stack-over-flow/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/stackoverflow/"><span class="badge">stackoverflow</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/04/19/stack-over-flow/" itemprop="url">JVM源码分析之栈溢出完全解读</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -250,6 +292,21 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/04/03/type-inference/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/jdk8/"><span class="badge">jdk8</span></a>
+          
+          <a href="/blog/categories/typeinference/"><span class="badge">typeinference</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/04/03/type-inference/" itemprop="url">JDK8在泛型类型推导上的变化</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -288,6 +345,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/03/31/class-init/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/class/"><span class="badge">class</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/" itemprop="url">不可逆的类初始化过程</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -324,6 +394,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/03/31/cpu-thread/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/cpu/"><span class="badge">cpu</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/cpu-thread/" itemprop="url">如何定位消耗CPU最多的线程</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -360,6 +443,17 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/03/27/object-wait-notify/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/03/27/object-wait-notify/" itemprop="url">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -398,6 +492,21 @@
 
 </div>
 		
+		
+		 <a href="/blog/2016/03/15/ygc-classloader/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/gc/"><span class="badge">gc</span></a>
+          
+          <a href="/blog/categories/classloader/"><span class="badge">classloader</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/03/15/ygc-classloader/" itemprop="url">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -436,6 +545,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2015/10/21/deadlock/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/deadlock/"><span class="badge">deadlock</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2015/10/21/deadlock/" itemprop="url">消失的死锁</a></h1>
 	<div class="entry-content" itemprop="articleBody">
@@ -474,6 +596,19 @@
 
 </div>
 		
+		
+		 <a href="/blog/2015/09/14/javaagent/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          
+          
+          
+          <div class="row-fluid">
+          
+          <a href="/blog/categories/jvm/"><span class="badge">jvm</span></a>
+          
+          <a href="/blog/categories/agent/"><span class="badge">agent</span></a>
+          
+          </div>
+          
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2015/09/14/javaagent/" itemprop="url">JVM源码分析之javaagent原理完全解读</a></h1>
 	<div class="entry-content" itemprop="articleBody">

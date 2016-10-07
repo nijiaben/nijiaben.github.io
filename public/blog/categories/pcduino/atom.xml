@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: pcduino | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/pcduino/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-10-06T02:40:07+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[pcduino搭建web站点IP映射解决方案]]></title>
+    <link href="http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site/"/>
+    <updated>2014-05-04T10:43:57+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site</id>
+    <content type="html"><![CDATA[<p>&#8195;&#8195;在pcduino上搭建站点，有两个问题首先需要解决</p>
+
+<ul>
+<li> 域名绑定</li>
+<li> 端口映射</li>
+</ul>
+
+
+<p>&#8195;&#8195;如果你的pcduino连的路由器的IP已经是公网IP，按照如下步骤查看</p>
+
+<ul>
+<li> 打开路由器管理页面，比如<code>192.168.1.1</code>，查看运行状态里WAN显示的IP地址</li>
+<li> 打开<code>www.ip138.com</code>，上面会显示你的公网IP</li>
+<li> 如果以上两者相等，说明你的路由器就是直接连的公网，否则外面可能还有一层或者几层路由器，这个就比较麻烦了，你必须要有操作他们的权限才能继续往下走</li>
+</ul>
+
+
+<!--more-->
+
+
+<h2>域名绑定解决方案</h2>
+
+<ul>
+<li> 自己在域名管理处设置A记录指向你的公网IP，该IP如果是静态的(可以通过重启路由器查看你的公网IP是否有变化来测试)，这个就好说了，如果是动态变化的，那么要么你的A记录跟着变，要么参考下一条方案</li>
+<li> 针对动态IP，一般采用花生壳的方案，一般的路由器都带有嵌入式的花生壳，在路由器里登录花生壳就好了，域名的管理需要在花生壳官网配置，同时要到你的域名商那里修改dns，指向花生壳的dns，如<code>ns1.dnsoray.net</code>和<code>ns2.dnsoray.net</code>，这样基本就可以了，同时在花生壳官网你可以看到你的域名自动帮你A记录到你的公网IP，如果显示的IP不是你的公网IP，就麻烦了，下面具体描述下这种情况</li>
+</ul>
+
+
+<p>&#8195;&#8195;某些互联网宽带服务运营商(简称为ISP)为了扩展所属地区的相关信息业务,或基于其他的技术原因,在用户拥有“公网IP”的同时，在ISP出口作出一个特殊的技术手段处理 —— NAT转发，受到被ISP 做NAT转发的用户苦不堪言,明明拥有公网IP地址，在使用大部分动态域名解析软件时却出现被解析到另外一个莫名其妙的公网IP地址。目前免费的花生壳用户是不提供此类解决方案的，除非你成为付费用户，几百块一年吧，我其实就是处于这种情况，我自己目前方案是第一种（我的比这个还复杂点，我的pcduino是处在多重局域网中，下面正要说的），比较蛋疼，没有想到好的解决方案，万一路由器重启了，我必须重新改变A记录指向，屌丝总想省点钱(空间服务费省了，要是域名服务费也能省了就好了)。</p>
+
+<h2>端口转发的设置过程</h2>
+
+<ul>
+<li> pcduino所连的路由器直接处于广域网中的情况，在你的路由器管理页面里选择"转发规则"->&ldquo;虚拟服务器"里添加新条目(假如你使用的是tplink，其他的路由器也类似)，里面有几个选项，直接看帮助就知道什么意思了，该设置主要实现的功能是针对某个端口来的所有请求都转发给对应的内网机器，比如80来的web请求都转给<code>192.168.1.10</code>，这个IP就是pcduino的IP，下面会介绍pcduino上如果进行静态IP的设置</li>
+<li> 对于网中网的情况，那么就必须要有从分配了公网IP的路由器到pcduino的路由器之间涉及的所有路由器都要有操作权限，也就是通过类似上面的方法一层层指定下来，比如公网里80端口来的服务首先转到路由器1的80端口，然后再转给路由器2的80端口&hellip;以此类推，直到你的pcduino的80端口</li>
+<li> 如果嫌设置端口映射麻烦，那还有一个方案，那就是通过设置每个路由器的dmz主机，上层路由器的dmz主机指向下层路由器的IP或者pcduino的IP，这样相当于将pcduino整个暴露给公网了，当然你中间的路由器也是类似的情况，安全性有待考验</li>
+</ul>
+
+
+<h2>pcduino设置静态IP的操作</h2>
+
+<p>&#8195;&#8195;我的pcduino弄了一个<a href="http://item.jd.com/509932.html`">无usb无线网卡</a>，即插即用，很方便</p>
+
+<ul>
+<li> 首先确保你正确连接了你的无线网络，通过<code>iwlist wlan3 scan</code>查看你的无线网络参数，ESSID指定的值就是你的无线网名字，不要选错了   <br/>
+<pre class="prettyPrint">
+root@ubuntu:/etc/network# iwlist wlan3 scan       <br/>
+    wlan3     Scan completed :
+              ESSID:&ldquo;RJB&rdquo;   <br/>
+              Protocol:IEEE 802.11bgn         <br/>
+              Mode:Master
+              Frequency:2.452 GHz (Channel 9)
+              Encryption key:on
+              Bit Rates:150 Mb/s
+</pre></li>
+<li> 通过上面我们看到几个关键参数，<code>wlan3</code>(网卡名)，<code>ESSID</code>(网络名)，<code>Channel 9</code>(信道)</li>
+<li><p> 于是编辑/etc/network/interface，加入如下内容
+<pre class="prettyPrint">
+auto wlan3<br/>
+iface wlan3 inet static<br/>
+address 192.168.1.10<br/>
+netmask 255.255.255.0<br/>
+gateway 192.168.1.1<br/>
+wpa-ssid RJB（要连接的wlan ssid）<br/>
+wpa-passphrase wlan密码<br/>
+wireless-channel 9（信道号）
+</pre></p></li>
+<li><p> 修改dns服务器地址</p>
+
+<ul>
+<li><p>拷贝<code>/etc/resolv.conf</code>里面的内容出来，然后删除该文件</p></li>
+<li><p>新建上面的这个文件，将拷贝的内容复制进去，同时增加<code>nameserver 8.8.8.8</code></p></li>
+<li><p>执行命令<code>chattr +i /etc/resolv.conf</code>，之所以执行该步骤，是为了不让<code>resolv.conf</code>了的内容被覆盖</p></li>
+<li>重启网络<code>/etc/init.d/networking restart</code> ，抑或重启系统<code>shutdown -r now</code></li>
+</ul>
+
+
+<p> 通过以上方式就可以将你的pcduino地址绑定到静态地址了，这样这个地址你就可以放心地在路由器上配置端口转发规则了</p></li>
+</ul>
+
+]]></content>
+  </entry>
+  
+</feed>

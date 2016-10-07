@@ -5,6 +5,17 @@
 		{% if site.disqus_short_name and site.disqus_show_comment_count == true %}
 			<span class="comments"><a href="{{ root_url }}{{ post.url }}#disqus_thread">Comments</a></span>
 		{% endif %}
+		
+		{% if site.duoshuo_short_name and page.comments != false and post.comments != false and site.duoshuo_comments == true %} <a href="{% if index %}{{ root_url }}{{ post.url }}{% endif %}#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
+          {% endif %}
+          
+          {% if post.categories %}
+          <div class="row-fluid">
+          {% for category in post.categories %}
+          <a href="{{ root_url }}/{{ site.category_dir }}/{{ category | replace:' ','-' | replace:'.','-dot-' | downcase }}/"><span class="badge">{{ category }}</span></a>
+          {% endfor %}
+          </div>
+          {% endif %}
 	</div>
 	<h1 class="title" itemprop="name"><a href="{{ root_url }}{{ post.url }}" itemprop="url">{% if site.titlecase %}{{ post.title | titlecase }}{% else %}{{ post.title }}{% endif %}</a></h1>
 	<div class="entry-content" itemprop="articleBody">

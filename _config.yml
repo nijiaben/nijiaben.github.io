@@ -3,10 +3,11 @@
 # ----------------------- #
 
 url: http://nijiaben.github.io
-title: 你假笨（寒泉子）
+title: 你假笨
 subtitle: jvm，linux，tcp...
 author: 你假笨
-description: 欢迎关注个人公众号“你假笨”，主要围绕JVM写相关文章
+simple_search: https://www.google.com/search
+description: 技术宅改变世界
 
 # Default date format is "ordinal" (resulting in "July 22nd 2007")
 # You can customize the format as defined in
