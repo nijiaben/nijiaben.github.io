@@ -1,136 +1,99 @@
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
-<head>
-  <meta charset="utf-8">
-  <title>JVM源码分析之Object.wait/notify(All)完全解读 - 你假笨</title>
-  <meta name="author" content="你假笨">
+<!DOCTYPE HTML>
 
-   
-  <meta name="description" content="技术宅改变世界">
-  
-  <meta name="keywords" content="">
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之Object.wait/notify(All)完全解读 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之Object.wait/notify(All)完全解读 概述 本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料 &hellip;">
+	
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
   <meta name="MobileOptimized" content="320">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/03/27/object-wait-notify/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
   
-  <link rel="canonical" href="http://nijiaben.github.io/blog/2016/03/27/object-wait-notify">
-  <link href="/favicon.ico" rel="icon">
-  <!--
-  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
-  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
-  -->
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
-  <script src="/js/jquery.js"></script>
-  <script src="/js/bootstrap-collapse.js"></script>
-  <script src="/js/modernizr-2.0.js"></script>
-  <script src="/js/octopress.js" type="text/javascript"></script>
-  <script src="/js/application.js"></script>
-  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
-  <script type="text/javascript"]]>
-    	$(function(){     
-		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
-	         window.prettyPrint && prettyPrint();
-                 $('table').addClass('table')});
-  </script>
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
--->
-
-  
-  <script type="text/javascript">
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-52812422-1']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-  </script>
-
 
 </head>
 
-<body   >
-  <div class="navbar navbar-inverse navbar-static-top">
-  	<div class="navbar-inner">
-  	  <div class="container">
-        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
-          <span class="fui-menu-24"></span>
-        </a>
-  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
-  	      <ul class="nav">
-    
-        <li ><a href="/">博客</a></li>
-    
-        <li ><a href="/archives/index.html">目录</a></li>
-    
-        <li ><a href="/comments/latest.html">最新评论</a></li>
-    
-        <li ><a href="/about/index.html">关于你假笨</a></li>
-    
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li>
 </ul>
 
-<ul class="nav pull-right">
-    
-    
-    
-    
-    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
-    
-    
-    
-    
-    
-    
-    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
-    
 
-    
-</ul>
-
-  	    </div>
-  	  </div>
-  	</div>
-  </div>
-  <div class="container" id="main">
-      <div class="row-fluid">
-        <div id="content">
-          <div>
-<article class="hentry" role="article">
-  
-
-  <header>
-  <div class="jumbotron">
-    JVM源码分析之Object.wait/notify(All)完全解读
-	<h5>
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-27T11:31:25+08:00" pubdate data-updated="true">Mar 27<span>th</span>, 2016</time></h5>
-  </div>
-</header>
-  <div class="row-fluid">
-    <div class="span12">
-      <h2>概述</h2>
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之Object.wait/notify(All)完全解读</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
 
 <p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
 
@@ -241,66 +204,23 @@
 <h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
 
 <p><img src="/images/gzh.jpg" width="200" height="200"></p>
+</div>
 
-    </div>
-  </div>
+</article>
 
-
-
-  <footer>
-    <hr>
-    
-    <div class="row-fluid">
-      
-      <div class="span6">
-        <p class="meta">
-        
-        
-
-
-
-  <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-
-
-
-
-        </p>
-      </div>
-      
-      <div class="span6 social-sharing">
-        <div class="sharing">
-  <div class="addthis_toolbox addthis_default_style ">
-  
-  
-  
-  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
-  
-  <a class="addthis_counter addthis_pill_style"></a>
-  </div>
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
   <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
 </div>
 
-      </div>
-      
-      
-    </div>
-    
-    <div class="row-fluid">
-      <div class="span12">
-        <p class="meta">
-          
-            <a class="basic-alignment left" href="/blog/2016/03/15/ygc-classloader/" title="Previous Post: JVM源码分析之自定义类加载器如何拉长YGC">&laquo; JVM源码分析之自定义类加载器如何拉长YGC</a>
-          
-          
-            <a class="basic-alignment right" href="/blog/2016/03/31/cpu-thread/" title="Next Post: 如何定位消耗CPU最多的线程">如何定位消耗CPU最多的线程 &raquo;</a>
-          
-        </p>
-      </div>
-    </div>
-  </footer>
-</article>
 
- 
+
+
   <section>
     <h1>Comments</h1>
     <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
@@ -322,34 +242,20 @@
 
 </div>
 
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
 
 
-        </div>
-      </div>
-      <div class="row-fluid">
-        <footer class="footer-page" role="contentinfo">
-          <p>
-  Copyright &copy; 2016 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
-</p>
-
-
-        </footer>
-      </div>
-  </div>
-  
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
 
 
 
-
-
-  <script type="text/javascript">
-//    (function() {
- //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
-   //   script.src = 'https://apis.google.com/js/plusone.js';
-    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
-   // })();
-  </script>
 
 
 

@@ -1,135 +1,187 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/04/23/new-begin/</loc>
-        <lastmod>2014-07-15T23:53:01+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site/</loc>
-        <lastmod>2014-07-20T10:14:07+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/05/20/tcp-broken-pipe/</loc>
-        <lastmod>2014-07-19T10:25:56+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/06/18/jvm-attach/</loc>
-        <lastmod>2014-07-19T10:23:33+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/06/28/hsdb-string/</loc>
-        <lastmod>2014-07-20T11:59:26+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/</loc>
-        <lastmod>2014-07-19T10:22:07+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/07/19/java-debug-log/</loc>
-        <lastmod>2014-07-20T10:13:51+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug/</loc>
-        <lastmod>2014-07-24T14:50:35+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/05/07/system-gc/</loc>
-        <lastmod>2015-05-07T20:22:08+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/05/12/direct-buffer/</loc>
-        <lastmod>2015-05-12T15:30:50+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/07/09/final-reference/</loc>
-        <lastmod>2015-11-07T10:54:37+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/08/21/rssxmx/</loc>
-        <lastmod>2015-08-21T19:05:03+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/09/14/javaagent/</loc>
-        <lastmod>2016-03-15T14:22:06+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2015/10/21/deadlock/</loc>
-        <lastmod>2015-10-21T20:44:59+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/03/15/ygc-classloader/</loc>
-        <lastmod>2016-03-21T20:35:08+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/03/27/object-wait-notify/</loc>
-        <lastmod>2016-03-27T12:03:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/03/31/cpu-thread/</loc>
-        <lastmod>2016-03-31T18:35:53+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/03/31/class-init/</loc>
-        <lastmod>2016-03-31T22:13:28+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/04/03/type-inference/</loc>
-        <lastmod>2016-05-18T23:46:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/04/19/stack-over-flow/</loc>
-        <lastmod>2016-05-18T23:45:30+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/04/24/classloader-unload/</loc>
-        <lastmod>2016-04-24T11:39:09+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/2016/05/18/ygc-worse/</loc>
-        <lastmod>2016-05-18T23:43:55+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/404.html</loc>
-        <lastmod>2014-07-15T23:53:01+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/about/</loc>
-        <lastmod>2016-04-03T13:40:11+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/archives/</loc>
-        <lastmod>2016-05-18T23:46:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/archives/</loc>
-        <lastmod>2016-05-18T23:46:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/categories/</loc>
-        <lastmod>2014-07-15T23:53:01+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/blog/</loc>
-        <lastmod>2016-05-18T23:46:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/comments/latest.html</loc>
-        <lastmod>2014-08-02T00:08:15+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/humans.txt</loc>
-        <lastmod>2014-04-23T23:28:05+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/</loc>
-        <lastmod>2016-05-18T23:46:10+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/links.html</loc>
-        <lastmod>2014-07-15T23:53:01+08:00</lastmod>
-    </url>
-    <url>
-        <loc>http://nijiaben.github.io/robots.txt</loc>
-        <lastmod>2014-07-15T23:53:01+08:00</lastmod>
-    </url>
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url>
+<loc>http://nijiaben.github.io/blog/2016/05/18/ygc-worse/</loc>
+<lastmod>2016-05-18T18:59:44+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/04/24/classloader-unload/</loc>
+<lastmod>2016-04-24T11:21:24+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/04/19/stack-over-flow/</loc>
+<lastmod>2016-04-19T01:24:25+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/04/03/type-inference/</loc>
+<lastmod>2016-04-03T12:50:39+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/03/31/class-init/</loc>
+<lastmod>2016-03-31T22:11:56+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/03/31/cpu-thread/</loc>
+<lastmod>2016-03-31T18:27:35+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/03/27/object-wait-notify/</loc>
+<lastmod>2016-03-27T11:31:25+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/03/15/ygc-classloader/</loc>
+<lastmod>2016-03-15T13:51:58+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/10/21/deadlock/</loc>
+<lastmod>2015-10-21T18:54:01+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/09/14/javaagent/</loc>
+<lastmod>2015-09-14T13:17:50+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/08/21/rssxmx/</loc>
+<lastmod>2015-08-21T18:58:53+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/07/09/final-reference/</loc>
+<lastmod>2015-07-09T14:35:31+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/05/12/direct-buffer/</loc>
+<lastmod>2015-05-12T13:49:57+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2015/05/07/system-gc/</loc>
+<lastmod>2015-05-07T20:02:51+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug/</loc>
+<lastmod>2014-07-24T14:10:26+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/07/19/java-debug-log/</loc>
+<lastmod>2014-07-19T09:58:49+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/</loc>
+<lastmod>2014-07-08T16:39:46+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/06/28/hsdb-string/</loc>
+<lastmod>2014-06-28T11:33:07+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/06/18/jvm-attach/</loc>
+<lastmod>2014-06-18T19:15:52+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/05/20/tcp-broken-pipe/</loc>
+<lastmod>2014-05-20T19:31:28+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/05/04/pcduino-web-site/</loc>
+<lastmod>2014-05-04T10:43:57+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2014/04/23/new-begin/</loc>
+<lastmod>2014-04-23T23:47:00+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/404.html</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/archives/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/archives/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/about/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/comments/latest.html</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/links.html</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/pcduino/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/web/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/tcp/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/jvm/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/attach/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/hsdb/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/deadlock/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/classloader/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/jdwp/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/debug/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/thread/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/systemgc/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/finalreference/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/oomkiller/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/agent/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/gc/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/cpu/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/class/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/jdk8/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/typeinference/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/stackoverflow/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/posts/2/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/posts/3/</loc>
+</url>
 </urlset>

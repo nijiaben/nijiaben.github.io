@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: WEB | 你假笨]]></title>
+  <title><![CDATA[Category: web | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/web/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -51,8 +51,8 @@
 <h2>端口转发的设置过程</h2>
 
 <ul>
-<li> pcduino所连的路由器直接处于广域网中的情况，在你的路由器管理页面里选择"转发规则"->"虚拟服务器"里添加新条目(假如你使用的是tplink，其他的路由器也类似)，里面有几个选项，直接看帮助就知道什么意思了，该设置主要实现的功能是针对某个端口来的所有请求都转发给对应的内网机器，比如80来的web请求都转给<code>192.168.1.10</code>，这个IP就是pcduino的IP，下面会介绍pcduino上如果进行静态IP的设置</li>
-<li> 对于网中网的情况，那么就必须要有从分配了公网IP的路由器到pcduino的路由器之间涉及的所有路由器都要有操作权限，也就是通过类似上面的方法一层层指定下来，比如公网里80端口来的服务首先转到路由器1的80端口，然后再转给路由器2的80端口...以此类推，直到你的pcduino的80端口</li>
+<li> pcduino所连的路由器直接处于广域网中的情况，在你的路由器管理页面里选择"转发规则"->&ldquo;虚拟服务器"里添加新条目(假如你使用的是tplink，其他的路由器也类似)，里面有几个选项，直接看帮助就知道什么意思了，该设置主要实现的功能是针对某个端口来的所有请求都转发给对应的内网机器，比如80来的web请求都转给<code>192.168.1.10</code>，这个IP就是pcduino的IP，下面会介绍pcduino上如果进行静态IP的设置</li>
+<li> 对于网中网的情况，那么就必须要有从分配了公网IP的路由器到pcduino的路由器之间涉及的所有路由器都要有操作权限，也就是通过类似上面的方法一层层指定下来，比如公网里80端口来的服务首先转到路由器1的80端口，然后再转给路由器2的80端口&hellip;以此类推，直到你的pcduino的80端口</li>
 <li> 如果嫌设置端口映射麻烦，那还有一个方案，那就是通过设置每个路由器的dmz主机，上层路由器的dmz主机指向下层路由器的IP或者pcduino的IP，这样相当于将pcduino整个暴露给公网了，当然你中间的路由器也是类似的情况，安全性有待考验</li>
 </ul>
 
@@ -66,7 +66,7 @@
 <pre class="prettyPrint">
 root@ubuntu:/etc/network# iwlist wlan3 scan       <br/>
     wlan3     Scan completed :
-              ESSID:"RJB"   <br/>
+              ESSID:&ldquo;RJB&rdquo;   <br/>
               Protocol:IEEE 802.11bgn         <br/>
               Mode:Master
               Frequency:2.452 GHz (Channel 9)

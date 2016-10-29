@@ -1,136 +1,99 @@
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
-<head>
-  <meta charset="utf-8">
-  <title>JVM源码分析之栈溢出完全解读 - 你假笨</title>
-  <meta name="author" content="你假笨">
+<!DOCTYPE HTML>
 
-   
-  <meta name="description" content="技术宅改变世界">
-  
-  <meta name="keywords" content="">
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之栈溢出完全解读 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之栈溢出完全解读 概述 之所以想写这篇文章，其实是因为最近有不少系统出现了栈溢出导致进程crash的问题，并且很隐蔽，根本原因还得借助coredump才能分析出来，于是想从JVM实现的角度来全面分析下栈溢出的这类问题，或许你碰到过如下的场景: &hellip;">
+	
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
   <meta name="MobileOptimized" content="320">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/04/19/stack-over-flow/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
   
-  <link rel="canonical" href="http://nijiaben.github.io/blog/2016/04/19/stack-over-flow">
-  <link href="/favicon.ico" rel="icon">
-  <!--
-  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
-  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
-  -->
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
-  <script src="/js/jquery.js"></script>
-  <script src="/js/bootstrap-collapse.js"></script>
-  <script src="/js/modernizr-2.0.js"></script>
-  <script src="/js/octopress.js" type="text/javascript"></script>
-  <script src="/js/application.js"></script>
-  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
-  <script type="text/javascript"]]>
-    	$(function(){     
-		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
-	         window.prettyPrint && prettyPrint();
-                 $('table').addClass('table')});
-  </script>
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
--->
-
-  
-  <script type="text/javascript">
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-52812422-1']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-  </script>
-
 
 </head>
 
-<body   >
-  <div class="navbar navbar-inverse navbar-static-top">
-  	<div class="navbar-inner">
-  	  <div class="container">
-        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
-          <span class="fui-menu-24"></span>
-        </a>
-  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
-  	      <ul class="nav">
-    
-        <li ><a href="/">博客</a></li>
-    
-        <li ><a href="/archives/index.html">目录</a></li>
-    
-        <li ><a href="/comments/latest.html">最新评论</a></li>
-    
-        <li ><a href="/about/index.html">关于你假笨</a></li>
-    
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li>
 </ul>
 
-<ul class="nav pull-right">
-    
-    
-    
-    
-    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
-    
-    
-    
-    
-    
-    
-    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
-    
 
-    
-</ul>
-
-  	    </div>
-  	  </div>
-  	</div>
-  </div>
-  <div class="container" id="main">
-      <div class="row-fluid">
-        <div id="content">
-          <div>
-<article class="hentry" role="article">
-  
-
-  <header>
-  <div class="jumbotron">
-    JVM源码分析之栈溢出完全解读
-	<h5>
-
-
-
-
-
-
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2016-04-19T01:24:25+08:00" pubdate data-updated="true">Apr 19<span>th</span>, 2016</time></h5>
-  </div>
-</header>
-  <div class="row-fluid">
-    <div class="span12">
-      <h2>概述</h2>
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之栈溢出完全解读</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
 
 <p>之所以想写这篇文章，其实是因为最近有不少系统出现了栈溢出导致进程crash的问题，并且很隐蔽，根本原因还得借助coredump才能分析出来，于是想从JVM实现的角度来全面分析下栈溢出的这类问题，或许你碰到过如下的场景:</p>
 
@@ -181,15 +144,16 @@
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>size_t os::Linux::default_stack_size(os::ThreadType thr_type) {
-</span><span class='line'>  // default stack size (compiler thread needs larger stack)
-</span><span class='line'>#ifdef AMD64
-</span><span class='line'>  size_t s = (thr_type == os::compiler_thread ? 4 * M : 1 * M);
-</span><span class='line'>#else
-</span><span class='line'>  size_t s = (thr_type == os::compiler_thread ? 2 * M : 512 * K);
-</span><span class='line'>#endif // AMD64
-</span><span class='line'>  return s;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">size_t</span> <span class="n">os</span><span class="o">::</span><span class="n">Linux</span><span class="o">::</span><span class="n">default_stack_size</span><span class="p">(</span><span class="n">os</span><span class="o">::</span><span class="n">ThreadType</span> <span class="n">thr_type</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="c1">// default stack size (compiler thread needs larger stack)</span>
+</span><span class='line'><span class="cp">#ifdef AMD64</span>
+</span><span class='line'>  <span class="kt">size_t</span> <span class="n">s</span> <span class="o">=</span> <span class="p">(</span><span class="n">thr_type</span> <span class="o">==</span> <span class="n">os</span><span class="o">::</span><span class="n">compiler_thread</span> <span class="o">?</span> <span class="mi">4</span> <span class="o">*</span> <span class="nl">M</span> <span class="p">:</span> <span class="mi">1</span> <span class="o">*</span> <span class="n">M</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#else</span>
+</span><span class='line'>  <span class="kt">size_t</span> <span class="n">s</span> <span class="o">=</span> <span class="p">(</span><span class="n">thr_type</span> <span class="o">==</span> <span class="n">os</span><span class="o">::</span><span class="n">compiler_thread</span> <span class="o">?</span> <span class="mi">2</span> <span class="o">*</span> <span class="nl">M</span> <span class="p">:</span> <span class="mi">512</span> <span class="o">*</span> <span class="n">K</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#endif </span><span class="c1">// AMD64</span>
+</span><span class='line'>  <span class="k">return</span> <span class="n">s</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <p>可见默认情况下编译线程需要的栈空间是其他种类线程的4倍。</p>
@@ -216,26 +180,27 @@
 <span class='line-number'>18</span>
 <span class='line-number'>19</span>
 <span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>switch (thr_type) {
-</span><span class='line'>      case os::java_thread:
-</span><span class='line'>        // Java threads use ThreadStackSize which default value can be
-</span><span class='line'>        // changed with the flag -Xss
-</span><span class='line'>        assert (JavaThread::stack_size_at_create() &gt; 0, "this should be set");
-</span><span class='line'>        stack_size = JavaThread::stack_size_at_create();
-</span><span class='line'>        break;
-</span><span class='line'>      case os::compiler_thread:
-</span><span class='line'>        if (CompilerThreadStackSize &gt; 0) {
-</span><span class='line'>          stack_size = (size_t)(CompilerThreadStackSize * K);
-</span><span class='line'>          break;
-</span><span class='line'>        } // else fall through:
-</span><span class='line'>          // use VMThreadStackSize if CompilerThreadStackSize is not defined
-</span><span class='line'>      case os::vm_thread:
-</span><span class='line'>      case os::pgc_thread:
-</span><span class='line'>      case os::cgc_thread:
-</span><span class='line'>      case os::watcher_thread:
-</span><span class='line'>        if (VMThreadStackSize &gt; 0) stack_size = (size_t)(VMThreadStackSize * K);
-</span><span class='line'>        break;
-</span><span class='line'>      }</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">switch</span> <span class="p">(</span><span class="n">thr_type</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">java_thread</span><span class="p">:</span>
+</span><span class='line'>        <span class="c1">// Java threads use ThreadStackSize which default value can be</span>
+</span><span class='line'>        <span class="c1">// changed with the flag -Xss</span>
+</span><span class='line'>        <span class="n">assert</span> <span class="p">(</span><span class="n">JavaThread</span><span class="o">::</span><span class="n">stack_size_at_create</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&quot;this should be set&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">stack_size</span> <span class="o">=</span> <span class="n">JavaThread</span><span class="o">::</span><span class="n">stack_size_at_create</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">compiler_thread</span><span class="p">:</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">CompilerThreadStackSize</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>          <span class="n">stack_size</span> <span class="o">=</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)(</span><span class="n">CompilerThreadStackSize</span> <span class="o">*</span> <span class="n">K</span><span class="p">);</span>
+</span><span class='line'>          <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span> <span class="c1">// else fall through:</span>
+</span><span class='line'>          <span class="c1">// use VMThreadStackSize if CompilerThreadStackSize is not defined</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">vm_thread</span><span class="p">:</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">pgc_thread</span><span class="p">:</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">cgc_thread</span><span class="p">:</span>
+</span><span class='line'>      <span class="k">case</span> <span class="n">os</span><span class="o">::</span><span class="nl">watcher_thread</span><span class="p">:</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">VMThreadStackSize</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="n">stack_size</span> <span class="o">=</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)(</span><span class="n">VMThreadStackSize</span> <span class="o">*</span> <span class="n">K</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>      <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <ul>
@@ -281,38 +246,39 @@
 <span class='line-number'>30</span>
 <span class='line-number'>31</span>
 <span class='line-number'>32</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Java thread:
-</span><span class='line'>//
-</span><span class='line'>//   Low memory addresses
-</span><span class='line'>//    +------------------------+
-</span><span class='line'>//    |                        |\  JavaThread created by VM does not have glibc
-</span><span class='line'>//    |    glibc guard page    | - guard, attached Java thread usually has
-</span><span class='line'>//    |                        |/  1 page glibc guard.
-</span><span class='line'>// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()
-</span><span class='line'>//    |                        |\
-</span><span class='line'>//    |  HotSpot Guard Pages   | - red and yellow pages
-</span><span class='line'>//    |                        |/
-</span><span class='line'>//    +------------------------+ JavaThread::stack_yellow_zone_base()
-</span><span class='line'>//    |                        |\
-</span><span class='line'>//    |      Normal Stack      | -
-</span><span class='line'>//    |                        |/
-</span><span class='line'>// P2 +------------------------+ Thread::stack_base()
-</span><span class='line'>//
-</span><span class='line'>// Non-Java thread:
-</span><span class='line'>//
-</span><span class='line'>//   Low memory addresses
-</span><span class='line'>//    +------------------------+
-</span><span class='line'>//    |                        |\
-</span><span class='line'>//    |  glibc guard page      | - usually 1 page
-</span><span class='line'>//    |                        |/
-</span><span class='line'>// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()
-</span><span class='line'>//    |                        |\
-</span><span class='line'>//    |      Normal Stack      | -
-</span><span class='line'>//    |                        |/
-</span><span class='line'>// P2 +------------------------+ Thread::stack_base()
-</span><span class='line'>//
-</span><span class='line'>// ** P1 (aka bottom) and size ( P2 = P1 - size) are the address and stack size returned from
-</span><span class='line'>//    pthread_attr_getstack()</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="c1">// Java thread:</span>
+</span><span class='line'><span class="c1">//</span>
+</span><span class='line'><span class="c1">//   Low memory addresses</span>
+</span><span class='line'><span class="c1">//    +------------------------+</span>
+</span><span class='line'><span class="c1">//    |                        |\  JavaThread created by VM does not have glibc</span>
+</span><span class='line'><span class="c1">//    |    glibc guard page    | - guard, attached Java thread usually has</span>
+</span><span class='line'><span class="c1">//    |                        |/  1 page glibc guard.</span>
+</span><span class='line'><span class="c1">// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()</span>
+</span><span class='line'><span class="c1">//    |                        |\</span>
+</span><span class='line'><span class="c1">//    |  HotSpot Guard Pages   | - red and yellow pages</span>
+</span><span class='line'><span class="c1">//    |                        |/</span>
+</span><span class='line'><span class="c1">//    +------------------------+ JavaThread::stack_yellow_zone_base()</span>
+</span><span class='line'><span class="c1">//    |                        |\</span>
+</span><span class='line'><span class="c1">//    |      Normal Stack      | -</span>
+</span><span class='line'><span class="c1">//    |                        |/</span>
+</span><span class='line'><span class="c1">// P2 +------------------------+ Thread::stack_base()</span>
+</span><span class='line'><span class="c1">//</span>
+</span><span class='line'><span class="c1">// Non-Java thread:</span>
+</span><span class='line'><span class="c1">//</span>
+</span><span class='line'><span class="c1">//   Low memory addresses</span>
+</span><span class='line'><span class="c1">//    +------------------------+</span>
+</span><span class='line'><span class="c1">//    |                        |\</span>
+</span><span class='line'><span class="c1">//    |  glibc guard page      | - usually 1 page</span>
+</span><span class='line'><span class="c1">//    |                        |/</span>
+</span><span class='line'><span class="c1">// P1 +------------------------+ Thread::stack_base() - Thread::stack_size()</span>
+</span><span class='line'><span class="c1">//    |                        |\</span>
+</span><span class='line'><span class="c1">//    |      Normal Stack      | -</span>
+</span><span class='line'><span class="c1">//    |                        |/</span>
+</span><span class='line'><span class="c1">// P2 +------------------------+ Thread::stack_base()</span>
+</span><span class='line'><span class="c1">//</span>
+</span><span class='line'><span class="c1">// ** P1 (aka bottom) and size ( P2 = P1 - size) are the address and stack size returned from</span>
+</span><span class='line'><span class="c1">//    pthread_attr_getstack()</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <p>linux下java线程栈是从高地址往低地址方向走的，在栈尾（低地址）会预留两块受保护的内存区域，分别叫做yellow page和red page，其中yellow page在前，另外如果是java创建的线程，最后并没有图示的一个page的<code>glibc guard page</code>，非java线程是有的，但是没有yellow和red page，比如我们的gc线程，注意编译线程其实是java线程。</p>
@@ -399,86 +365,87 @@
 <span class='line-number'>78</span>
 <span class='line-number'>79</span>
 <span class='line-number'>80</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> if (sig == SIGSEGV) {
-</span><span class='line'>      address addr = (address) info-&gt;si_addr;
+</pre></td><td class='code'><pre><code class='c'><span class='line'> <span class="k">if</span> <span class="p">(</span><span class="n">sig</span> <span class="o">==</span> <span class="n">SIGSEGV</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="n">address</span> <span class="n">addr</span> <span class="o">=</span> <span class="p">(</span><span class="n">address</span><span class="p">)</span> <span class="n">info</span><span class="o">-&gt;</span><span class="n">si_addr</span><span class="p">;</span>
 </span><span class='line'>
-</span><span class='line'>      // check if fault address is within thread stack
-</span><span class='line'>      if (addr &lt; thread-&gt;stack_base() &&
-</span><span class='line'>          addr &gt;= thread-&gt;stack_base() - thread-&gt;stack_size()) {
-</span><span class='line'>        // stack overflow
-</span><span class='line'>        if (thread-&gt;in_stack_yellow_zone(addr)) {
-</span><span class='line'>          thread-&gt;disable_stack_yellow_zone();
-</span><span class='line'>          if (thread-&gt;thread_state() == _thread_in_Java) {
-</span><span class='line'>            // Throw a stack overflow exception.  Guard pages will be reenabled
-</span><span class='line'>            // while unwinding the stack.
-</span><span class='line'>            stub = SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::STACK_OVERFLOW);
-</span><span class='line'>          } else {
-</span><span class='line'>            // Thread was in the vm or native code.  Return and try to finish.
-</span><span class='line'>            return 1;
-</span><span class='line'>          }
-</span><span class='line'>        } else if (thread-&gt;in_stack_red_zone(addr)) {
-</span><span class='line'>          // Fatal red zone violation.  Disable the guard pages and fall through
-</span><span class='line'>          // to handle_unexpected_exception way down below.
-</span><span class='line'>          thread-&gt;disable_stack_red_zone();
-</span><span class='line'>          tty-&gt;print_raw_cr("An irrecoverable stack overflow has occurred.");
+</span><span class='line'>      <span class="c1">// check if fault address is within thread stack</span>
+</span><span class='line'>      <span class="k">if</span> <span class="p">(</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">stack_base</span><span class="p">()</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>          <span class="n">addr</span> <span class="o">&gt;=</span> <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">stack_base</span><span class="p">()</span> <span class="o">-</span> <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">stack_size</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>        <span class="c1">// stack overflow</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">in_stack_yellow_zone</span><span class="p">(</span><span class="n">addr</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>          <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">disable_stack_yellow_zone</span><span class="p">();</span>
+</span><span class='line'>          <span class="k">if</span> <span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">thread_state</span><span class="p">()</span> <span class="o">==</span> <span class="n">_thread_in_Java</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="c1">// Throw a stack overflow exception.  Guard pages will be reenabled</span>
+</span><span class='line'>            <span class="c1">// while unwinding the stack.</span>
+</span><span class='line'>            <span class="n">stub</span> <span class="o">=</span> <span class="n">SharedRuntime</span><span class="o">::</span><span class="n">continuation_for_implicit_exception</span><span class="p">(</span><span class="kr">thread</span><span class="p">,</span> <span class="n">pc</span><span class="p">,</span> <span class="n">SharedRuntime</span><span class="o">::</span><span class="n">STACK_OVERFLOW</span><span class="p">);</span>
+</span><span class='line'>          <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="c1">// Thread was in the vm or native code.  Return and try to finish.</span>
+</span><span class='line'>            <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>          <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">in_stack_red_zone</span><span class="p">(</span><span class="n">addr</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>          <span class="c1">// Fatal red zone violation.  Disable the guard pages and fall through</span>
+</span><span class='line'>          <span class="c1">// to handle_unexpected_exception way down below.</span>
+</span><span class='line'>          <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">disable_stack_red_zone</span><span class="p">();</span>
+</span><span class='line'>          <span class="n">tty</span><span class="o">-&gt;</span><span class="n">print_raw_cr</span><span class="p">(</span><span class="s">&quot;An irrecoverable stack overflow has occurred.&quot;</span><span class="p">);</span>
 </span><span class='line'>
-</span><span class='line'>          // This is a likely cause, but hard to verify. Let's just print
-</span><span class='line'>          // it as a hint.
-</span><span class='line'>          tty-&gt;print_raw_cr("Please check if any of your loaded .so files has "
-</span><span class='line'>                            "enabled executable stack (see man page execstack(8))");
-</span><span class='line'>        } else {
-</span><span class='line'>          // Accessing stack address below sp may cause SEGV if current
-</span><span class='line'>          // thread has MAP_GROWSDOWN stack. This should only happen when
-</span><span class='line'>          // current thread was created by user code with MAP_GROWSDOWN flag
-</span><span class='line'>          // and then attached to VM. See notes in os_linux.cpp.
-</span><span class='line'>          if (thread-&gt;osthread()-&gt;expanding_stack() == 0) {
-</span><span class='line'>             thread-&gt;osthread()-&gt;set_expanding_stack();
-</span><span class='line'>             if (os::Linux::manually_expand_stack(thread, addr)) {
-</span><span class='line'>               thread-&gt;osthread()-&gt;clear_expanding_stack();
-</span><span class='line'>               return 1;
-</span><span class='line'>             }
-</span><span class='line'>             thread-&gt;osthread()-&gt;clear_expanding_stack();
-</span><span class='line'>          } else {
-</span><span class='line'>             fatal("recursive segv. expanding stack.");
-</span><span class='line'>          }
-</span><span class='line'>        }
-</span><span class='line'>     }
-</span><span class='line'>  }
-</span><span class='line'>    
-</span><span class='line'>  ......
-</span><span class='line'>   
-</span><span class='line'>  if (stub != NULL) {
-</span><span class='line'>    // save all thread context in case we need to restore it
-</span><span class='line'>    if (thread != NULL) thread-&gt;set_saved_exception_pc(pc);
+</span><span class='line'>          <span class="c1">// This is a likely cause, but hard to verify. Let&#39;s just print</span>
+</span><span class='line'>          <span class="c1">// it as a hint.</span>
+</span><span class='line'>          <span class="n">tty</span><span class="o">-&gt;</span><span class="n">print_raw_cr</span><span class="p">(</span><span class="s">&quot;Please check if any of your loaded .so files has &quot;</span>
+</span><span class='line'>                            <span class="s">&quot;enabled executable stack (see man page execstack(8))&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>          <span class="c1">// Accessing stack address below sp may cause SEGV if current</span>
+</span><span class='line'>          <span class="c1">// thread has MAP_GROWSDOWN stack. This should only happen when</span>
+</span><span class='line'>          <span class="c1">// current thread was created by user code with MAP_GROWSDOWN flag</span>
+</span><span class='line'>          <span class="c1">// and then attached to VM. See notes in os_linux.cpp.</span>
+</span><span class='line'>          <span class="k">if</span> <span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">osthread</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">expanding_stack</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>             <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">osthread</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">set_expanding_stack</span><span class="p">();</span>
+</span><span class='line'>             <span class="k">if</span> <span class="p">(</span><span class="n">os</span><span class="o">::</span><span class="n">Linux</span><span class="o">::</span><span class="n">manually_expand_stack</span><span class="p">(</span><span class="kr">thread</span><span class="p">,</span> <span class="n">addr</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>               <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">osthread</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">clear_expanding_stack</span><span class="p">();</span>
+</span><span class='line'>               <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>             <span class="p">}</span>
+</span><span class='line'>             <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">osthread</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">clear_expanding_stack</span><span class="p">();</span>
+</span><span class='line'>          <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>             <span class="n">fatal</span><span class="p">(</span><span class="s">&quot;recursive segv. expanding stack.&quot;</span><span class="p">);</span>
+</span><span class='line'>          <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>     <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>    uc-&gt;uc_mcontext.gregs[REG_PC] = (greg_t)stub;
-</span><span class='line'>    return true;
-</span><span class='line'>  }
+</span><span class='line'>  <span class="p">......</span>
 </span><span class='line'>
-</span><span class='line'>  // signal-chaining
-</span><span class='line'>  if (os::Linux::chained_handler(sig, info, ucVoid)) {
-</span><span class='line'>     return true;
-</span><span class='line'>  }
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">stub</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">// save all thread context in case we need to restore it</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="kr">thread</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">set_saved_exception_pc</span><span class="p">(</span><span class="n">pc</span><span class="p">);</span>
 </span><span class='line'>
-</span><span class='line'>  if (!abort_if_unrecognized) {
-</span><span class='line'>    // caller wants another chance, so give it to him
-</span><span class='line'>    return false;
-</span><span class='line'>  }
+</span><span class='line'>    <span class="n">uc</span><span class="o">-&gt;</span><span class="n">uc_mcontext</span><span class="p">.</span><span class="n">gregs</span><span class="p">[</span><span class="n">REG_PC</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kt">greg_t</span><span class="p">)</span><span class="n">stub</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nb">true</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>  if (pc == NULL && uc != NULL) {
-</span><span class='line'>    pc = os::Linux::ucontext_get_pc(uc);
-</span><span class='line'>  }
+</span><span class='line'>  <span class="c1">// signal-chaining</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">os</span><span class="o">::</span><span class="n">Linux</span><span class="o">::</span><span class="n">chained_handler</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">ucVoid</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>     <span class="k">return</span> <span class="nb">true</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>  // unmask current signal
-</span><span class='line'>  sigset_t newset;
-</span><span class='line'>  sigemptyset(&newset);
-</span><span class='line'>  sigaddset(&newset, sig);
-</span><span class='line'>  sigprocmask(SIG_UNBLOCK, &newset, NULL);
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">abort_if_unrecognized</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">// caller wants another chance, so give it to him</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>  VMError err(t, sig, pc, info, ucVoid);
-</span><span class='line'>  err.report_and_die();
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">pc</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="o">&amp;&amp;</span> <span class="n">uc</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">pc</span> <span class="o">=</span> <span class="n">os</span><span class="o">::</span><span class="n">Linux</span><span class="o">::</span><span class="n">ucontext_get_pc</span><span class="p">(</span><span class="n">uc</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
 </span><span class='line'>
-</span><span class='line'>  ShouldNotReachHere();   </span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>  <span class="c1">// unmask current signal</span>
+</span><span class='line'>  <span class="kt">sigset_t</span> <span class="n">newset</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">sigemptyset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">newset</span><span class="p">);</span>
+</span><span class='line'>  <span class="n">sigaddset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">newset</span><span class="p">,</span> <span class="n">sig</span><span class="p">);</span>
+</span><span class='line'>  <span class="n">sigprocmask</span><span class="p">(</span><span class="n">SIG_UNBLOCK</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">newset</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">VMError</span> <span class="nf">err</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">pc</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">ucVoid</span><span class="p">);</span>
+</span><span class='line'>  <span class="n">err</span><span class="p">.</span><span class="n">report_and_die</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">ShouldNotReachHere</span><span class="p">();</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <p>了解上面的场景之后，再回过头来想想JVM为什么要设置这几个page，其实是为了安全，能预测到栈溢出的话就抛出StackOverfolwError，而避免导致进程挂掉。</p>
@@ -486,68 +453,23 @@
 <h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
 
 <p><img src="/images/gzh.jpg" width="200" height="200"></p>
+</div>
 
-    </div>
-  </div>
+</article>
 
-
-
-  <footer>
-    <hr>
-    
-    <div class="row-fluid">
-      
-      <div class="span6">
-        <p class="meta">
-        
-        
-
-
-
-  <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-
-  <a href="/blog/categories/stackoverflow/"><span class="badge">StackOverflow</span></a>
-
-
-
-
-        </p>
-      </div>
-      
-      <div class="span6 social-sharing">
-        <div class="sharing">
-  <div class="addthis_toolbox addthis_default_style ">
-  
-  
-  
-  <a class="addthis_button_google_plusone" g:plusone:size="medium"></a>
-  
-  <a class="addthis_counter addthis_pill_style"></a>
-  </div>
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
   <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
 </div>
 
-      </div>
-      
-      
-    </div>
-    
-    <div class="row-fluid">
-      <div class="span12">
-        <p class="meta">
-          
-            <a class="basic-alignment left" href="/blog/2016/04/03/type-inference/" title="Previous Post: JDK8在泛型类型推导上的变化">&laquo; JDK8在泛型类型推导上的变化</a>
-          
-          
-            <a class="basic-alignment right" href="/blog/2016/04/24/classloader-unload/" title="Next Post: JVM源码分析之JDK8下的僵尸(无法回收)类加载器">JVM源码分析之JDK8下的僵尸(无法回收)类加载器 &raquo;</a>
-          
-        </p>
-      </div>
-    </div>
-  </footer>
-</article>
 
- 
+
+
   <section>
     <h1>Comments</h1>
     <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
@@ -569,34 +491,20 @@
 
 </div>
 
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
 
 
-        </div>
-      </div>
-      <div class="row-fluid">
-        <footer class="footer-page" role="contentinfo">
-          <p>
-  Copyright &copy; 2016 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
-</p>
-
-
-        </footer>
-      </div>
-  </div>
-  
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
 
 
 
-
-
-  <script type="text/javascript">
-//    (function() {
- //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
-   //   script.src = 'https://apis.google.com/js/plusone.js';
-    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
-   // })();
-  </script>
 
 
 

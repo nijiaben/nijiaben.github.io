@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: JDWP | 你假笨]]></title>
+  <title><![CDATA[Category: jdwp | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jdwp/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -151,7 +151,7 @@ nijiaben@nijiaben : ~/Developer/open_source/openjdk/jdk7u/build/macosx-x86_64-de
 
 <p>  <br/>
 &#8195;&#8195;这就对为什么我们可以通过调试体系可以看到本地变量的值，可以一步一步push/pop frame等能力不足为奇了。
-因为agent是在vm初始化过程中加载的，vm的环境其实很多还没准备好，所以jvmti提供了一种能力---事件通知，在某个特定事件发生的时候，agent可以通过注册一些回调事件来做一些特殊的工作，比如在vm初始化完成之后，在类文件加载之后，在类被加载之后等等都可以做一些相关的事情，jdwp主要注册了几个回调事件，重点是vm初始化的回调函数，此时才是真正的完成jdwp的初始化动作，这也是为什么我们的调试体系不能对所有的java代码进行跟踪的原因了，比如说AppClassLoader的创建过程，这个其实都是在vm初始化过程中创建的，但是这个时候jdwp还没有初始化呢，自然也无法完成我们的debug过程了。</p>
+因为agent是在vm初始化过程中加载的，vm的环境其实很多还没准备好，所以jvmti提供了一种能力&mdash;事件通知，在某个特定事件发生的时候，agent可以通过注册一些回调事件来做一些特殊的工作，比如在vm初始化完成之后，在类文件加载之后，在类被加载之后等等都可以做一些相关的事情，jdwp主要注册了几个回调事件，重点是vm初始化的回调函数，此时才是真正的完成jdwp的初始化动作，这也是为什么我们的调试体系不能对所有的java代码进行跟踪的原因了，比如说AppClassLoader的创建过程，这个其实都是在vm初始化过程中创建的，但是这个时候jdwp还没有初始化呢，自然也无法完成我们的debug过程了。</p>
 
 <pre class="prettyPrint">
     gdata->callbacks.VMInit             = &cbEarlyVMInit;

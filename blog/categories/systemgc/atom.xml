@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: SystemGC | 你假笨]]></title>
+  <title><![CDATA[Category: systemgc | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/systemgc/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -51,57 +51,51 @@
 
 <p>先贴段代码吧（java.lang.System）</p>
 
-<p>```</p>
-
-<pre><code>/**
- * Runs the garbage collector.
- * &lt;p&gt;
- * Calling the &lt;code&gt;gc&lt;/code&gt; method suggests that the Java Virtual
- * Machine expend effort toward recycling unused objects in order to
- * make the memory they currently occupy available for quick reuse.
- * When control returns from the method call, the Java Virtual
- * Machine has made a best effort to reclaim space from all discarded
- * objects.
- * &lt;p&gt;
- * The call &lt;code&gt;System.gc()&lt;/code&gt; is effectively equivalent to the
- * call:
- * &lt;blockquote&gt;&lt;pre&gt;
- * Runtime.getRuntime().gc()
- * &lt;/pre&gt;&lt;/blockquote&gt;
- *
- * @see     java.lang.Runtime#gc()
- */
-public static void gc() {
-    Runtime.getRuntime().gc();
-}
+<pre><code>    /**
+     * Runs the garbage collector.
+     * &lt;p&gt;
+     * Calling the &lt;code&gt;gc&lt;/code&gt; method suggests that the Java Virtual
+     * Machine expend effort toward recycling unused objects in order to
+     * make the memory they currently occupy available for quick reuse.
+     * When control returns from the method call, the Java Virtual
+     * Machine has made a best effort to reclaim space from all discarded
+     * objects.
+     * &lt;p&gt;
+     * The call &lt;code&gt;System.gc()&lt;/code&gt; is effectively equivalent to the
+     * call:
+     * &lt;blockquote&gt;&lt;pre&gt;
+     * Runtime.getRuntime().gc()
+     * &lt;/pre&gt;&lt;/blockquote&gt;
+     *
+     * @see     java.lang.Runtime#gc()
+     */
+    public static void gc() {
+        Runtime.getRuntime().gc();
+    }
 </code></pre>
 
-<p>```
-发现主要调用的是Runtime里的gc方法（java.lang.Runtime）</p>
+<p>发现主要调用的是Runtime里的gc方法（java.lang.Runtime）</p>
 
-<p>```</p>
-
-<pre><code>/**
- * Runs the garbage collector.
- * Calling this method suggests that the Java virtual machine expend
- * effort toward recycling unused objects in order to make the memory
- * they currently occupy available for quick reuse. When control
- * returns from the method call, the virtual machine has made
- * its best effort to recycle all discarded objects.
- * &lt;p&gt;
- * The name &lt;code&gt;gc&lt;/code&gt; stands for "garbage
- * collector". The virtual machine performs this recycling
- * process automatically as needed, in a separate thread, even if the
- * &lt;code&gt;gc&lt;/code&gt; method is not invoked explicitly.
- * &lt;p&gt;
- * The method {@link System#gc()} is the conventional and convenient
- * means of invoking this method.
- */
-public native void gc();
+<pre><code>    /**
+     * Runs the garbage collector.
+     * Calling this method suggests that the Java virtual machine expend
+     * effort toward recycling unused objects in order to make the memory
+     * they currently occupy available for quick reuse. When control
+     * returns from the method call, the virtual machine has made
+     * its best effort to recycle all discarded objects.
+     * &lt;p&gt;
+     * The name &lt;code&gt;gc&lt;/code&gt; stands for "garbage
+     * collector". The virtual machine performs this recycling
+     * process automatically as needed, in a separate thread, even if the
+     * &lt;code&gt;gc&lt;/code&gt; method is not invoked explicitly.
+     * &lt;p&gt;
+     * The method {@link System#gc()} is the conventional and convenient
+     * means of invoking this method.
+     */
+    public native void gc();
 </code></pre>
 
-<p>```
-这里看到gc方法是native的，在java层面只能到此结束了，代码只有这么多，要了解更多，可以看方法上面的注释，不过我们需要更深层次地来了解其实现，那还是准备好进入到jvm里去看看</p>
+<p>这里看到gc方法是native的，在java层面只能到此结束了，代码只有这么多，要了解更多，可以看方法上面的注释，不过我们需要更深层次地来了解其实现，那还是准备好进入到jvm里去看看</p>
 
 <h2>Hotspot里System.gc的实现</h2>
 
@@ -109,98 +103,69 @@ public native void gc();
 
 <p>上面提到了Runtime.gc是一个本地方法，那需要先在jvm里找到对应的实现，这里稍微提一下jvm里native方法最常见的也是最简单的查找，jdk里一般含有native方法的类，一般都会有一个对应的c文件，比如上面的java.lang.Runtime这个类，会有一个Runtime.c的文件和它对应，native方法的具体实现都在里面了，如果你有source，可能会猜到和下面的方法对应</p>
 
-<p>```
-JNIEXPORT void JNICALL
+<pre><code>JNIEXPORT void JNICALL
 Java_java_lang_Runtime_gc(JNIEnv *env, jobject this)
-{</p>
-
-<pre><code>JVM_GC();
+{
+    JVM_GC();
+}
 </code></pre>
 
-<p>}
-```
-其实没错的，就是这个方法，jvm要查找到这个native方法其实很简单的，看方法名可能也猜到规则了，Java_pkgName_className_methodName，其中pkgName里的"."替换成"_"，这样就能找到了，当然规则不仅仅只有这么一个，还有其他的，这里不细说了，有机会写篇文章详细介绍下其中细节</p>
+<p>其实没错的，就是这个方法，jvm要查找到这个native方法其实很简单的，看方法名可能也猜到规则了，Java_pkgName_className_methodName，其中pkgName里的".&ldquo;替换成&rdquo;_&ldquo;，这样就能找到了，当然规则不仅仅只有这么一个，还有其他的，这里不细说了，有机会写篇文章详细介绍下其中细节</p>
 
 <h3>DisableExplicitGC参数</h3>
 
 <p>上面的方法里是调用JVM_GC()，实现如下</p>
 
-<p>```
-JVM_ENTRY_NO_ENV(void, JVM_GC(void))
+<pre><code>JVM_ENTRY_NO_ENV(void, JVM_GC(void))
   JVMWrapper("JVM_GC");
-  if (!DisableExplicitGC) {</p>
-
-<pre><code>Universe::heap()-&gt;collect(GCCause::_java_lang_system_gc);
-</code></pre>
-
-<p>  }
+  if (!DisableExplicitGC) {
+    Universe::heap()-&gt;collect(GCCause::_java_lang_system_gc);
+  }
 JVM_END
-<code>``
-看到这里我们已经解释其中一个疑惑了，就是</code>DisableExplicitGC`这个参数是在哪里生效的，起的什么作用，如果这个参数设置为true的话，那么将直接跳过下面的逻辑，我们通过-XX:+ DisableExplicitGC就是将这个属性设置为true，而这个属性默认情况下是true还是false呢</p>
-
-<p>```
-product(bool, DisableExplicitGC, false,                                   \</p>
-
-<pre><code>      "Tells whether calling System.gc() does a full GC")    
 </code></pre>
 
-<p>```</p>
+<p>看到这里我们已经解释其中一个疑惑了，就是<code>DisableExplicitGC</code>这个参数是在哪里生效的，起的什么作用，如果这个参数设置为true的话，那么将直接跳过下面的逻辑，我们通过-XX:+ DisableExplicitGC就是将这个属性设置为true，而这个属性默认情况下是true还是false呢</p>
+
+<pre><code>product(bool, DisableExplicitGC, false,                                   \
+          "Tells whether calling System.gc() does a full GC")    
+</code></pre>
 
 <h3>ExplicitGCInvokesConcurrent参数</h3>
 
 <p>这里主要针对CMSGC下来做分析，所以我们上面看到调用了heap的collect方法，我们找到对应的逻辑</p>
 
-<p>```
-void GenCollectedHeap::collect(GCCause::Cause cause) {
-  if (should_do_concurrent_full_gc(cause)) {</p>
+<pre><code>void GenCollectedHeap::collect(GCCause::Cause cause) {
+  if (should_do_concurrent_full_gc(cause)) {
+#ifndef SERIALGC
+    // mostly concurrent full collection
+    collect_mostly_concurrent(cause);
+#else  // SERIALGC
+    ShouldNotReachHere();
+#endif // SERIALGC
+  } else {
+#ifdef ASSERT
+    if (cause == GCCause::_scavenge_alot) {
+      // minor collection only
+      collect(cause, 0);
+    } else {
+      // Stop-the-world full collection
+      collect(cause, n_gens() - 1);
+    }
+#else
+    // Stop-the-world full collection
+    collect(cause, n_gens() - 1);
+#endif
+  }
+}
 
-<h1>ifndef SERIALGC</h1>
-
-<pre><code>// mostly concurrent full collection
-collect_mostly_concurrent(cause);
-</code></pre>
-
-<h1>else  // SERIALGC</h1>
-
-<pre><code>ShouldNotReachHere();
-</code></pre>
-
-<h1>endif // SERIALGC</h1>
-
-<p>  } else {</p>
-
-<h1>ifdef ASSERT</h1>
-
-<pre><code>if (cause == GCCause::_scavenge_alot) {
-  // minor collection only
-  collect(cause, 0);
-} else {
-  // Stop-the-world full collection
-  collect(cause, n_gens() - 1);
+bool GenCollectedHeap::should_do_concurrent_full_gc(GCCause::Cause cause) {
+  return UseConcMarkSweepGC &amp;&amp;
+         ((cause == GCCause::_gc_locker &amp;&amp; GCLockerInvokesConcurrent) ||
+          (cause == GCCause::_java_lang_system_gc &amp;&amp; ExplicitGCInvokesConcurrent));
 }
 </code></pre>
 
-<h1>else</h1>
-
-<pre><code>// Stop-the-world full collection
-collect(cause, n_gens() - 1);
-</code></pre>
-
-<h1>endif</h1>
-
-<p>  }
-}</p>
-
-<p>bool GenCollectedHeap::should_do_concurrent_full_gc(GCCause::Cause cause) {
-  return UseConcMarkSweepGC &amp;&amp;</p>
-
-<pre><code>     ((cause == GCCause::_gc_locker &amp;&amp; GCLockerInvokesConcurrent) ||
-      (cause == GCCause::_java_lang_system_gc &amp;&amp; ExplicitGCInvokesConcurrent));
-</code></pre>
-
-<p>}
-```
-collect里一开头就有个判断，如果should_do_concurrent_full_gc返回true，那会执行collect_mostly_concurrent做并行的回收</p>
+<p>collect里一开头就有个判断，如果should_do_concurrent_full_gc返回true，那会执行collect_mostly_concurrent做并行的回收</p>
 
 <p>其中should_do_concurrent_full_gc中的逻辑是如果使用CMS GC，并且是system gc且ExplicitGCInvokesConcurrent==true，那就做并行full gc，当我们设置-XX:+ ExplicitGCInvokesConcurrent的时候，就意味着应该做并行Full GC了，不过要注意千万不要设置-XX:+DisableExplicitGC，不然走不到这个逻辑里来了</p>
 

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: JDK8 | 你假笨]]></title>
+  <title><![CDATA[Category: jdk8 | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jdk8/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -29,112 +29,189 @@
 
 <p>首先我们创建两个类AAA和AAB，分别打包到两个不同jar里，比如AAA.jar和AAB.jar，这两个类之间是有关系的，AAA里有个属性是AAB类型的，注意这两个jar不要放到classpath里让appClassLoader加载到：</p>
 
-<p>```
-public class AAA {</p>
-
-<pre><code>    private AAB aab;
-    public AAA(){
-            aab=new AAB();
-    }
-    public void clear(){
-            aab=null;
-    }
-</code></pre>
-
-<p>}</p>
-
-<p>public class AAB {}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">public</span> <span class="n">class</span> <span class="n">AAA</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">private</span> <span class="n">AAB</span> <span class="n">aab</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">public</span> <span class="nf">AAA</span><span class="p">(){</span>
+</span><span class='line'>                <span class="n">aab</span><span class="o">=</span><span class="n">new</span> <span class="n">AAB</span><span class="p">();</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="n">public</span> <span class="kt">void</span> <span class="nf">clear</span><span class="p">(){</span>
+</span><span class='line'>                <span class="n">aab</span><span class="o">=</span><span class="n">null</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="n">public</span> <span class="n">class</span> <span class="n">AAB</span> <span class="p">{}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>接着我们创建一个类加载TestLoader，里面存一个WeakHashMap，专门来存TestLoader的，并且复写loadClass方法，如果是加载AAB这个类，就创建一个新的TestLoader来从AAB.jar里加载这个类</p>
 
-<p>```
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.util.WeakHashMap;</p>
-
-<p>public class TestLoader extends URLClassLoader {</p>
-
-<pre><code>    public static WeakHashMap&lt;TestLoader,Object&gt; map=new WeakHashMap&lt;TestLoader,Object&gt;();
-    private static int count=0;
-    public TestLoader(URL[] urls){
-            super(urls);
-            map.put(this, new Object());
-    }
-    @SuppressWarnings("resource")
-    public Class&lt;?&gt; loadClass(String name) throws ClassNotFoundException {
-            if(name.equals("AAB") &amp;&amp; count==0){
-                    try {
-                            count=1;
-                URL[] urls = new URL[1];
-                urls[0] = new URL("file:///home/nijiaben/tmp/AAB.jar");
-                return new TestLoader(urls).loadClass("AAB");
-            }catch (Exception e){
-                e.printStackTrace();
-            }
-            }else{
-                    return super.loadClass(name);
-            }
-            return null;
-    }
-</code></pre>
-
-<p>}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">import</span> <span class="n">java</span><span class="p">.</span><span class="n">net</span><span class="p">.</span><span class="n">URL</span><span class="p">;</span>
+</span><span class='line'><span class="n">import</span> <span class="n">java</span><span class="p">.</span><span class="n">net</span><span class="p">.</span><span class="n">URLClassLoader</span><span class="p">;</span>
+</span><span class='line'><span class="n">import</span> <span class="n">java</span><span class="p">.</span><span class="n">util</span><span class="p">.</span><span class="n">WeakHashMap</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="n">public</span> <span class="n">class</span> <span class="n">TestLoader</span> <span class="n">extends</span> <span class="n">URLClassLoader</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">public</span> <span class="k">static</span> <span class="n">WeakHashMap</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="n">TestLoader</span><span class="p">,</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">map</span><span class="o">=</span><span class="n">new</span> <span class="n">WeakHashMap</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="n">TestLoader</span><span class="p">,</span><span class="n">Object</span><span class="o">&gt;</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">private</span> <span class="k">static</span> <span class="kt">int</span> <span class="n">count</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">public</span> <span class="nf">TestLoader</span><span class="p">(</span><span class="n">URL</span><span class="p">[]</span> <span class="n">urls</span><span class="p">){</span>
+</span><span class='line'>                <span class="n">super</span><span class="p">(</span><span class="n">urls</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">map</span><span class="p">.</span><span class="n">put</span><span class="p">(</span><span class="n">this</span><span class="p">,</span> <span class="n">new</span> <span class="n">Object</span><span class="p">());</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="err">@</span><span class="n">SuppressWarnings</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">resource</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;)</span>
+</span><span class='line'>        <span class="n">public</span> <span class="n">Class</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">?&gt;</span> <span class="n">loadClass</span><span class="p">(</span><span class="n">String</span> <span class="n">name</span><span class="p">)</span> <span class="n">throws</span> <span class="n">ClassNotFoundException</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span><span class="p">(</span><span class="n">name</span><span class="p">.</span><span class="n">equals</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">AAB</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;)</span> <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span> <span class="n">count</span><span class="o">==</span><span class="mi">0</span><span class="p">){</span>
+</span><span class='line'>                        <span class="n">try</span> <span class="p">{</span>
+</span><span class='line'>                                <span class="n">count</span><span class="o">=</span><span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                    <span class="n">URL</span><span class="p">[]</span> <span class="n">urls</span> <span class="o">=</span> <span class="n">new</span> <span class="n">URL</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
+</span><span class='line'>                    <span class="n">urls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">new</span> <span class="n">URL</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="nl">file</span><span class="p">:</span><span class="c1">///home/nijiaben/tmp/AAB.jar&amp;rdquo;);</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="n">new</span> <span class="n">TestLoader</span><span class="p">(</span><span class="n">urls</span><span class="p">).</span><span class="n">loadClass</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">AAB</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>                <span class="p">}</span><span class="n">catch</span> <span class="p">(</span><span class="n">Exception</span> <span class="n">e</span><span class="p">){</span>
+</span><span class='line'>                    <span class="n">e</span><span class="p">.</span><span class="n">printStackTrace</span><span class="p">();</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>                <span class="p">}</span><span class="k">else</span><span class="p">{</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="n">super</span><span class="p">.</span><span class="n">loadClass</span><span class="p">(</span><span class="n">name</span><span class="p">);</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">null</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>再看我们的主类TTest，一些说明都写在类里了：</p>
 
-<p>```
-import java.lang.reflect.Method;
-import java.net.URL;</p>
-
-<p>/<em>*
- * Created by nijiaben on 4/22/16.
- </em>/
-public class TTest {</p>
-
-<pre><code>private Object aaa;
-public static void main(String args[]){
-    try {
-        TTest tt = new TTest();
-        //将对象移到old，并置空aaa的aab属性
-        test(tt);
-        //清理掉aab对象
-        System.gc();
-        System.out.println("finished");
-    }catch (Exception e){
-        e.printStackTrace();
-    }
-}
-
-@SuppressWarnings("resource")
-    public static void test(TTest tt){
-    try {
-        //创建一个新的类加载器，从AAA.jar里加载AAA类
-        URL[] urls = new URL[1];
-        urls[0] = new URL("file:///home/nijiaben/tmp/AAA.jar");
-        tt.aaa=new TestLoader(urls).loadClass("AAA").newInstance();
-        //保证类加载器对象能进入到old里，因为ygc是不会对classLoader做清理的
-        for(int i=0;i&lt;10;i++){
-            System.gc();
-            Thread.sleep(1000);
-        }
-        //将aaa里的aab属性清空掉，以便在后面gc的时候能清理掉aab对象，这样AAB的类加载器其实就没有什么地方有强引用了，在full gc的时候能被回收
-        Method[] methods=tt.aaa.getClass().getDeclaredMethods();
-        for(Method m:methods){
-            if(m.getName().equals("clear")){
-                    m.invoke(tt.aaa);
-                    break;
-            }
-        }
-    }catch (Exception e){
-        e.printStackTrace();
-    }
-}
-</code></pre>
-
-<p>}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">import</span> <span class="n">java</span><span class="p">.</span><span class="n">lang</span><span class="p">.</span><span class="n">reflect</span><span class="p">.</span><span class="n">Method</span><span class="p">;</span>
+</span><span class='line'><span class="n">import</span> <span class="n">java</span><span class="p">.</span><span class="n">net</span><span class="p">.</span><span class="n">URL</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;/&lt;</span><span class="n">em</span><span class="o">&gt;*</span>
+</span><span class='line'> <span class="o">*</span> <span class="n">Created</span> <span class="n">by</span> <span class="n">nijiaben</span> <span class="n">on</span> <span class="mi">4</span><span class="o">/</span><span class="mi">22</span><span class="o">/</span><span class="mf">16.</span>
+</span><span class='line'> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;/</span>
+</span><span class='line'><span class="n">public</span> <span class="n">class</span> <span class="n">TTest</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">private</span> <span class="n">Object</span> <span class="n">aaa</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">public</span> <span class="k">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="p">(</span><span class="n">String</span> <span class="n">args</span><span class="p">[]){</span>
+</span><span class='line'>        <span class="n">try</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">TTest</span> <span class="n">tt</span> <span class="o">=</span> <span class="n">new</span> <span class="n">TTest</span><span class="p">();</span>
+</span><span class='line'>            <span class="c1">//将对象移到old，并置空aaa的aab属性</span>
+</span><span class='line'>            <span class="n">test</span><span class="p">(</span><span class="n">tt</span><span class="p">);</span>
+</span><span class='line'>            <span class="c1">//清理掉aab对象</span>
+</span><span class='line'>            <span class="n">System</span><span class="p">.</span><span class="n">gc</span><span class="p">();</span>
+</span><span class='line'>            <span class="n">System</span><span class="p">.</span><span class="n">out</span><span class="p">.</span><span class="n">println</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">finished</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>        <span class="p">}</span><span class="n">catch</span> <span class="p">(</span><span class="n">Exception</span> <span class="n">e</span><span class="p">){</span>
+</span><span class='line'>            <span class="n">e</span><span class="p">.</span><span class="n">printStackTrace</span><span class="p">();</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">pre</span><span class="o">&gt;&lt;</span><span class="n">code</span><span class="o">&gt;</span><span class="err">@</span><span class="n">SuppressWarnings</span><span class="p">(</span><span class="s">&quot;resource&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">public</span> <span class="k">static</span> <span class="kt">void</span> <span class="n">test</span><span class="p">(</span><span class="n">TTest</span> <span class="n">tt</span><span class="p">){</span>
+</span><span class='line'>    <span class="n">try</span> <span class="p">{</span>
+</span><span class='line'>        <span class="c1">//创建一个新的类加载器，从AAA.jar里加载AAA类</span>
+</span><span class='line'>        <span class="n">URL</span><span class="p">[]</span> <span class="n">urls</span> <span class="o">=</span> <span class="n">new</span> <span class="n">URL</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
+</span><span class='line'>        <span class="n">urls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">new</span> <span class="n">URL</span><span class="p">(</span><span class="s">&quot;file:///home/nijiaben/tmp/AAA.jar&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">tt</span><span class="p">.</span><span class="n">aaa</span><span class="o">=</span><span class="n">new</span> <span class="n">TestLoader</span><span class="p">(</span><span class="n">urls</span><span class="p">).</span><span class="n">loadClass</span><span class="p">(</span><span class="s">&quot;AAA&quot;</span><span class="p">).</span><span class="n">newInstance</span><span class="p">();</span>
+</span><span class='line'>        <span class="c1">//保证类加载器对象能进入到old里，因为ygc是不会对classLoader做清理的</span>
+</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">i</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="mi">10</span><span class="p">;</span><span class="n">i</span><span class="o">++</span><span class="p">){</span>
+</span><span class='line'>            <span class="n">System</span><span class="p">.</span><span class="n">gc</span><span class="p">();</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="p">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1000</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="c1">//将aaa里的aab属性清空掉，以便在后面gc的时候能清理掉aab对象，这样AAB的类加载器其实就没有什么地方有强引用了，在full gc的时候能被回收</span>
+</span><span class='line'>        <span class="n">Method</span><span class="p">[]</span> <span class="n">methods</span><span class="o">=</span><span class="n">tt</span><span class="p">.</span><span class="n">aaa</span><span class="p">.</span><span class="n">getClass</span><span class="p">().</span><span class="n">getDeclaredMethods</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="n">Method</span> <span class="nl">m</span><span class="p">:</span><span class="n">methods</span><span class="p">){</span>
+</span><span class='line'>            <span class="k">if</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">getName</span><span class="p">().</span><span class="n">equals</span><span class="p">(</span><span class="s">&quot;clear&quot;</span><span class="p">)){</span>
+</span><span class='line'>                    <span class="n">m</span><span class="p">.</span><span class="n">invoke</span><span class="p">(</span><span class="n">tt</span><span class="p">.</span><span class="n">aaa</span><span class="p">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span><span class="n">catch</span> <span class="p">(</span><span class="n">Exception</span> <span class="n">e</span><span class="p">){</span>
+</span><span class='line'>        <span class="n">e</span><span class="p">.</span><span class="n">printStackTrace</span><span class="p">();</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'><span class="o">&lt;/</span><span class="n">code</span><span class="o">&gt;&lt;/</span><span class="n">pre</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>运行的时候请跑在JDK8下，打个断点在<code>System.out.println("finished")</code>的地方，然后做一次内存dump。</p>
 
@@ -156,61 +233,91 @@ public static void main(String args[]){
 
 <p>每个类加载器都会对应一个ClassLoaderData的数据结构，里面会存譬如具体的类加载器对象，加载的klass，管理内存的metaspace等，它是一个链式结构，会链到下一个ClassLoaderData上，gc的时候通过ClassLoaderDataGraph来遍历这些ClassLoaderData，ClassLoaderDataGraph的第一个ClassLoaderData是bootstrapClassLoader的</p>
 
-<p>```
-class ClassLoaderData : public CHeapObj<mtClass> {
-  ...
-  static ClassLoaderData * _the_null_class_loader_data;</p>
-
-<p>  oop _class_loader;          // oop used to uniquely identify a class loader</p>
-
-<pre><code>                          // class loader or a canonical class path
-</code></pre>
-
-<p>  Dependencies _dependencies; // holds dependencies from this class loader</p>
-
-<pre><code>                          // data to others.
-</code></pre>
-
-<p>  Metaspace * _metaspace;  // Meta-space where meta-data defined by the</p>
-
-<pre><code>                       // classes in the class loader are allocated.
-</code></pre>
-
-<p>  Mutex* <em>metaspace_lock;  // Locks the metaspace for allocations and setup.
-  bool </em>unloading;         // true if this class loader goes away
-  bool <em>keep_alive;        // if this CLD is kept alive without a keep_alive_object().
-  bool </em>is_anonymous;      // if this CLD is for an anonymous class
-  volatile int _claimed;   // true if claimed, for example during GC traces.</p>
-
-<pre><code>                       // To avoid applying oop closure more than once.
-                       // Has to be an int because we cas it.
-</code></pre>
-
-<p>  Klass* _klasses;         // The classes defined by the class loader.</p>
-
-<p>  JNIHandleBlock* _handles; // Handles to constant pool arrays</p>
-
-<p>  // These method IDs are created for the class loader and set to NULL when the
-  // class loader is unloaded.  They are rarely freed, only for redefine classes
-  // and if they lose a data race in InstanceKlass.
-  JNIMethodBlock*                  _jmethod_ids;</p>
-
-<p>  // Metadata to be deallocated when it's safe at class unloading, when
-  // this class loader isn't unloaded itself.
-  GrowableArray&lt;Metadata<em>></em>      _deallocate_list;</p>
-
-<p>  // Support for walking class loader data objects
-  ClassLoaderData* _next; /// Next loader_datas created</p>
-
-<p>  // ReadOnly and ReadWrite metaspaces (static because only on the null
-  // class loader for now).
-  static Metaspace<em> _ro_metaspace;
-  static Metaspace</em> _rw_metaspace;</p>
-
-<p>  ...</p>
-
-<p>}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">class</span> <span class="nl">ClassLoaderData</span> <span class="p">:</span> <span class="n">public</span> <span class="n">CHeapObj</span><span class="o">&lt;</span><span class="n">mtClass</span><span class="o">&gt;</span> <span class="p">{</span>
+</span><span class='line'>  <span class="o">&amp;</span><span class="n">hellip</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">static</span> <span class="n">ClassLoaderData</span> <span class="o">*</span> <span class="n">_the_null_class_loader_data</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">oop</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">class_loader</span><span class="p">;</span>          <span class="c1">// oop used to uniquely identify a class loader</span>
+</span><span class='line'>                              <span class="c1">// class loader or a canonical class path</span>
+</span><span class='line'>  <span class="n">Dependencies</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">dependencies</span><span class="p">;</span> <span class="c1">// holds dependencies from this class loader</span>
+</span><span class='line'>                              <span class="c1">// data to others.&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">Metaspace</span> <span class="o">*</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">metaspace</span><span class="p">;</span>  <span class="c1">// Meta-space where meta-data defined by the</span>
+</span><span class='line'>                           <span class="c1">// classes in the class loader are allocated.</span>
+</span><span class='line'>  <span class="n">Mutex</span><span class="o">*</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">metaspace_lock</span><span class="p">;</span>  <span class="c1">// Locks the metaspace for allocations and setup.</span>
+</span><span class='line'>  <span class="kt">bool</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">unloading</span><span class="p">;</span>         <span class="c1">// true if this class loader goes away</span>
+</span><span class='line'>  <span class="kt">bool</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">keep_alive</span><span class="p">;</span>        <span class="c1">// if this CLD is kept alive without a keep_alive_object().</span>
+</span><span class='line'>  <span class="kt">bool</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">is_anonymous</span><span class="p">;</span>      <span class="c1">// if this CLD is for an anonymous class</span>
+</span><span class='line'>  <span class="k">volatile</span> <span class="kt">int</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">claimed</span><span class="p">;</span>   <span class="c1">// true if claimed, for example during GC traces.</span>
+</span><span class='line'>                           <span class="c1">// To avoid applying oop closure more than once.</span>
+</span><span class='line'>                           <span class="c1">// Has to be an int because we cas it.</span>
+</span><span class='line'>  <span class="n">Klass</span><span class="o">*</span> <span class="n">_klasses</span><span class="p">;</span>         <span class="c1">// The classes defined by the class loader.&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">JNIHandleBlock</span><span class="o">*</span> <span class="n">_handles</span><span class="p">;</span> <span class="c1">// Handles to constant pool arrays&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// These method IDs are created for the class loader and set to NULL when the</span>
+</span><span class='line'>  <span class="c1">// class loader is unloaded.  They are rarely freed, only for redefine classes</span>
+</span><span class='line'>  <span class="c1">// and if they lose a data race in InstanceKlass.</span>
+</span><span class='line'>  <span class="n">JNIMethodBlock</span><span class="o">*</span>                  <span class="n">_jmethod_ids</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// Metadata to be deallocated when it&amp;rsquo;s safe at class unloading, when</span>
+</span><span class='line'>  <span class="c1">// this class loader isn&amp;rsquo;t unloaded itself.</span>
+</span><span class='line'>  <span class="n">GrowableArray</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="n">Metadata</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;&gt;&lt;/</span><span class="n">em</span><span class="o">&gt;</span>      <span class="n">_deallocate_list</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// Support for walking class loader data objects</span>
+</span><span class='line'>  <span class="n">ClassLoaderData</span><span class="o">*</span> <span class="n">_next</span><span class="p">;</span> <span class="c1">/// Next loader_datas created&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// ReadOnly and ReadWrite metaspaces (static because only on the null</span>
+</span><span class='line'>  <span class="c1">// class loader for now).</span>
+</span><span class='line'>  <span class="k">static</span> <span class="n">Metaspace</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">_ro_metaspace</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">static</span> <span class="n">Metaspace</span><span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">_rw_metaspace</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="o">&amp;</span><span class="n">hellip</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>这里提几个属性：</p>
 
@@ -226,43 +333,58 @@ class ClassLoaderData : public CHeapObj<mtClass> {
 
 <p>再来看下构造函数：</p>
 
-<p>```
-ClassLoaderData::ClassLoaderData(Handle h_class_loader, bool is_anonymous, Dependencies dependencies) :
-  <em>class_loader(h_class_loader()),
-  </em>is_anonymous(is_anonymous),
-  // An anonymous class loader data doesn't have anything to keep
-  // it from being unloaded during parsing of the anonymous class.
-  // The null-class-loader should always be kept alive.
-  <em>keep_alive(is_anonymous || h_class_loader.is_null()),
-  </em>metaspace(NULL), <em>unloading(false), </em>klasses(NULL),
-  <em>claimed(0), </em>jmethod_ids(NULL), <em>handles(NULL), </em>deallocate_list(NULL),
-  <em>next(NULL), </em>dependencies(dependencies),
-  _metaspace_lock(new Mutex(Monitor::leaf+1, "Metaspace allocation lock", true)) {</p>
-
-<pre><code>// empty
-</code></pre>
-
-<p>}
-<code>``
-可见，</code><em>keep_ailve<code>属性的值是根据</code></em>is_anonymous`以及当前类加载器是不是bootstrapClassLoader来的。</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">ClassLoaderData</span><span class="p">(</span><span class="n">Handle</span> <span class="n">h_class_loader</span><span class="p">,</span> <span class="kt">bool</span> <span class="n">is_anonymous</span><span class="p">,</span> <span class="n">Dependencies</span> <span class="n">dependencies</span><span class="p">)</span> <span class="o">:</span>
+</span><span class='line'>  <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">class_loader</span><span class="p">(</span><span class="n">h_class_loader</span><span class="p">()),</span>
+</span><span class='line'>  <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">is_anonymous</span><span class="p">(</span><span class="n">is_anonymous</span><span class="p">),</span>
+</span><span class='line'>  <span class="c1">// An anonymous class loader data doesn&amp;rsquo;t have anything to keep</span>
+</span><span class='line'>  <span class="c1">// it from being unloaded during parsing of the anonymous class.</span>
+</span><span class='line'>  <span class="c1">// The null-class-loader should always be kept alive.</span>
+</span><span class='line'>  <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">keep_alive</span><span class="p">(</span><span class="n">is_anonymous</span> <span class="o">||</span> <span class="n">h_class_loader</span><span class="p">.</span><span class="n">is_null</span><span class="p">()),</span>
+</span><span class='line'>  <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">metaspace</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">unloading</span><span class="p">(</span><span class="nb">false</span><span class="p">),</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">klasses</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span>
+</span><span class='line'>  <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">claimed</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">jmethod_ids</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">handles</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">deallocate_list</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span>
+</span><span class='line'>  <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">next</span><span class="p">(</span><span class="nb">NULL</span><span class="p">),</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">dependencies</span><span class="p">(</span><span class="n">dependencies</span><span class="p">),</span>
+</span><span class='line'>  <span class="n">_metaspace_lock</span><span class="p">(</span><span class="n">new</span> <span class="n">Mutex</span><span class="p">(</span><span class="n">Monitor</span><span class="o">::</span><span class="n">leaf</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">Metaspace</span> <span class="n">allocation</span> <span class="n">lock</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;,</span> <span class="nb">true</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">// empty</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+可见，<code>_keep_ailve</code>属性的值是根据<code>_is_anonymous</code>以及当前类加载器是不是bootstrapClassLoader来的。</p>
 
 <p><code>_keep_alive</code>到底用在哪？其实是在GC的的时候，来决定要不要用Closure或者用什么Closure来扫描对应的ClassLoaderData。</p>
 
-<p>```
-void ClassLoaderDataGraph::roots_cld_do(CLDClosure<em> strong, CLDClosure</em> weak) {
-  //从最后一个创建的classloader到bootstrapClassloader<br/>
-  for (ClassLoaderData* cld = <em>head;  cld != NULL; cld = cld-></em>next) {</p>
-
-<pre><code>//如果是ygc，那weak和strong是一样的，对所有的类加载器都做扫描，保证它们都是活的 
-//如果是cms initmark阶段，如果要unload_classes了(should_unload_classes()返回true)，则weak为null，那就只遍历bootstrapclassloader以及正在做匿名类加载的类加载  
-CLDClosure* closure = cld-&gt;keep_alive() ? strong : weak;
-if (closure != NULL) {
-  closure-&gt;do_cld(cld);
-}
-</code></pre>
-
-<p>  }
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">void</span> <span class="n">ClassLoaderDataGraph</span><span class="o">::</span><span class="n">roots_cld_do</span><span class="p">(</span><span class="n">CLDClosure</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">strong</span><span class="p">,</span> <span class="n">CLDClosure</span><span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">weak</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="c1">//从最后一个创建的classloader到bootstrapClassloader&lt;br/&gt;</span>
+</span><span class='line'>  <span class="k">for</span> <span class="p">(</span><span class="n">ClassLoaderData</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">cld</span> <span class="o">=</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">head</span><span class="p">;</span>  <span class="n">cld</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">;</span> <span class="n">cld</span> <span class="o">=</span> <span class="n">cld</span><span class="o">-&gt;&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">next</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">//如果是ygc，那weak和strong是一样的，对所有的类加载器都做扫描，保证它们都是活的</span>
+</span><span class='line'>    <span class="c1">//如果是cms initmark阶段，如果要unload_classes了(should_unload_classes()返回true)，则weak为null，那就只遍历bootstrapclassloader以及正在做匿名类加载的类加载&lt;br/&gt;</span>
+</span><span class='line'>    <span class="n">CLDClosure</span><span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">closure</span> <span class="o">=</span> <span class="n">cld</span><span class="o">-&gt;</span><span class="n">keep_alive</span><span class="p">()</span> <span class="o">?</span> <span class="nl">strong</span> <span class="p">:</span> <span class="n">weak</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">closure</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>      <span class="n">closure</span><span class="o">-&gt;</span><span class="n">do_cld</span><span class="p">(</span><span class="n">cld</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <h2>类加载器什么时候被回收</h2>
 
@@ -285,126 +407,190 @@ if (closure != NULL) {
 
 <p>lambda匿名类加载走的是unsafe的defineAnonymousClass方法，这个方法在vm里对应的是下面的方法</p>
 
-<p>```
-UNSAFE_ENTRY(jclass, Unsafe_DefineAnonymousClass(JNIEnv *env, jobject unsafe, jclass host_class, jbyteArray data, jobjectArray cp_patches_jh))
-{
-  instanceKlassHandle anon_klass;
-  jobject res_jh = NULL;</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">UNSAFE_ENTRY</span><span class="p">(</span><span class="n">jclass</span><span class="p">,</span> <span class="n">Unsafe_DefineAnonymousClass</span><span class="p">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="p">,</span> <span class="n">jobject</span> <span class="n">unsafe</span><span class="p">,</span> <span class="n">jclass</span> <span class="n">host_class</span><span class="p">,</span> <span class="n">jbyteArray</span> <span class="n">data</span><span class="p">,</span> <span class="n">jobjectArray</span> <span class="n">cp_patches_jh</span><span class="p">))</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>  <span class="n">instanceKlassHandle</span> <span class="n">anon_klass</span><span class="p">;</span>
+</span><span class='line'>  <span class="n">jobject</span> <span class="n">res_jh</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">UnsafeWrapper</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">Unsafe_DefineAnonymousClass</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>  <span class="n">ResourceMark</span> <span class="nf">rm</span><span class="p">(</span><span class="n">THREAD</span><span class="p">);</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">HeapWord</span><span class="o">*</span> <span class="n">temp_alloc</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">anon_klass</span> <span class="o">=</span> <span class="n">Unsafe_DefineAnonymousClass_impl</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">host_class</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>
+</span><span class='line'>                                                <span class="n">cp_patches_jh</span><span class="p">,</span>
+</span><span class='line'>                                                   <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="n">temp_alloc</span><span class="p">,</span> <span class="n">THREAD</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">anon_klass</span><span class="p">()</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">res_jh</span> <span class="o">=</span> <span class="n">JNIHandles</span><span class="o">::</span><span class="n">make_local</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">anon_klass</span><span class="o">-&gt;</span><span class="n">java_mirror</span><span class="p">());</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// try/finally clause:</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">temp_alloc</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">FREE_C_HEAP_ARRAY</span><span class="p">(</span><span class="n">HeapWord</span><span class="p">,</span> <span class="n">temp_alloc</span><span class="p">,</span> <span class="n">mtInternal</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// The anonymous class loader data has been artificially been kept alive to</span>
+</span><span class='line'>  <span class="c1">// this point.   The mirror and any instances of this class have to keep</span>
+</span><span class='line'>  <span class="c1">// it alive afterwards.</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">anon_klass</span><span class="p">()</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">anon_klass</span><span class="o">-&gt;</span><span class="n">class_loader_data</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">set_keep_alive</span><span class="p">(</span><span class="nb">false</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="c1">// let caller initialize it as needed&amp;hellip;&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="k">return</span> <span class="p">(</span><span class="n">jclass</span><span class="p">)</span> <span class="n">res_jh</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'><span class="n">UNSAFE_END</span>
+</span><span class='line'><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>
+</span></code></pre></td></tr></table></div></figure>
+可见，在创建成功匿名类之后，会将对应的ClassLoaderData的<code>_keep_alive</code>属性设置为false，那是不是意味着<code>_keep_alive</code>属性在这之前都是true呢？下面的<code>parse_stream</code>方法是从上面的方法最终会调下来的方法</p>
 
-<p>  UnsafeWrapper("Unsafe_DefineAnonymousClass");
-  ResourceMark rm(THREAD);</p>
-
-<p>  HeapWord* temp_alloc = NULL;</p>
-
-<p>  anon_klass = Unsafe_DefineAnonymousClass_impl(env, host_class, data,</p>
-
-<pre><code>                                            cp_patches_jh,
-                                               &amp;temp_alloc, THREAD);
-</code></pre>
-
-<p>  if (anon_klass() != NULL)</p>
-
-<pre><code>res_jh = JNIHandles::make_local(env, anon_klass-&gt;java_mirror());
-</code></pre>
-
-<p>  // try/finally clause:
-  if (temp_alloc != NULL) {</p>
-
-<pre><code>FREE_C_HEAP_ARRAY(HeapWord, temp_alloc, mtInternal);
-</code></pre>
-
-<p>  }</p>
-
-<p>  // The anonymous class loader data has been artificially been kept alive to
-  // this point.   The mirror and any instances of this class have to keep
-  // it alive afterwards.
-  if (anon_klass() != NULL) {</p>
-
-<pre><code>anon_klass-&gt;class_loader_data()-&gt;set_keep_alive(false);
-</code></pre>
-
-<p>  }</p>
-
-<p>  // let caller initialize it as needed...</p>
-
-<p>  return (jclass) res_jh;
-}
-UNSAFE_END
-}</p>
-
-<p><code>``
-可见，在创建成功匿名类之后，会将对应的ClassLoaderData的</code><em>keep_alive<code>属性设置为false，那是不是意味着</code></em>keep_alive<code>属性在这之前都是true呢？下面的</code>parse_stream`方法是从上面的方法最终会调下来的方法</p>
-
-<p>```
-Klass<em> SystemDictionary::parse_stream(Symbol</em> class_name,</p>
-
-<pre><code>                                  Handle class_loader,
-                                  Handle protection_domain,
-                                  ClassFileStream* st,
-                                  KlassHandle host_klass,
-                                  GrowableArray&lt;Handle&gt;* cp_patches,
-                                  TRAPS) {
-</code></pre>
-
-<p>  TempNewSymbol parsed_name = NULL;</p>
-
-<p>  Ticks class_load_start_time = Ticks::now();</p>
-
-<p>  ClassLoaderData* loader_data;
-  if (host_klass.not_null()) {</p>
-
-<pre><code>// Create a new CLD for anonymous class, that uses the same class loader
-// as the host_klass
-assert(EnableInvokeDynamic, "");
-guarantee(host_klass-&gt;class_loader() == class_loader(), "should be the same");
-guarantee(!DumpSharedSpaces, "must not create anonymous classes when dumping");
-loader_data = ClassLoaderData::anonymous_class_loader_data(class_loader(), CHECK_NULL);
-loader_data-&gt;record_dependency(host_klass(), CHECK_NULL);
-</code></pre>
-
-<p>  } else {</p>
-
-<pre><code>loader_data = ClassLoaderData::class_loader_data(class_loader());
-</code></pre>
-
-<p>  }</p>
-
-<p>  instanceKlassHandle k = ClassFileParser(st).parseClassFile(class_name,</p>
-
-<pre><code>                                                         loader_data,
-                                                         protection_domain,
-                                                         host_klass,
-                                                         cp_patches,
-                                                         parsed_name,
-                                                         true,
-                                                         THREAD);
-</code></pre>
-
-<p>...</p>
-
-<p>}</p>
-
-<p>ClassLoaderData* ClassLoaderData::anonymous_class_loader_data(oop loader, TRAPS) {
-  // Add a new class loader data to the graph.
-  return ClassLoaderDataGraph::add(loader, true, CHECK_NULL);
-}</p>
-
-<p>ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRAPS) {
-  // We need to allocate all the oops for the ClassLoaderData before allocating the
-  // actual ClassLoaderData object.
-  ClassLoaderData::Dependencies dependencies(CHECK_NULL);</p>
-
-<p>  No_Safepoint_Verifier no_safepoints; // we mustn't GC until we've installed the</p>
-
-<pre><code>                                   // ClassLoaderData in the graph since the CLD
-                                   // contains unhandled oops
-</code></pre>
-
-<p>  ClassLoaderData* cld = new ClassLoaderData(loader, is_anonymous, dependencies);</p>
-
-<p>...
-}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">Klass</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">SystemDictionary</span><span class="o">::</span><span class="n">parse_stream</span><span class="p">(</span><span class="n">Symbol</span><span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">class_name</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">Handle</span> <span class="n">class_loader</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">Handle</span> <span class="n">protection_domain</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">ClassFileStream</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">st</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">KlassHandle</span> <span class="n">host_klass</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">GrowableArray</span><span class="o">&lt;</span><span class="n">Handle</span><span class="o">&gt;&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">cp_patches</span><span class="p">,</span>
+</span><span class='line'>                                      <span class="n">TRAPS</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="n">TempNewSymbol</span> <span class="n">parsed_name</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">Ticks</span> <span class="n">class_load_start_time</span> <span class="o">=</span> <span class="n">Ticks</span><span class="o">::</span><span class="n">now</span><span class="p">();</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">ClassLoaderData</span><span class="o">*</span> <span class="n">loader_data</span><span class="p">;</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">host_klass</span><span class="p">.</span><span class="n">not_null</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">// Create a new CLD for anonymous class, that uses the same class loader</span>
+</span><span class='line'>    <span class="c1">// as the host_klass</span>
+</span><span class='line'>    <span class="n">assert</span><span class="p">(</span><span class="n">EnableInvokeDynamic</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>    <span class="n">guarantee</span><span class="p">(</span><span class="n">host_klass</span><span class="o">-&gt;</span><span class="n">class_loader</span><span class="p">()</span> <span class="o">==</span> <span class="n">class_loader</span><span class="p">(),</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">should</span> <span class="n">be</span> <span class="n">the</span> <span class="n">same</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>    <span class="n">guarantee</span><span class="p">(</span><span class="o">!</span><span class="n">DumpSharedSpaces</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">must</span> <span class="n">not</span> <span class="n">create</span> <span class="n">anonymous</span> <span class="n">classes</span> <span class="n">when</span> <span class="n">dumping</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;);</span>
+</span><span class='line'>    <span class="n">loader_data</span> <span class="o">=</span> <span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">anonymous_class_loader_data</span><span class="p">(</span><span class="n">class_loader</span><span class="p">(),</span> <span class="n">CHECK_NULL</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">loader_data</span><span class="o">-&gt;</span><span class="n">record_dependency</span><span class="p">(</span><span class="n">host_klass</span><span class="p">(),</span> <span class="n">CHECK_NULL</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">loader_data</span> <span class="o">=</span> <span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">class_loader_data</span><span class="p">(</span><span class="n">class_loader</span><span class="p">());</span>
+</span><span class='line'>  <span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">instanceKlassHandle</span> <span class="n">k</span> <span class="o">=</span> <span class="n">ClassFileParser</span><span class="p">(</span><span class="n">st</span><span class="p">).</span><span class="n">parseClassFile</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">loader_data</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">protection_domain</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">host_klass</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">cp_patches</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">parsed_name</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="nb">true</span><span class="p">,</span>
+</span><span class='line'>                                                             <span class="n">THREAD</span><span class="p">);</span>
+</span><span class='line'><span class="o">&amp;</span><span class="n">hellip</span><span class="p">;</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="n">ClassLoaderData</span><span class="o">*</span> <span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">anonymous_class_loader_data</span><span class="p">(</span><span class="n">oop</span> <span class="n">loader</span><span class="p">,</span> <span class="n">TRAPS</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="c1">// Add a new class loader data to the graph.</span>
+</span><span class='line'>  <span class="k">return</span> <span class="n">ClassLoaderDataGraph</span><span class="o">::</span><span class="n">add</span><span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="nb">true</span><span class="p">,</span> <span class="n">CHECK_NULL</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="n">ClassLoaderData</span><span class="o">*</span> <span class="n">ClassLoaderDataGraph</span><span class="o">::</span><span class="n">add</span><span class="p">(</span><span class="n">Handle</span> <span class="n">loader</span><span class="p">,</span> <span class="kt">bool</span> <span class="n">is_anonymous</span><span class="p">,</span> <span class="n">TRAPS</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="c1">// We need to allocate all the oops for the ClassLoaderData before allocating the</span>
+</span><span class='line'>  <span class="c1">// actual ClassLoaderData object.</span>
+</span><span class='line'>  <span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">Dependencies</span> <span class="n">dependencies</span><span class="p">(</span><span class="n">CHECK_NULL</span><span class="p">);</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">No_Safepoint_Verifier</span> <span class="n">no_safepoints</span><span class="p">;</span> <span class="c1">// we mustn&amp;rsquo;t GC until we&amp;rsquo;ve installed the</span>
+</span><span class='line'>                                       <span class="c1">// ClassLoaderData in the graph since the CLD</span>
+</span><span class='line'>                                       <span class="c1">// contains unhandled oops&lt;/p&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">ClassLoaderData</span><span class="o">*</span> <span class="n">cld</span> <span class="o">=</span> <span class="n">new</span> <span class="n">ClassLoaderData</span><span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="n">is_anonymous</span><span class="p">,</span> <span class="n">dependencies</span><span class="p">);</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;&amp;</span><span class="n">hellip</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>从上面的代码得知，只要走了unsafe的那个方法，都会为当前类加载器创建一个ClassLoaderData对象，并设置其<code>_is_anonymous</code>为true，也同时意味着<code>_keep_alive</code>的属性是true，并加入到ClassLoaderDataGraph中。</p>
 
@@ -414,26 +600,31 @@ loader_data-&gt;record_dependency(host_klass(), CHECK_NULL);
 
 <p>这里说的类加载器依赖，并不是说ClassLoader里的parent建立的那种依赖关系，如果是这种关系，那其实通过mat或者zprofiler这样的工具都是可以分析出来的，但是还存在一种情况，那些工具都是分析不出来的，这种关系就是通过ClassLoaderData里的<code>_dependencies</code>属性得出来的，比如说如果A类加载器的<code>_dependencies</code>属性里记录了B类加载器，那当GC遍历A类加载器的时候也会遍历B类加载器，并将其标活，哪怕B类加载器其实是可以被回收了的，可以看下下面的代码</p>
 
-<p>```
-void ClassLoaderData::oops_do(OopClosure<em> f, KlassClosure</em> klass_closure, bool must_claim) {
-  if (must_claim &amp;&amp; !claim()) {</p>
-
-<pre><code>return;
-</code></pre>
-
-<p>  }</p>
-
-<p>  f->do_oop(&amp;<em>class_loader);
-  </em>dependencies.oops_do(f);
-  _handles->oops_do(f);
-  if (klass_closure != NULL) {</p>
-
-<pre><code>classes_do(klass_closure);
-</code></pre>
-
-<p>  }
-}
-```</p>
+<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">void</span> <span class="n">ClassLoaderData</span><span class="o">::</span><span class="n">oops_do</span><span class="p">(</span><span class="n">OopClosure</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">f</span><span class="p">,</span> <span class="n">KlassClosure</span><span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span> <span class="n">klass_closure</span><span class="p">,</span> <span class="kt">bool</span> <span class="n">must_claim</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">must_claim</span> <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span> <span class="o">!</span><span class="n">claim</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span><span class="p">;</span>
+</span><span class='line'>  <span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span>  <span class="n">f</span><span class="o">-&gt;</span><span class="n">do_oop</span><span class="p">(</span><span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">class_loader</span><span class="p">);</span>
+</span><span class='line'>  <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">dependencies</span><span class="p">.</span><span class="n">oops_do</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
+</span><span class='line'>  <span class="n">_handles</span><span class="o">-&gt;</span><span class="n">oops_do</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">klass_closure</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">classes_do</span><span class="p">(</span><span class="n">klass_closure</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure></p>
 
 <p>那问题来了，这种依赖关系是怎么记录的呢？其实我们上面的demo就模拟了这种情况，可以仔细去看看，我也针对这个demo描述下，比如加载AAA的类加载器TestLoader加载AAA后，并创建AAA对象，此时会看到有个类型是AAB的属性，此时会对常量池里的类型做一个解析，我们看到TestLoader的loadClass方法的时候做了一个判断，如果是AAB类型的类加载，那就创建一个新的类加载器对象从AAB.jar里去加载，当加载返回的时候，在jvm里其实就会记录这么一层依赖关系，认为AAA的类加载器依赖AAB的类加载器，并记录下来，但是纵观所有的hotspot代码，并没有一个地方来清理这种依赖关系的，也就是说只要这种依赖关系建立起来，会一直持续到AAA的类加载器被回收的时候，AAB的类加载器才会被回收，所以说这算一种伪僵尸类加载器，虽然从依赖关系上其实并不依赖了(比如demo里将AAA的aab属性做clear清空动作)，但是GC会一直认为他们是存在这种依赖关系的，会持续存在一段时间，具体持续多久就看AAA类加载器的情况了。</p>
 
@@ -461,96 +652,80 @@ void ClassLoaderData::oops_do(OopClosure<em> f, KlassClosure</em> klass_closure,
 
 <p>还是老规矩，先上demo，让大家直观地知道我们要说的问题。</p>
 
-<p>```
-public class Test {</p>
+<pre><code>public class Test {
+      static &lt;T extends Number&gt; T getObject() {
+            return (T)Long.valueOf(1L);
+      }
 
-<pre><code>  static &lt;T extends Number&gt; T getObject() {
-        return (T)Long.valueOf(1L);
-  }
-
-  public static void main(String... args) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        sb.append(getObject());
-  }
+      public static void main(String... args) throws Exception {
+            StringBuilder sb = new StringBuilder();
+            sb.append(getObject());
+      }
+}
 </code></pre>
 
-<p>}
-```
-demo很简单，就是有个使用了泛型的函数getObject，其返回类型是Number的子类，然后我们将函数返回值传给StringBuilder的多态方法append，我们知道append方法有很多，参数类型也很多，但是唯独没有参数是Number的append方法，如果有的话，大家应该猜到会优先选择这个方法了，既然没有，那到底会选哪个呢，我们分别用jdk6(jdk7类似)和jdk8来编译下上面的类，然后用javap看看输出结果（只看main方法）：</p>
+<p>demo很简单，就是有个使用了泛型的函数getObject，其返回类型是Number的子类，然后我们将函数返回值传给StringBuilder的多态方法append，我们知道append方法有很多，参数类型也很多，但是唯独没有参数是Number的append方法，如果有的话，大家应该猜到会优先选择这个方法了，既然没有，那到底会选哪个呢，我们分别用jdk6(jdk7类似)和jdk8来编译下上面的类，然后用javap看看输出结果（只看main方法）：</p>
 
 <p>jdk6编译的字节码：</p>
 
-<p>```
-public static void main(java.lang.String...) throws java.lang.Exception;</p>
-
-<pre><code>flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
-Code:
-  stack=2, locals=2, args_size=1
-     0: new           #3                  // class java/lang/StringBuilder
-     3: dup
-     4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
-     7: astore_1
-     8: aload_1
-     9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
-    12: invokevirtual #6                  // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
-    15: pop
-    16: return
-  LineNumberTable:
-    line 8: 0
-    line 9: 8
-    line 10: 16
-Exceptions:
-  throws java.lang.Exception
+<pre><code>public static void main(java.lang.String...) throws java.lang.Exception;
+    flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #3                  // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
+         7: astore_1
+         8: aload_1
+         9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+        12: invokevirtual #6                  // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+        15: pop
+        16: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 8
+        line 10: 16
+    Exceptions:
+      throws java.lang.Exception
 </code></pre>
-
-<p>```</p>
 
 <p>jdk8编译的字节码：</p>
 
-<p>```
-public static void main(java.lang.String...) throws java.lang.Exception;</p>
-
-<pre><code>descriptor: ([Ljava/lang/String;)V
-flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
-Code:
-  stack=2, locals=2, args_size=1
-     0: new           #3                  // class java/lang/StringBuilder
-     3: dup
-     4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
-     7: astore_1
-     8: aload_1
-     9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
-    12: checkcast     #6                  // class java/lang/CharSequence
-    15: invokevirtual #7                  // Method java/lang/StringBuilder.append:(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;
-    18: pop
-    19: return
-  LineNumberTable:
-    line 8: 0
-    line 9: 8
-    line 10: 19
-Exceptions:
-  throws java.lang.Exception
+<pre><code>public static void main(java.lang.String...) throws java.lang.Exception;
+    descriptor: ([Ljava/lang/String;)V
+    flags: ACC_PUBLIC, ACC_STATIC, ACC_VARARGS
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #3                  // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #4                  // Method java/lang/StringBuilder."&lt;init&gt;":()V
+         7: astore_1
+         8: aload_1
+         9: invokestatic  #5                  // Method getObject:()Ljava/lang/Number;
+        12: checkcast     #6                  // class java/lang/CharSequence
+        15: invokevirtual #7                  // Method java/lang/StringBuilder.append:(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;
+        18: pop
+        19: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 8
+        line 10: 19
+    Exceptions:
+      throws java.lang.Exception
 </code></pre>
-
-<p>```</p>
 
 <p>对比上面那个的差异，我们看到bci从12开始变了，jdk8里多了下面这行表示要对栈顶的数据做一次类型检查看是不是CharSequence类型：</p>
 
-<p><code>
- 12: checkcast     #6                  // class java/lang/CharSequence
-</code></p>
+<pre><code> 12: checkcast     #6                  // class java/lang/CharSequence
+</code></pre>
 
 <p>另外调用的StringBuilder的append方法也是不一样的，jdk7里是调用的参数为Object类型的append方法，而jdk8里调用的是CharSequence类型的append方法。</p>
 
 <p>最主要的是在jdk6和jdk8下运行上面的代码，在jdk6下是正常跑过的，但是在jdk8下是直接抛出异常的：</p>
 
-<p>```
-Exception in thread "main" java.lang.ClassCastException: java.lang.Long cannot be cast to java.lang.CharSequence</p>
-
-<pre><code>at Test.main(Test.java:9)
+<pre><code>Exception in thread "main" java.lang.ClassCastException: java.lang.Long cannot be cast to java.lang.CharSequence
+    at Test.main(Test.java:9)
 </code></pre>
-
-<p>```</p>
 
 <p>至此问题整个应该描述清楚了。</p>
 
@@ -558,152 +733,142 @@ Exception in thread "main" java.lang.ClassCastException: java.lang.Long cannot b
 
 <p>先来说说如果要我们来做这个java编译器实现这个功能，我们要怎么来做，其他的都是很明确的，重点在于如下这段如何来确定append的方法使用哪个：</p>
 
-<p><code>
-sb.append(getObject());
-</code>
-我们知道getObject()返回的是个泛型对象，这个对象是Number的子类，因此我们首先会去遍历StringBuilder的所有可见的方法，包括从父类继承过来的，找是不是存在一个方法叫做append，并且参数类型是Number的方法，如果有，那就直接使用这个方法，如果没有，那我们得想办法找到一个最合适的方法，关键就在于这个合适怎么定义，比如说我们看到有个append的方法，其参数是Object类型的，Number是Object的子类，所以我们选择这个方法肯定没问题，假如说另外有个append方法，其参数是Serializable类型(当然其实并没有这种参数的方法)，Number实现了这个接口，我们选择这个方法也是没问题的，那到底是Object参数的更合适还是Serializable的更合适呢，还有更甚者，我们知道StringBuilder有个方法，其参数是CharSequence，假如我们传进去的参数其实既是Number的子类，同时又实现了CharSequence这个接口，那我们究竟要不要选它呢？这些问题我们都需要去考虑，而且各有各的理由，说起来都感觉挺合理的。</p>
+<pre><code>sb.append(getObject());
+</code></pre>
+
+<p>我们知道getObject()返回的是个泛型对象，这个对象是Number的子类，因此我们首先会去遍历StringBuilder的所有可见的方法，包括从父类继承过来的，找是不是存在一个方法叫做append，并且参数类型是Number的方法，如果有，那就直接使用这个方法，如果没有，那我们得想办法找到一个最合适的方法，关键就在于这个合适怎么定义，比如说我们看到有个append的方法，其参数是Object类型的，Number是Object的子类，所以我们选择这个方法肯定没问题，假如说另外有个append方法，其参数是Serializable类型(当然其实并没有这种参数的方法)，Number实现了这个接口，我们选择这个方法也是没问题的，那到底是Object参数的更合适还是Serializable的更合适呢，还有更甚者，我们知道StringBuilder有个方法，其参数是CharSequence，假如我们传进去的参数其实既是Number的子类，同时又实现了CharSequence这个接口，那我们究竟要不要选它呢？这些问题我们都需要去考虑，而且各有各的理由，说起来都感觉挺合理的。</p>
 
 <h2>JDK6里泛型的类型推导</h2>
 
 <p>这里分析的是jdk6的javac代码，不过大致看了下jdk7的这块针对这个问题的逻辑也差不多，所以就以这块为例了，jdk6里的泛型类型推导其实比较简单，从上面的输出结果我们也猜到了，其实就是选了参数为Object类型的append方法，它觉得它是最合适的：</p>
 
-<p>```
-private Symbol findMethod(Env<AttrContext> env,</p>
-
-<pre><code>                          Type site,
-                          Name name,
-                          List&lt;Type&gt; argtypes,
-                          List&lt;Type&gt; typeargtypes,
-                          Type intype,
-                          boolean abstractok,
-                          Symbol bestSoFar,
-                          boolean allowBoxing,
-                          boolean useVarargs,
-                          boolean operator) {
-    for (Type ct = intype; ct.tag == CLASS; ct = types.supertype(ct)) {
-        ClassSymbol c = (ClassSymbol)ct.tsym;
-        if ((c.flags() &amp; (ABSTRACT | INTERFACE | ENUM)) == 0)
-            abstractok = false;
-        for (Scope.Entry e = c.members().lookup(name);
-             e.scope != null;
-             e = e.next()) {
-            //- System.out.println(" e " + e.sym);
-            if (e.sym.kind == MTH &amp;&amp;
-                (e.sym.flags_field &amp; SYNTHETIC) == 0) {
-                bestSoFar = selectBest(env, site, argtypes, typeargtypes,
-                                       e.sym, bestSoFar,
-                                       allowBoxing,
-                                       useVarargs,
-                                       operator);
+<pre><code>private Symbol findMethod(Env&lt;AttrContext&gt; env,
+                              Type site,
+                              Name name,
+                              List&lt;Type&gt; argtypes,
+                              List&lt;Type&gt; typeargtypes,
+                              Type intype,
+                              boolean abstractok,
+                              Symbol bestSoFar,
+                              boolean allowBoxing,
+                              boolean useVarargs,
+                              boolean operator) {
+        for (Type ct = intype; ct.tag == CLASS; ct = types.supertype(ct)) {
+            ClassSymbol c = (ClassSymbol)ct.tsym;
+            if ((c.flags() &amp; (ABSTRACT | INTERFACE | ENUM)) == 0)
+                abstractok = false;
+            for (Scope.Entry e = c.members().lookup(name);
+                 e.scope != null;
+                 e = e.next()) {
+                //- System.out.println(" e " + e.sym);
+                if (e.sym.kind == MTH &amp;&amp;
+                    (e.sym.flags_field &amp; SYNTHETIC) == 0) {
+                    bestSoFar = selectBest(env, site, argtypes, typeargtypes,
+                                           e.sym, bestSoFar,
+                                           allowBoxing,
+                                           useVarargs,
+                                           operator);
+                }
+            }
+            //- System.out.println(" - " + bestSoFar);
+            if (abstractok) {
+                Symbol concrete = methodNotFound;
+                if ((bestSoFar.flags() &amp; ABSTRACT) == 0)
+                    concrete = bestSoFar;
+                for (List&lt;Type&gt; l = types.interfaces(c.type);
+                     l.nonEmpty();
+                     l = l.tail) {
+                    bestSoFar = findMethod(env, site, name, argtypes,
+                                           typeargtypes,
+                                           l.head, abstractok, bestSoFar,
+                                           allowBoxing, useVarargs, operator);
+                }
+            if (concrete != bestSoFar &amp;&amp;
+                    concrete.kind &lt; ERR  &amp;&amp; bestSoFar.kind &lt; ERR &amp;&amp;
+                    types.isSubSignature(concrete.type, bestSoFar.type))
+                    bestSoFar = concrete;
             }
         }
-        //- System.out.println(" - " + bestSoFar);
-        if (abstractok) {
-            Symbol concrete = methodNotFound;
-            if ((bestSoFar.flags() &amp; ABSTRACT) == 0)
-                concrete = bestSoFar;
-            for (List&lt;Type&gt; l = types.interfaces(c.type);
-                 l.nonEmpty();
-                 l = l.tail) {
-                bestSoFar = findMethod(env, site, name, argtypes,
-                                       typeargtypes,
-                                       l.head, abstractok, bestSoFar,
-                                       allowBoxing, useVarargs, operator);
-            }
-        if (concrete != bestSoFar &amp;&amp;
-                concrete.kind &lt; ERR  &amp;&amp; bestSoFar.kind &lt; ERR &amp;&amp;
-                types.isSubSignature(concrete.type, bestSoFar.type))
-                bestSoFar = concrete;
-        }
+        return bestSoFar;
     }
-    return bestSoFar;
-}
 </code></pre>
-
-<p>```</p>
 
 <p>上面的逻辑大概是遍历当前类(比如这个例子中的StringBuilder)及其父类，依次从他们的方法里找出一个最合适的方法返回，重点就落在了selectBest这个方法上:</p>
 
-<p>```
-Symbol selectBest(Env<AttrContext> env,</p>
-
-<pre><code>                  Type site,
-                  List&lt;Type&gt; argtypes,
-                  List&lt;Type&gt; typeargtypes,
-                  Symbol sym,
-                  Symbol bestSoFar,
-                  boolean allowBoxing,
-                  boolean useVarargs,
-                  boolean operator) {
-    if (sym.kind == ERR) return bestSoFar;
-    if (!sym.isInheritedIn(site.tsym, types)) return bestSoFar;
-    assert sym.kind &lt; AMBIGUOUS;
-    try {
-        if (rawInstantiate(env, site, sym, argtypes, typeargtypes,
-                           allowBoxing, useVarargs, Warner.noWarnings) == null) {
-            // inapplicable
+<pre><code>Symbol selectBest(Env&lt;AttrContext&gt; env,
+                      Type site,
+                      List&lt;Type&gt; argtypes,
+                      List&lt;Type&gt; typeargtypes,
+                      Symbol sym,
+                      Symbol bestSoFar,
+                      boolean allowBoxing,
+                      boolean useVarargs,
+                      boolean operator) {
+        if (sym.kind == ERR) return bestSoFar;
+        if (!sym.isInheritedIn(site.tsym, types)) return bestSoFar;
+        assert sym.kind &lt; AMBIGUOUS;
+        try {
+            if (rawInstantiate(env, site, sym, argtypes, typeargtypes,
+                               allowBoxing, useVarargs, Warner.noWarnings) == null) {
+                // inapplicable
+                switch (bestSoFar.kind) {
+                case ABSENT_MTH: return wrongMethod.setWrongSym(sym);
+                case WRONG_MTH: return wrongMethods;
+                default: return bestSoFar;
+                }
+            }
+        } catch (Infer.NoInstanceException ex) {
             switch (bestSoFar.kind) {
-            case ABSENT_MTH: return wrongMethod.setWrongSym(sym);
-            case WRONG_MTH: return wrongMethods;
-            default: return bestSoFar;
+            case ABSENT_MTH:
+                return wrongMethod.setWrongSym(sym, ex.getDiagnostic());
+            case WRONG_MTH:
+                return wrongMethods;
+            default:
+                return bestSoFar;
             }
         }
-    } catch (Infer.NoInstanceException ex) {
-        switch (bestSoFar.kind) {
-        case ABSENT_MTH:
-            return wrongMethod.setWrongSym(sym, ex.getDiagnostic());
-        case WRONG_MTH:
-            return wrongMethods;
-        default:
-            return bestSoFar;
+        if (!isAccessible(env, site, sym)) {
+            return (bestSoFar.kind == ABSENT_MTH)
+                ? new AccessError(env, site, sym)
+                : bestSoFar;
         }
+        return (bestSoFar.kind &gt; AMBIGUOUS)
+            ? sym
+            : mostSpecific(sym, bestSoFar, env, site,
+                           allowBoxing &amp;&amp; operator, useVarargs);
     }
-    if (!isAccessible(env, site, sym)) {
-        return (bestSoFar.kind == ABSENT_MTH)
-            ? new AccessError(env, site, sym)
-            : bestSoFar;
-    }
-    return (bestSoFar.kind &gt; AMBIGUOUS)
-        ? sym
-        : mostSpecific(sym, bestSoFar, env, site,
-                       allowBoxing &amp;&amp; operator, useVarargs);
-}
 </code></pre>
 
-<p>```
-这个方法的主要逻辑落在rawInstantiate这个方法里(具体代码不贴了，有兴趣的去看下代码，我将最终最关键的调用方法argumentsAcceptable贴出来，主要做参数的匹配)，如果当前方法也合适，那就和之前挑出来的最好的方法做一个比较看谁最适合，这个选择过程在最后的mostSpecific方法里，其实就和冒泡排序差不多，不过是找最接近的那个类型(逐层找对应是父类的方法，和最小公倍数有点类似)。</p>
+<p>这个方法的主要逻辑落在rawInstantiate这个方法里(具体代码不贴了，有兴趣的去看下代码，我将最终最关键的调用方法argumentsAcceptable贴出来，主要做参数的匹配)，如果当前方法也合适，那就和之前挑出来的最好的方法做一个比较看谁最适合，这个选择过程在最后的mostSpecific方法里，其实就和冒泡排序差不多，不过是找最接近的那个类型(逐层找对应是父类的方法，和最小公倍数有点类似)。</p>
 
-<p>```</p>
-
-<pre><code>boolean argumentsAcceptable(List&lt;Type&gt; argtypes,
-                            List&lt;Type&gt; formals,
-                            boolean allowBoxing,
-                            boolean useVarargs,
-                            Warner warn) {
-    Type varargsFormal = useVarargs ? formals.last() : null;
-    while (argtypes.nonEmpty() &amp;&amp; formals.head != varargsFormal) {
-        boolean works = allowBoxing
-            ? types.isConvertible(argtypes.head, formals.head, warn)
-            : types.isSubtypeUnchecked(argtypes.head, formals.head, warn);
-        if (!works) return false;
-        argtypes = argtypes.tail;
-        formals = formals.tail;
-    }
-    if (formals.head != varargsFormal) return false; // not enough args
-    if (!useVarargs)
-        return argtypes.isEmpty();
-    Type elt = types.elemtype(varargsFormal);
-    while (argtypes.nonEmpty()) {
-        if (!types.isConvertible(argtypes.head, elt, warn))
-            return false;
-        argtypes = argtypes.tail;
-    }
-    return true;
-}    
+<pre><code class="">    boolean argumentsAcceptable(List&lt;Type&gt; argtypes,
+                                List&lt;Type&gt; formals,
+                                boolean allowBoxing,
+                                boolean useVarargs,
+                                Warner warn) {
+        Type varargsFormal = useVarargs ? formals.last() : null;
+        while (argtypes.nonEmpty() &amp;&amp; formals.head != varargsFormal) {
+            boolean works = allowBoxing
+                ? types.isConvertible(argtypes.head, formals.head, warn)
+                : types.isSubtypeUnchecked(argtypes.head, formals.head, warn);
+            if (!works) return false;
+            argtypes = argtypes.tail;
+            formals = formals.tail;
+        }
+        if (formals.head != varargsFormal) return false; // not enough args
+        if (!useVarargs)
+            return argtypes.isEmpty();
+        Type elt = types.elemtype(varargsFormal);
+        while (argtypes.nonEmpty()) {
+            if (!types.isConvertible(argtypes.head, elt, warn))
+                return false;
+            argtypes = argtypes.tail;
+        }
+        return true;
+    }    
 </code></pre>
 
-<p>```
-针对具体的例子其实就是看StringBuilder里的哪个方法的参数是Number的父类，如果不是就表示没有找到，如果参数都符合期望就表示找到，然后返回。</p>
+<p>针对具体的例子其实就是看StringBuilder里的哪个方法的参数是Number的父类，如果不是就表示没有找到，如果参数都符合期望就表示找到，然后返回。</p>
 
 <p>所以jdk6里的这块的逻辑相对来说比较简单。</p>
 

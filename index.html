@@ -1,195 +1,149 @@
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
-<head>
-  <meta charset="utf-8">
-  <title>你假笨</title>
-  <meta name="author" content="你假笨">
+<!DOCTYPE HTML>
 
-   
-  <meta name="description" content="技术宅改变世界">
-  
-  <meta name="keywords" content="">
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="gc, jvm YGC前后新生代变大？ 问题描述 我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的： 1
+2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): &hellip;">
+	
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
   <meta name="MobileOptimized" content="320">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
   
-  <link rel="canonical" href="http://nijiaben.github.io">
-  <link href="/favicon.ico" rel="icon">
-  <!--
-  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
-  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
-  -->
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
-  <script src="/js/jquery.js"></script>
-  <script src="/js/bootstrap-collapse.js"></script>
-  <script src="/js/modernizr-2.0.js"></script>
-  <script src="/js/octopress.js" type="text/javascript"></script>
-  <script src="/js/application.js"></script>
-  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
-  <script type="text/javascript"]]>
-    	$(function(){     
-		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
-	         window.prettyPrint && prettyPrint();
-                 $('table').addClass('table')});
-  </script>
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
--->
-
-  
-  <script type="text/javascript">
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-52812422-1']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-  </script>
-
 
 </head>
 
-<body   >
-  <div class="navbar navbar-inverse navbar-static-top">
-  	<div class="navbar-inner">
-  	  <div class="container">
-        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
-          <span class="fui-menu-24"></span>
-        </a>
-  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
-  	      <ul class="nav">
-    
-        <li ><a href="/">博客</a></li>
-    
-        <li ><a href="/archives/index.html">目录</a></li>
-    
-        <li ><a href="/comments/latest.html">最新评论</a></li>
-    
-        <li ><a href="/about/index.html">关于你假笨</a></li>
-    
-</ul>
 
-<ul class="nav pull-right">
-    
-    
-    
-    
-    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
-    
-    
-    
-    
-    
-    
-    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
-    
-
-    
-</ul>
-
-  	    </div>
-  	  </div>
-  	</div>
-  </div>
-  <div class="container" id="main">
-      <div class="row-fluid">
-        <div id="content">
-          <div class="jumbotron">
-  <div class="container">
-    <img src="/images/header/header.jpg" width="100" height="100">
-    
-      你假笨
-    
-    <h3 class="tagline">
-      
-        jvm，linux，tcp&#8230;
-      
-    </h3>
-  </div>
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
 </div>
 
+<nav id="main-nav"><ul class="main">
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li>
+</ul>
 
-<div class="blog-index">
+
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner">
+<div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
   
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
 
 
+<time datetime="2016-05-18T18:59:44+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
 
 
+	<a class='category' href='/blog/categories/gc/'>gc</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
 
 
-
-
-  
-
-
-<i class="icon-calendar-empty"></i> <time datetime="2016-05-18T18:59:44+08:00" pubdate data-updated="true">May 18<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/05/18/ygc-worse/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/gc/"><span class="badge">GC</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/05/18/ygc-worse/">YGC前后新生代变大？</a></h1>
-      <h2>问题描述</h2>
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/05/18/ygc-worse/" itemprop="url">YGC前后新生代变大？</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>问题描述</h2>
 
 <p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): 636088K-&gt;690555K(707840K), 0.2958900 secs][CMS: 1019739K-&gt;1019733K(1310720K), 2.6208600 secs] 1655820K-&gt;1655820K(2018560K), [CMS Perm : 205486K-&gt;205486K(262144K)], 2.9174390 secs] [Times: user=3.74 sys=0.01, real=2.91 secs]</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="mi">2016</span><span class="o">-</span><span class="mo">05</span><span class="o">-</span><span class="mi">18</span><span class="nl">T15</span><span class="p">:</span><span class="mo">06</span><span class="o">:</span><span class="mf">13.011</span><span class="o">+</span><span class="mi">0800</span><span class="o">:</span> <span class="p">[</span><span class="n">GC</span> <span class="p">[</span><span class="n">ParNew</span> <span class="p">(</span><span class="n">promotion</span> <span class="n">failed</span><span class="p">)</span><span class="o">:</span> <span class="mi">636088</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">690555</span><span class="n">K</span><span class="p">(</span><span class="mi">707840</span><span class="n">K</span><span class="p">),</span> <span class="mf">0.2958900</span> <span class="n">secs</span><span class="p">][</span><span class="nl">CMS</span><span class="p">:</span> <span class="mi">1019739</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1019733</span><span class="n">K</span><span class="p">(</span><span class="mi">1310720</span><span class="n">K</span><span class="p">),</span> <span class="mf">2.6208600</span> <span class="n">secs</span><span class="p">]</span> <span class="mi">1655820</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1655820</span><span class="n">K</span><span class="p">(</span><span class="mi">2018560</span><span class="n">K</span><span class="p">),</span> <span class="p">[</span><span class="n">CMS</span> <span class="nl">Perm</span> <span class="p">:</span> <span class="mi">205486</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">205486</span><span class="n">K</span><span class="p">(</span><span class="mi">262144</span><span class="n">K</span><span class="p">)],</span> <span class="mf">2.9174390</span> <span class="n">secs</span><span class="p">]</span> <span class="p">[</span><span class="nl">Times</span><span class="p">:</span> <span class="n">user</span><span class="o">=</span><span class="mf">3.74</span> <span class="n">sys</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">real</span><span class="o">=</span><span class="mf">2.91</span> <span class="n">secs</span><span class="p">]</span>
+</span></code></pre></td></tr></table></div></figure>
 
 
 <p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
 
 
-      
-       <a href="/blog/2016/05/18/ygc-worse/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/05/18/ygc-worse/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -201,50 +155,33 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-04-24T11:21:24+08:00" pubdate data-updated="true">Apr 24<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/04/24/classloader-unload/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/classloader/"><span class="badge">ClassLoader</span></a>
-          
-          <a href="/blog/categories/jdk8/"><span class="badge">JDK8</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/04/24/classloader-unload/">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
-      <h2>概述</h2>
+<time datetime="2016-04-24T11:21:24+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/24/classloader-unload/" itemprop="url">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
 
 <p>这篇文章基于最近在排查的一个问题，花了我们团队不少时间来排查这个问题，现象是有一些类加载器是作为key放到WeakHashMap里的，但是经历过多次full gc之后，依然坚挺地存在内存里，但是从代码上来说这些类加载器是应该被回收的，因为没有任何强引用可以到达这些类加载器了，于是我们做了内存dump，分析了下内存，发现除了一个WeakHashMap外并没有别的GC ROOT途径达到这些类加载器了，那这样一来经过多次FULL GC肯定是可以被回收的，但是事实却不是这样，为了让这个问题听起来更好理解，还是照例先上个Demo，完全模拟了这种场景。</p>
 
 
-      
-       <a href="/blog/2016/04/24/classloader-unload/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/04/24/classloader-unload/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -256,25 +193,19 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-04-19T01:24:25+08:00" pubdate data-updated="true">Apr 19<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/04/19/stack-over-flow/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/stackoverflow/"><span class="badge">StackOverflow</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/04/19/stack-over-flow/">JVM源码分析之栈溢出完全解读</a></h1>
-      <h2>概述</h2>
+<time datetime="2016-04-19T01:24:25+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/stackoverflow/'>stackoverflow</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/19/stack-over-flow/" itemprop="url">JVM源码分析之栈溢出完全解读</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
 
 <p>之所以想写这篇文章，其实是因为最近有不少系统出现了栈溢出导致进程crash的问题，并且很隐蔽，根本原因还得借助coredump才能分析出来，于是想从JVM实现的角度来全面分析下栈溢出的这类问题，或许你碰到过如下的场景:</p>
 
@@ -288,25 +219,16 @@
 <p>这些都可能是栈溢出导致的。</p>
 
 
-      
-       <a href="/blog/2016/04/19/stack-over-flow/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/04/19/stack-over-flow/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -318,50 +240,33 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-04-03T12:50:39+08:00" pubdate data-updated="true">Apr 3<span>rd</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/04/03/type-inference/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jdk8/"><span class="badge">JDK8</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          <a href="/blog/categories/typeinference/"><span class="badge">TypeInference</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/04/03/type-inference/">JDK8在泛型类型推导上的变化</a></h1>
-      <h2>概述</h2>
+<time datetime="2016-04-03T12:50:39+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/typeinference/'>typeinference</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/03/type-inference/" itemprop="url">JDK8在泛型类型推导上的变化</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
 
 <p>最近公司在大面积推广JDK8，整体来说升级上来算顺利的，大部分问题可能在编译期就碰到了，但是有些时候比较蛋疼，编译期没有出现问题，但是在运行期就出了问题，比如今天要说的这个话题，所以大家再升级的时候还是要多测测再上线，当然JDK8给我们带来了不少收益，花点时间升级上来还是值得的。</p>
 
 
-      
-       <a href="/blog/2016/04/03/type-inference/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/04/03/type-inference/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -373,46 +278,31 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-31T22:11:56+08:00" pubdate data-updated="true">Mar 31<span>st</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/31/class-init/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/class/"><span class="badge">Class</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/31/class-init/">不可逆的类初始化过程</a></h1>
-      <p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
+<time datetime="2016-03-31T22:11:56+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
 
 
-      
-       <a href="/blog/2016/03/31/class-init/">Read on &rarr;</a> 
-    </div>
-  </div>
+	<a class='category' href='/blog/categories/class/'>class</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
 
 
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/" itemprop="url">不可逆的类初始化过程</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
 
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
 
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+		
+		<a href="/blog/2016/03/31/class-init/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -424,46 +314,31 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-31T18:27:35+08:00" pubdate data-updated="true">Mar 31<span>st</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/31/cpu-thread/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/cpu/"><span class="badge">CPU</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/31/cpu-thread/">如何定位消耗CPU最多的线程</a></h1>
-      <p>之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。</p>
+<time datetime="2016-03-31T18:27:35+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
 
 
-      
-       <a href="/blog/2016/03/31/cpu-thread/">Read on &rarr;</a> 
-    </div>
-  </div>
+	<a class='category' href='/blog/categories/cpu/'>cpu</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
 
 
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/cpu-thread/" itemprop="url">如何定位消耗CPU最多的线程</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。</p>
 
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
 
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+		
+		<a href="/blog/2016/03/31/cpu-thread/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -475,46 +350,33 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-27T11:31:25+08:00" pubdate data-updated="true">Mar 27<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/27/object-wait-notify/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/27/object-wait-notify/">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
-      <h2>概述</h2>
+<time datetime="2016-03-27T11:31:25+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/27/object-wait-notify/" itemprop="url">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
 
 <p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
 
 
-      
-       <a href="/blog/2016/03/27/object-wait-notify/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/03/27/object-wait-notify/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -526,50 +388,33 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2016-03-15T13:51:58+08:00" pubdate data-updated="true">Mar 15<span>th</span>, 2016</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2016/03/15/ygc-classloader/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/classloader/"><span class="badge">ClassLoader</span></a>
-          
-          <a href="/blog/categories/gc/"><span class="badge">GC</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2016/03/15/ygc-classloader/">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
-      <h2>概述</h2>
+<time datetime="2016-03-15T13:51:58+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/gc/'>gc</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/15/ygc-classloader/" itemprop="url">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
 
 <p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
 
 
-      
-       <a href="/blog/2016/03/15/ygc-classloader/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2016/03/15/ygc-classloader/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -581,48 +426,33 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2015-10-21T18:54:01+08:00" pubdate data-updated="true">Oct 21<span>st</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/10/21/deadlock/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/deadlock/"><span class="badge">DeadLock</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/10/21/deadlock/">消失的死锁</a></h1>
-      <h2>问题描述</h2>
+<time datetime="2015-10-21T18:54:01+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/deadlock/'>deadlock</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/10/21/deadlock/" itemprop="url">消失的死锁</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>问题描述</h2>
 
 <p>如果java层面发生了死锁，当我们使用<code>jstack</code>命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似<code>Found one Java-level deadlock:</code>的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来，这次碰到一个系统就发生类似的问题，不过这个dump文档里虽然提到了如下的死锁信息：</p>
 
 
-      
-       <a href="/blog/2015/10/21/deadlock/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2015/10/21/deadlock/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
-
-    </article>
-    
-    <hr>
-    
-  
-  
-    <article>
-      
-
-  <div class="row-fluid">
-    <div class="span2 post-meta">
-	  <h5 class="date-time">
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
 
 
 
@@ -634,77 +464,52 @@
   
 
 
-<i class="icon-calendar-empty"></i> <time datetime="2015-09-14T13:17:50+08:00" pubdate data-updated="true">Sep 14<span>th</span>, 2015</time></h5>
-          <div class="row-fluid">
-          
-           <a href="/blog/2015/09/14/javaagent/#comments"]]>Comments </a><span class="fui-bubble-16"></span>         
-          
-          </div>
-          
-          <div class="row-fluid">
-          
-          <a href="/blog/categories/agent/"><span class="badge">Agent</span></a>
-          
-          <a href="/blog/categories/jvm/"><span class="badge">JVM</span></a>
-          
-          </div>
-          
-    </div>
-    <div class="span10 post-container">
-      <h1 class="link"><a href="/blog/2015/09/14/javaagent/">JVM源码分析之javaagent原理完全解读</a></h1>
-      <p><code>注:文章首发于InfoQ：</code><a href="http://www.infoq.com/cn/articles/javaagent-illustrated">JVM源码分析之javaagent原理完全解读</a></p>
+<time datetime="2015-09-14T13:17:50+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/agent/'>agent</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/09/14/javaagent/" itemprop="url">JVM源码分析之javaagent原理完全解读</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p><code>注:文章首发于InfoQ：</code><a href="http://www.infoq.com/cn/articles/javaagent-illustrated">JVM源码分析之javaagent原理完全解读</a></p>
 
 <h2>概述</h2>
 
 <p>本文重点讲述javaagent的具体实现，因为它面向的是我们java程序员，而且agent都是用java编写的，不需要太多的c/c++编程基础，不过这篇文章里也会讲到JVMTIAgent(c实现的)，因为javaagent的运行还是依赖于一个特殊的JVMTIAgent。</p>
 
 
-      
-       <a href="/blog/2015/09/14/javaagent/">Read on &rarr;</a> 
-    </div>
-  </div>
+		
+		<a href="/blog/2015/09/14/javaagent/" class="more-link">Read on &rarr;</a>
+	</div>
 
+</article>
 
-
-    </article>
-    
-  
-  <div class="pagination">
-    
-    <a class="prev" href="/blog/page/2/">&larr; Older</a>
-    
-
-    
-  </div>
 </div>
+<nav id="pagenavi">
+    
+    
+        <a href="2" class="next">Next</a>
+    
+    <div class="center"><a href="/blog/archives">Blog Archives</a></div>
+</nav></div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
 
 
-        </div>
-      </div>
-      <div class="row-fluid">
-        <footer class="footer-page" role="contentinfo">
-          <p>
-  Copyright &copy; 2016 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
-</p>
-
-
-        </footer>
-      </div>
-  </div>
-  
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
 
 
 
-
-
-  <script type="text/javascript">
-//    (function() {
- //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
-   //   script.src = 'https://apis.google.com/js/plusone.js';
-    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
-   // })();
-  </script>
 
 
 

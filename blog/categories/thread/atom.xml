@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: Thread | 你假笨]]></title>
+  <title><![CDATA[Category: thread | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/thread/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -31,7 +31,7 @@
 
 <h2>JStack命令的整个过程</h2>
 
-<p>&#8195;&#8195;上面提到了线程dump，那么就不得不提执行线程dump的工具---jstack，这个工具是Java自带的工具，和Java处于同一个目录下，主要是用来dump线程的，或许大家也有使用kill -3的命令来dump线程，但这两者最明显的一个区别是，前者的dump内容是由jstack这个进程来输出的，目标JVM进程将dump内容发给jstack进程(注意这是没有加-m参数的场景，指定-m参数就有点不一样了，它使用的是serviceability agent的api来实现的，底层通过ptrace的方式来获取目标进程的内容，执行过程可能会比正常模式更长点)，这意味着可以做文件重定向，将线程dump内容输出到指定文件里；而后者是由目标进程输出的，只会产生在目标进程的标准输出文件里，如果正巧标准输出里本身就有内容的话，看起来会比较乱，比如想通过一些分析工具去分析的话，要是该工具没有做过滤操作，很可能无法分析。因此一般情况我们尽量使用jstack，另外jstack还有很多实用的参数，比如<code>jstack pid &gt;thread_dump.log</code>，该命令会将指定pid的进程的线程dump到当前目录的thread_dump.log文件里。</p>
+<p>&#8195;&#8195;上面提到了线程dump，那么就不得不提执行线程dump的工具&mdash;jstack，这个工具是Java自带的工具，和Java处于同一个目录下，主要是用来dump线程的，或许大家也有使用kill -3的命令来dump线程，但这两者最明显的一个区别是，前者的dump内容是由jstack这个进程来输出的，目标JVM进程将dump内容发给jstack进程(注意这是没有加-m参数的场景，指定-m参数就有点不一样了，它使用的是serviceability agent的api来实现的，底层通过ptrace的方式来获取目标进程的内容，执行过程可能会比正常模式更长点)，这意味着可以做文件重定向，将线程dump内容输出到指定文件里；而后者是由目标进程输出的，只会产生在目标进程的标准输出文件里，如果正巧标准输出里本身就有内容的话，看起来会比较乱，比如想通过一些分析工具去分析的话，要是该工具没有做过滤操作，很可能无法分析。因此一般情况我们尽量使用jstack，另外jstack还有很多实用的参数，比如<code>jstack pid &gt;thread_dump.log</code>，该命令会将指定pid的进程的线程dump到当前目录的thread_dump.log文件里。</p>
 
 <p>&#8195;&#8195;jstack是使用Java实现的，它通过给目标JVM进程发送一个threaddump的命令，目标JVM的监听线程（<code>attachListener</code>）会实时监听传过来的命令(其实attachListener线程并不是一启动就创建的，它是lazy创建启动的)，当attachListener收到threaddump命令时会调用thread_dump的方法来处理dump操作(方法在attachListener.cpp里)。</p>
 

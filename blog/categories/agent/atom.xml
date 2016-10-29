@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: Agent | 你假笨]]></title>
+  <title><![CDATA[Category: agent | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/agent/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -29,9 +29,8 @@
 
 <p>对于javaagent或许大家都听过，甚至使用过，常见的用法大致如下：</p>
 
-<p><code>
-java -javaagent:myagent.jar=mode=test Test
-</code></p>
+<pre><code>java -javaagent:myagent.jar=mode=test Test
+</code></pre>
 
 <p>我们通过-javaagent来指定我们编写的agent的jar路径（./myagent.jar）及要传给agent的参数（mode=test），这样在启动的时候这个agent就可以做一些我们想要它做的事了。</p>
 
@@ -62,35 +61,29 @@ java -javaagent:myagent.jar=mode=test Test
 
 <p>比如说我们最常见的想在某个类的字节码文件读取之后类定义之前能修改相关的字节码，从而使创建的class对象是我们修改之后的字节码内容，那我们就可以实现一个回调函数赋给JvmtiEnv（JVMTI的运行时，通常一个JVMTIAgent对应一个jvmtiEnv，但是也可以对应多个）的回调方法集合里的ClassFileLoadHook，这样在接下来的类文件加载过程中都会调用到这个函数里来了，大致实现如下:</p>
 
-<p>```</p>
-
-<pre><code>jvmtiEventCallbacks callbacks;
-jvmtiEnv *          jvmtienv = jvmti(agent);
-jvmtiError          jvmtierror;
-memset(&amp;callbacks, 0, sizeof(callbacks));
-callbacks.ClassFileLoadHook = &amp;eventHandlerClassFileLoadHook;
-jvmtierror = (*jvmtienv)-&gt;SetEventCallbacks( jvmtienv,
-                                             &amp;callbacks,
-                                             sizeof(callbacks));
+<pre><code>    jvmtiEventCallbacks callbacks;
+    jvmtiEnv *          jvmtienv = jvmti(agent);
+    jvmtiError          jvmtierror;
+    memset(&amp;callbacks, 0, sizeof(callbacks));
+    callbacks.ClassFileLoadHook = &amp;eventHandlerClassFileLoadHook;
+    jvmtierror = (*jvmtienv)-&gt;SetEventCallbacks( jvmtienv,
+                                                 &amp;callbacks,
+                                                 sizeof(callbacks));
 </code></pre>
-
-<p>```</p>
 
 <h2>JVMTIAgent</h2>
 
 <p>JVMTIAgent其实就是一个动态库，利用JVMTI暴露出来的一些接口来干一些我们想做但是正常情况下又做不到的事情，不过为了和普通的动态库进行区分，它一般会实现如下的一个或者多个函数：</p>
 
-<p>```
+<pre><code>JNIEXPORT jint JNICALL
+Agent_OnLoad(JavaVM *vm, char *options, void *reserved);
+
 JNIEXPORT jint JNICALL
-Agent_OnLoad(JavaVM <em>vm, char </em>options, void *reserved);</p>
+Agent_OnAttach(JavaVM* vm, char* options, void* reserved);
 
-<p>JNIEXPORT jint JNICALL
-Agent_OnAttach(JavaVM<em> vm, char</em> options, void* reserved);</p>
-
-<p>JNIEXPORT void JNICALL
-Agent_OnUnload(JavaVM *vm);</p>
-
-<p>```</p>
+JNIEXPORT void JNICALL
+Agent_OnUnload(JavaVM *vm); 
+</code></pre>
 
 <ul>
 <li><code>Agent_OnLoad</code>函数，如果agent是在启动的时候加载的，也就是在vm参数里通过-agentlib来指定，那在启动过程中就会去执行这个agent里的<code>Agent_OnLoad</code>函数。</li>
@@ -110,75 +103,112 @@ Agent_OnUnload(JavaVM *vm);</p>
 <p>instrument agent实现了<code>Agent_OnLoad</code>和<code>Agent_OnAttach</code>两方法，也就是说我们在用它的时候既支持启动的时候来加载agent，也支持在运行期来动态来加载这个agent，其中启动时加载agent还可以通过类似<code>-javaagent:myagent.jar</code>的方式来间接加载instrument agent，运行期动态加载agent依赖的是jvm的attach机制<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>，通过发送load命令来加载agent。</p>
 
 <p>instrument agent的核心数据结构如下：
-```
-struct _JPLISAgent {</p>
-
-<pre><code>JavaVM *                mJVM;                   /* handle to the JVM */
-JPLISEnvironment        mNormalEnvironment;     /* for every thing but retransform stuff */
-JPLISEnvironment        mRetransformEnvironment;/* for retransform stuff only */
-jobject                 mInstrumentationImpl;   /* handle to the Instrumentation instance */
-jmethodID               mPremainCaller;         /* method on the InstrumentationImpl that does the premain stuff (cached to save lots of lookups) */
-jmethodID               mAgentmainCaller;       /* method on the InstrumentationImpl for agents loaded via attach mechanism */
-jmethodID               mTransform;             /* method on the InstrumentationImpl that does the class file transform */
-jboolean                mRedefineAvailable;     /* cached answer to "does this agent support redefine" */
-jboolean                mRedefineAdded;         /* indicates if can_redefine_classes capability has been added */
-jboolean                mNativeMethodPrefixAvailable; /* cached answer to "does this agent support prefixing" */
-jboolean                mNativeMethodPrefixAdded;     /* indicates if can_set_native_method_prefix capability has been added */
-char const *            mAgentClassName;        /* agent class name */
-char const *            mOptionsString;         /* -javaagent options string */
-</code></pre>
-
-<p>};</p>
-
-<p>struct _JPLISEnvironment {</p>
-
-<pre><code>jvmtiEnv *              mJVMTIEnv;              /* the JVM TI environment */
-JPLISAgent *            mAgent;                 /* corresponding agent */
-jboolean                mIsRetransformer;       /* indicates if special environment */
-</code></pre>
-
-<p>};</p>
-
-<p>```</p>
-
-<p>这里解释下几个重要项：
-* mNormalEnvironment：主要提供正常的类transform及redefine功能的。
-* mRetransformEnvironment：主要提供类retransform功能的。
-* mInstrumentationImpl：这个对象非常重要，也是我们java agent和JVM进行交互的入口，或许写过javaagent的人在写<code>premain</code>以及<code>agentmain</code>方法的时候注意到了有个Instrumentation的参数，这个参数其实就是这里的对象。
-* mPremainCaller：指向<code>sun.instrument.InstrumentationImpl.loadClassAndCallPremain</code>方法，如果agent是在启动的时候加载的，那该方法会被调用。
-* mAgentmainCaller：指向<code>sun.instrument.InstrumentationImpl.loadClassAndCallAgentmain</code>方法，该方法在通过attach的方式动态加载agent的时候调用。
-* mTransform：指向<code>sun.instrument.InstrumentationImpl.transform</code>方法。
-* mAgentClassName：在我们javaagent的MANIFEST.MF里指定的<code>Agent-Class</code>。
-* mOptionsString：传给agent的一些参数。
-* mRedefineAvailable：是否开启了redefine功能，在javaagent的MANIFEST.MF里设置<code>Can-Redefine-Classes:true</code>。
-* mNativeMethodPrefixAvailable：是否支持native方法前缀设置，通样在javaagent的MANIFEST.MF里设置<code>Can-Set-Native-Method-Prefix:true</code>。
-* mIsRetransformer：如果在javaagent的MANIFEST.MF文件里定义了<code>Can-Retransform-Classes:true</code>，那将会设置mRetransformEnvironment的mIsRetransformer为true。</p>
-
-<h3>启动时加载instrument agent</h3>
-
-<p>正如『概述』里提到的方式，就是启动的时候加载instrument agent，具体过程都在<code>InvocationAdapter.c</code>的<code>Agent_OnLoad</code>方法里，简单描述下过程：</p>
-
-<ul>
-<li>创建并初始化JPLISAgent</li>
-<li>监听VMInit事件，在vm初始化完成之后做下面的事情：
-
-<ul>
-<li>创建InstrumentationImpl对象</li>
-<li>监听ClassFileLoadHook事件</li>
-<li>调用InstrumentationImpl的<code>loadClassAndCallPremain</code>方法，在这个方法里会去调用javaagent里MANIFEST.MF里指定的<code>Premain-Class</code>类的premain方法</li>
-</ul>
-</li>
-<li>解析javaagent里MANIFEST.MF里的参数，并根据这些参数来设置JPLISAgent里的一些内容</li>
-</ul>
-
-
-<h3>运行时加载instrument agent</h3>
-
-<p>运行时加载的方式，大致按照下面的方式来操作：
-<code>
-VirtualMachine vm = VirtualMachine.attach(pid);
-vm.loadAgent(agentPath, agentArgs);
-</code></p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct _JPLISAgent {
+</span><span class='line'>    JavaVM *                mJVM;                   /&lt;em&gt; handle to the JVM &lt;/em&gt;/
+</span><span class='line'>    JPLISEnvironment        mNormalEnvironment;     /&lt;em&gt; for every thing but retransform stuff &lt;/em&gt;/
+</span><span class='line'>    JPLISEnvironment        mRetransformEnvironment;/&lt;em&gt; for retransform stuff only &lt;/em&gt;/
+</span><span class='line'>    jobject                 mInstrumentationImpl;   /&lt;em&gt; handle to the Instrumentation instance &lt;/em&gt;/
+</span><span class='line'>    jmethodID               mPremainCaller;         /&lt;em&gt; method on the InstrumentationImpl that does the premain stuff (cached to save lots of lookups) &lt;/em&gt;/
+</span><span class='line'>    jmethodID               mAgentmainCaller;       /&lt;em&gt; method on the InstrumentationImpl for agents loaded via attach mechanism &lt;/em&gt;/
+</span><span class='line'>    jmethodID               mTransform;             /&lt;em&gt; method on the InstrumentationImpl that does the class file transform &lt;/em&gt;/
+</span><span class='line'>    jboolean                mRedefineAvailable;     /&lt;em&gt; cached answer to &ldquo;does this agent support redefine&rdquo; &lt;/em&gt;/
+</span><span class='line'>    jboolean                mRedefineAdded;         /&lt;em&gt; indicates if can_redefine_classes capability has been added &lt;/em&gt;/
+</span><span class='line'>    jboolean                mNativeMethodPrefixAvailable; /&lt;em&gt; cached answer to &ldquo;does this agent support prefixing&rdquo; &lt;/em&gt;/
+</span><span class='line'>    jboolean                mNativeMethodPrefixAdded;     /&lt;em&gt; indicates if can_set_native_method_prefix capability has been added &lt;/em&gt;/
+</span><span class='line'>    char const *            mAgentClassName;        /&lt;em&gt; agent class name &lt;/em&gt;/
+</span><span class='line'>    char const *            mOptionsString;         /&lt;em&gt; -javaagent options string &lt;/em&gt;/
+</span><span class='line'>};&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;struct _JPLISEnvironment {
+</span><span class='line'>    jvmtiEnv *              mJVMTIEnv;              /&lt;em&gt; the JVM TI environment &lt;/em&gt;/
+</span><span class='line'>    JPLISAgent *            mAgent;                 /&lt;em&gt; corresponding agent &lt;/em&gt;/
+</span><span class='line'>    jboolean                mIsRetransformer;       /&lt;em&gt; indicates if special environment &lt;/em&gt;/
+</span><span class='line'>};&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;
+</span><span class='line'>这里解释下几个重要项：
+</span><span class='line'>* mNormalEnvironment：主要提供正常的类transform及redefine功能的。
+</span><span class='line'>* mRetransformEnvironment：主要提供类retransform功能的。
+</span><span class='line'>* mInstrumentationImpl：这个对象非常重要，也是我们java agent和JVM进行交互的入口，或许写过javaagent的人在写`premain`以及`agentmain`方法的时候注意到了有个Instrumentation的参数，这个参数其实就是这里的对象。
+</span><span class='line'>* mPremainCaller：指向`sun.instrument.InstrumentationImpl.loadClassAndCallPremain`方法，如果agent是在启动的时候加载的，那该方法会被调用。
+</span><span class='line'>* mAgentmainCaller：指向`sun.instrument.InstrumentationImpl.loadClassAndCallAgentmain`方法，该方法在通过attach的方式动态加载agent的时候调用。
+</span><span class='line'>* mTransform：指向`sun.instrument.InstrumentationImpl.transform`方法。
+</span><span class='line'>* mAgentClassName：在我们javaagent的MANIFEST.MF里指定的`Agent-Class`。
+</span><span class='line'>* mOptionsString：传给agent的一些参数。
+</span><span class='line'>* mRedefineAvailable：是否开启了redefine功能，在javaagent的MANIFEST.MF里设置`Can-Redefine-Classes:true`。
+</span><span class='line'>* mNativeMethodPrefixAvailable：是否支持native方法前缀设置，通样在javaagent的MANIFEST.MF里设置`Can-Set-Native-Method-Prefix:true`。
+</span><span class='line'>* mIsRetransformer：如果在javaagent的MANIFEST.MF文件里定义了`Can-Retransform-Classes:true`，那将会设置mRetransformEnvironment的mIsRetransformer为true。
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>###启动时加载instrument agent
+</span><span class='line'>正如『概述』里提到的方式，就是启动的时候加载instrument agent，具体过程都在`InvocationAdapter.c`的`Agent_OnLoad`方法里，简单描述下过程：
+</span><span class='line'>
+</span><span class='line'>* 创建并初始化JPLISAgent
+</span><span class='line'>* 监听VMInit事件，在vm初始化完成之后做下面的事情：
+</span><span class='line'>    * 创建InstrumentationImpl对象
+</span><span class='line'>    * 监听ClassFileLoadHook事件
+</span><span class='line'>    * 调用InstrumentationImpl的`loadClassAndCallPremain`方法，在这个方法里会去调用javaagent里MANIFEST.MF里指定的`Premain-Class`类的premain方法
+</span><span class='line'>* 解析javaagent里MANIFEST.MF里的参数，并根据这些参数来设置JPLISAgent里的一些内容
+</span><span class='line'>
+</span><span class='line'>###运行时加载instrument agent
+</span><span class='line'>运行时加载的方式，大致按照下面的方式来操作：
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;VirtualMachine vm = VirtualMachine.attach(pid);
+</span><span class='line'>vm.loadAgent(agentPath, agentArgs);</span></code></pre></td></tr></table></div></figure></p>
 
 <p>上面会通过jvm的attach机制来请求目标jvm加载对应的agent，过程大致如下：</p>
 
@@ -193,126 +223,116 @@ vm.loadAgent(agentPath, agentArgs);
 
 <h3>instrument agent的ClassFileLoadHook回调实现</h3>
 
-<p>不管是启动时还是运行时加载的instrument agent都关注着同一个jvmti事件---<code>ClassFileLoadHook</code>，这个事件是在读取字节码文件之后回调时用的，这样可以对原来的字节码做修改，那这里面究竟是怎样实现的呢？</p>
+<p>不管是启动时还是运行时加载的instrument agent都关注着同一个jvmti事件&mdash;<code>ClassFileLoadHook</code>，这个事件是在读取字节码文件之后回调时用的，这样可以对原来的字节码做修改，那这里面究竟是怎样实现的呢？</p>
 
-<p>```
-void JNICALL
-eventHandlerClassFileLoadHook(  jvmtiEnv *              jvmtienv,</p>
+<pre><code>void JNICALL
+eventHandlerClassFileLoadHook(  jvmtiEnv *              jvmtienv,
+                                JNIEnv *                jnienv,
+                                jclass                  class_being_redefined,
+                                jobject                 loader,
+                                const char*             name,
+                                jobject                 protectionDomain,
+                                jint                    class_data_len,
+                                const unsigned char*    class_data,
+                                jint*                   new_class_data_len,
+                                unsigned char**         new_class_data) {
+    JPLISEnvironment * environment  = NULL;
 
-<pre><code>                            JNIEnv *                jnienv,
-                            jclass                  class_being_redefined,
-                            jobject                 loader,
-                            const char*             name,
-                            jobject                 protectionDomain,
-                            jint                    class_data_len,
-                            const unsigned char*    class_data,
-                            jint*                   new_class_data_len,
-                            unsigned char**         new_class_data) {
-JPLISEnvironment * environment  = NULL;
+    environment = getJPLISEnvironment(jvmtienv);
 
-environment = getJPLISEnvironment(jvmtienv);
-
-/* if something is internally inconsistent (no agent), just silently return without touching the buffer */
-if ( environment != NULL ) {
-    jthrowable outstandingException = preserveThrowable(jnienv);
-    transformClassFile( environment-&gt;mAgent,
-                        jnienv,
-                        loader,
-                        name,
-                        class_being_redefined,
-                        protectionDomain,
-                        class_data_len,
-                        class_data,
-                        new_class_data_len,
-                        new_class_data,
-                        environment-&gt;mIsRetransformer);
-    restoreThrowable(jnienv, outstandingException);
+    /* if something is internally inconsistent (no agent), just silently return without touching the buffer */
+    if ( environment != NULL ) {
+        jthrowable outstandingException = preserveThrowable(jnienv);
+        transformClassFile( environment-&gt;mAgent,
+                            jnienv,
+                            loader,
+                            name,
+                            class_being_redefined,
+                            protectionDomain,
+                            class_data_len,
+                            class_data,
+                            new_class_data_len,
+                            new_class_data,
+                            environment-&gt;mIsRetransformer);
+        restoreThrowable(jnienv, outstandingException);
+    }
 }
 </code></pre>
-
-<p>}
-```</p>
 
 <p>先根据jvmtiEnv取得对应的JPLISEnvironment，因为上面我已经说到其实有两个JPLISEnvironment（并且有两个jvmtiEnv），其中一个专门做retransform的，而另外一个用来做其他的事情，根据不同的用途我们在注册具体的ClassFileTransformer的时候也是分开的，对于作为retransform用的ClassFileTransformer我们会注册到一个单独的TransformerManager里。</p>
 
 <p>接着调用transformClassFile方法，由于函数实现比较长，我这里就不贴代码了，大致意思就是调用InstrumentationImpl对象的transform方法，根据最后那个参数来决定选哪个TransformerManager里的ClassFileTransformer对象们做transform操作。</p>
 
-<p>```
- private byte[]</p>
-
-<pre><code>transform(  ClassLoader         loader,
-            String              classname,
-            Class               classBeingRedefined,
-            ProtectionDomain    protectionDomain,
-            byte[]              classfileBuffer,
-            boolean             isRetransformer) {
-    TransformerManager mgr = isRetransformer?
-                                    mRetransfomableTransformerManager :
-                                    mTransformerManager;
-    if (mgr == null) {
-        return null; // no manager, no transform
-    } else {
-        return mgr.transform(   loader,
-                                classname,
-                                classBeingRedefined,
-                                protectionDomain,
-                                classfileBuffer);
+<pre><code> private byte[]
+    transform(  ClassLoader         loader,
+                String              classname,
+                Class               classBeingRedefined,
+                ProtectionDomain    protectionDomain,
+                byte[]              classfileBuffer,
+                boolean             isRetransformer) {
+        TransformerManager mgr = isRetransformer?
+                                        mRetransfomableTransformerManager :
+                                        mTransformerManager;
+        if (mgr == null) {
+            return null; // no manager, no transform
+        } else {
+            return mgr.transform(   loader,
+                                    classname,
+                                    classBeingRedefined,
+                                    protectionDomain,
+                                    classfileBuffer);
+        }
     }
-}
+
+  public byte[]
+    transform(  ClassLoader         loader,
+                String              classname,
+                Class               classBeingRedefined,
+                ProtectionDomain    protectionDomain,
+                byte[]              classfileBuffer) {
+        boolean someoneTouchedTheBytecode = false;
+
+        TransformerInfo[]  transformerList = getSnapshotTransformerList();
+
+        byte[]  bufferToUse = classfileBuffer;
+
+        // order matters, gotta run 'em in the order they were added
+        for ( int x = 0; x &lt; transformerList.length; x++ ) {
+            TransformerInfo         transformerInfo = transformerList[x];
+            ClassFileTransformer    transformer = transformerInfo.transformer();
+            byte[]                  transformedBytes = null;
+
+            try {
+                transformedBytes = transformer.transform(   loader,
+                                                            classname,
+                                                            classBeingRedefined,
+                                                            protectionDomain,
+                                                            bufferToUse);
+            }
+            catch (Throwable t) {
+                // don't let any one transformer mess it up for the others.
+                // This is where we need to put some logging. What should go here? FIXME
+            }
+
+            if ( transformedBytes != null ) {
+                someoneTouchedTheBytecode = true;
+                bufferToUse = transformedBytes;
+            }
+        }
+
+        // if someone modified it, return the modified buffer.
+        // otherwise return null to mean "no transforms occurred"
+        byte [] result;
+        if ( someoneTouchedTheBytecode ) {
+            result = bufferToUse;
+        }
+        else {
+            result = null;
+        }
+
+        return result;
+    }   
 </code></pre>
-
-<p>  public byte[]</p>
-
-<pre><code>transform(  ClassLoader         loader,
-            String              classname,
-            Class               classBeingRedefined,
-            ProtectionDomain    protectionDomain,
-            byte[]              classfileBuffer) {
-    boolean someoneTouchedTheBytecode = false;
-
-    TransformerInfo[]  transformerList = getSnapshotTransformerList();
-
-    byte[]  bufferToUse = classfileBuffer;
-
-    // order matters, gotta run 'em in the order they were added
-    for ( int x = 0; x &lt; transformerList.length; x++ ) {
-        TransformerInfo         transformerInfo = transformerList[x];
-        ClassFileTransformer    transformer = transformerInfo.transformer();
-        byte[]                  transformedBytes = null;
-
-        try {
-            transformedBytes = transformer.transform(   loader,
-                                                        classname,
-                                                        classBeingRedefined,
-                                                        protectionDomain,
-                                                        bufferToUse);
-        }
-        catch (Throwable t) {
-            // don't let any one transformer mess it up for the others.
-            // This is where we need to put some logging. What should go here? FIXME
-        }
-
-        if ( transformedBytes != null ) {
-            someoneTouchedTheBytecode = true;
-            bufferToUse = transformedBytes;
-        }
-    }
-
-    // if someone modified it, return the modified buffer.
-    // otherwise return null to mean "no transforms occurred"
-    byte [] result;
-    if ( someoneTouchedTheBytecode ) {
-        result = bufferToUse;
-    }
-    else {
-        result = null;
-    }
-
-    return result;
-}   
-</code></pre>
-
-<p>```</p>
 
 <p>以上是最终调到的java代码，可以看到已经调用到我们自己编写的javaagent代码里了，我们一般是实现一个ClassFileTransformer类，然后创建一个对象注册了对应的TransformerManager里。</p>
 
@@ -324,43 +344,38 @@ if ( environment != NULL ) {
 
 <p>类重新定义，这是Instrumentation提供的基础功能之一，主要用在已经被加载过的类上，想对其进行修改，要做这件事，我们必须要知道两个东西，一个是要修改哪个类，另外一个是那个类你想修改成怎样的结构，有了这两信息之后于是你就可以通过InstrumentationImpl的下面的redefineClasses方法去操作了：</p>
 
-<p>```
-public void</p>
-
-<pre><code>redefineClasses(ClassDefinition[]   definitions)
-        throws  ClassNotFoundException {
-    if (!isRedefineClassesSupported()) {
-        throw new UnsupportedOperationException("redefineClasses is not supported in this environment");
-    }
-    if (definitions == null) {
-        throw new NullPointerException("null passed as 'definitions' in redefineClasses");
-    }
-    for (int i = 0; i &lt; definitions.length; ++i) {
-        if (definitions[i] == null) {
-            throw new NullPointerException("element of 'definitions' is null in redefineClasses");
+<pre><code>public void
+    redefineClasses(ClassDefinition[]   definitions)
+            throws  ClassNotFoundException {
+        if (!isRedefineClassesSupported()) {
+            throw new UnsupportedOperationException("redefineClasses is not supported in this environment");
         }
-    }
-    if (definitions.length == 0) {
-        return; // short-circuit if there are no changes requested
-    }
+        if (definitions == null) {
+            throw new NullPointerException("null passed as 'definitions' in redefineClasses");
+        }
+        for (int i = 0; i &lt; definitions.length; ++i) {
+            if (definitions[i] == null) {
+                throw new NullPointerException("element of 'definitions' is null in redefineClasses");
+            }
+        }
+        if (definitions.length == 0) {
+            return; // short-circuit if there are no changes requested
+        }
 
-    redefineClasses0(mNativeAgent, definitions);
-}
+        redefineClasses0(mNativeAgent, definitions);
+    }
 </code></pre>
-
-<p>```</p>
 
 <p>在JVM里对应的实现是创建一个<code>VM_RedefineClasses</code>的<code>VM_Operation</code>，注意执行它的时候会stop the world的：</p>
 
-<p><code>
-jvmtiError
+<pre><code>jvmtiError
 JvmtiEnv::RedefineClasses(jint class_count, const jvmtiClassDefinition* class_definitions) {
 //TODO: add locking
   VM_RedefineClasses op(class_count, class_definitions, jvmti_class_load_kind_redefine);
   VMThread::execute(&amp;op);
   return (op.check_error());
 } /* end RedefineClasses */
-</code></p>
+</code></pre>
 
 <p>这个过程我尽量用语言来描述清楚，不详细贴代码了，因为代码量实在有点大：</p>
 
@@ -407,51 +422,43 @@ JvmtiEnv::RedefineClasses(jint class_count, const jvmtiClassDefinition* class_de
 
 <p>我们从InstrumentationImpl的<code>retransformClasses</code>方法参数看猜到应该是做回滚操作，因为我们只指定了class</p>
 
-<p>```</p>
-
-<pre><code>public void
-retransformClasses(Class&lt;?&gt;[] classes) {
-    if (!isRetransformClassesSupported()) {
-        throw new UnsupportedOperationException(
-          "retransformClasses is not supported in this environment");
+<pre><code>    public void
+    retransformClasses(Class&lt;?&gt;[] classes) {
+        if (!isRetransformClassesSupported()) {
+            throw new UnsupportedOperationException(
+              "retransformClasses is not supported in this environment");
+        }
+        retransformClasses0(mNativeAgent, classes);
     }
-    retransformClasses0(mNativeAgent, classes);
-}
 </code></pre>
-
-<p>```</p>
 
 <p>不过retransform的实现其实也是通过redefine的功能来实现，在类加载的时候有比较小的差别，主要体现在究竟会走哪些transform上，如果当前是做retransform的话，那将忽略那些注册到正常的TransformerManager里的ClassFileTransformer，而只会走专门为retransform而准备的TransformerManager的ClassFileTransformer，不然想象一下字节码又被无声无息改成某个中间态了。</p>
 
-<p>```
-private:
-  void post_all_envs() {</p>
-
-<pre><code>if (_load_kind != jvmti_class_load_kind_retransform) {
-  // for class load and redefine,
-  // call the non-retransformable agents
-  JvmtiEnvIterator it;
-  for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
-    if (!env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
-      // non-retransformable agents cannot retransform back,
-      // so no need to cache the original class file bytes
-      post_to_env(env, false);
+<pre><code>private:
+  void post_all_envs() {
+    if (_load_kind != jvmti_class_load_kind_retransform) {
+      // for class load and redefine,
+      // call the non-retransformable agents
+      JvmtiEnvIterator it;
+      for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
+        if (!env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
+          // non-retransformable agents cannot retransform back,
+          // so no need to cache the original class file bytes
+          post_to_env(env, false);
+        }
+      }
+    }
+    JvmtiEnvIterator it;
+    for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
+      // retransformable agents get all events
+      if (env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
+        // retransformable agents need to cache the original class file
+        // bytes if changes are made via the ClassFileLoadHook
+        post_to_env(env, true);
+      }
     }
   }
-}
-JvmtiEnvIterator it;
-for (JvmtiEnv* env = it.first(); env != NULL; env = it.next(env)) {
-  // retransformable agents get all events
-  if (env-&gt;is_retransformable() &amp;&amp; env-&gt;is_enabled(JVMTI_EVENT_CLASS_FILE_LOAD_HOOK)) {
-    // retransformable agents need to cache the original class file
-    // bytes if changes are made via the ClassFileLoadHook
-    post_to_env(env, true);
-  }
-}
 </code></pre>
-
-<p>  }
-```</p>
 
 <h2>javaagent的其他小众功能</h2>
 

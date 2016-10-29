@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: OOMKiller | 你假笨]]></title>
+  <title><![CDATA[Category: oomkiller | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/oomkiller/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -25,18 +25,14 @@
 <!-- more -->
 
 
-<p>```
-top - 16:57:47 up 73 days,  4:12,  8 users,  load average: 6.78, 9.68, 13.31
+<pre><code>top - 16:57:47 up 73 days,  4:12,  8 users,  load average: 6.78, 9.68, 13.31
 Tasks: 130 total,   1 running, 123 sleeping,   6 stopped,   0 zombie
-Cpu(s): 89.9%us,  5.6%sy,  0.0%ni,  2.0%id,  0.7%wa,  0.7%hi,  1.2%si,  0.0%st</p>
-
-<pre><code>...
-</code></pre>
-
-<p>  PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND
+Cpu(s): 89.9%us,  5.6%sy,  0.0%ni,  2.0%id,  0.7%wa,  0.7%hi,  1.2%si,  0.0%st
+    ...
+  PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND
 22753 admin     20   0 4252m 3.0g  17m S 192.8 52.7 151:47.59 /opt/taobao/java/bin/java -server -Xms1700m -Xmx1700m -Xmn680m -Xss256k -XX:PermSize=128m -XX:MaxPermSize=128m -XX:+UseStringCache -XX:+
    40 root      20   0     0    0    0 D  0.3  0.0   5:53.07 [kswapd0]
-```</p>
+</code></pre>
 
 <h2>物理内存大于Xmx可能吗</h2>
 
@@ -46,8 +42,7 @@ Cpu(s): 89.9%us,  5.6%sy,  0.0%ni,  2.0%id,  0.7%wa,  0.7%hi,  1.2%si,  0.0%st</
 
 <p>我们知道os在内存上面的设计是花了心思的，为了让资源得到最大合理利用，在物理内存之上搞一层虚拟地址，同一台机器上每个进程可访问的虚拟地址空间大小都是一样的，为了屏蔽掉复杂的到物理内存的映射，该工作os直接做了，当需要物理内存的时候，当前虚拟地址又没有映射到物理内存上的时候，就会发生缺页中断，由内核去为之准备一块物理内存，所以即使我们分配了一块1G的虚拟内存，物理内存上不一定有一块1G的空间与之对应，那到底这块虚拟内存块到底映射了多少物理内存呢，这个我们在linux下可以通过<code>/proc/&lt;pid&gt;/smaps</code>这个文件看到，其中的Size表示虚拟内存大小，而Rss表示的是物理内存，所以从这层意义上来说和虚拟内存块对应的物理内存块不应该超过此虚拟内存块的空间范围</p>
 
-<p><code>
-8dc00000-100000000 rwxp 00000000 00:00 0
+<pre><code>8dc00000-100000000 rwxp 00000000 00:00 0
 Size:            1871872 kB
 Rss:             1798444 kB
 Pss:             1798444 kB
@@ -61,36 +56,36 @@ AnonHugePages:         0 kB
 Swap:                  0 kB
 KernelPageSize:        4 kB
 MMUPageSize:           4 kB
-</code>
-此次为了排查这个问题，我特地写了个简单的分析工具来分析这个问题，将连续的虚拟内存块合并做统计，一般来说连续分配的内存块还是有一定关系的，当然也不能完全肯定这种关系，得到的效果大致如下：</p>
+</code></pre>
 
-<p>```
-from->to    vs rss rss_percentage(rss/total_rss) merge_block_count</p>
+<p>此次为了排查这个问题，我特地写了个简单的分析工具来分析这个问题，将连续的虚拟内存块合并做统计，一般来说连续分配的内存块还是有一定关系的，当然也不能完全肯定这种关系，得到的效果大致如下：</p>
 
-<p>0x8dc00000->0x30c9a20000      1871872      1487480      53.77%     1
-0x7faf7a4c5000->0x7fffa7dd9000      1069464      735996      26.60%     440
-0x7faf50c75000->0x7faf6c02a000      445996      226860      8.20%     418
-0x7faf6c027000->0x7faf78010000      196452      140640      5.08%     492
-0x418e8000->0x100000000      90968      90904      3.29%     1
-0x7faf48000000->0x7faf50c78000      131072      35120      1.27%     4
-0x7faf28000000->0x7faf3905e000      196608      20708      0.75%     6
-0x7faf38000000->0x7faf4ad83000      196608      17036      0.62%     6
-0x7faf78009000->0x7faf7a4c6000      37612      10440      0.38%     465
-0x30c9e00000->0x30ca202000      3656      716      0.03%     5
-0x7faf20000000->0x7faf289c7000      65536      132      0.00%     2
-0x30c9a00000->0x30c9c20000      128      108      0.00%     1
-0x30ca600000->0x30cae83000      2164      76      0.00%     5
-0x30cbe00000->0x30cca16000      2152      68      0.00%     5
-0x7fffa7dc3000->0x7fffa7e00000      92      48      0.00%     1
-0x30cca00000->0x7faf21dba000      2148      32      0.00%     5
-0x30cb200000->0x30cbe16000      2080      28      0.00%     4
-0x30cae00000->0x30cb207000      2576      20      0.00%     4
-0x30ca200000->0x30ca617000      2064      16      0.00%     4
-0x40000000->0x4010a000      36      12      0.00%     2
-0x30c9c1f000->0x30c9f89000      12      12      0.00%     3
-0x40108000->0x471be000      8      8      0.00%     1
-0x7fffa7dff000->0x0      4      4      0.00%     0
-```</p>
+<pre><code>from-&gt;to    vs rss rss_percentage(rss/total_rss) merge_block_count
+
+0x8dc00000-&gt;0x30c9a20000      1871872      1487480      53.77%     1
+0x7faf7a4c5000-&gt;0x7fffa7dd9000      1069464      735996      26.60%     440
+0x7faf50c75000-&gt;0x7faf6c02a000      445996      226860      8.20%     418
+0x7faf6c027000-&gt;0x7faf78010000      196452      140640      5.08%     492
+0x418e8000-&gt;0x100000000      90968      90904      3.29%     1
+0x7faf48000000-&gt;0x7faf50c78000      131072      35120      1.27%     4
+0x7faf28000000-&gt;0x7faf3905e000      196608      20708      0.75%     6
+0x7faf38000000-&gt;0x7faf4ad83000      196608      17036      0.62%     6
+0x7faf78009000-&gt;0x7faf7a4c6000      37612      10440      0.38%     465
+0x30c9e00000-&gt;0x30ca202000      3656      716      0.03%     5
+0x7faf20000000-&gt;0x7faf289c7000      65536      132      0.00%     2
+0x30c9a00000-&gt;0x30c9c20000      128      108      0.00%     1
+0x30ca600000-&gt;0x30cae83000      2164      76      0.00%     5
+0x30cbe00000-&gt;0x30cca16000      2152      68      0.00%     5
+0x7fffa7dc3000-&gt;0x7fffa7e00000      92      48      0.00%     1
+0x30cca00000-&gt;0x7faf21dba000      2148      32      0.00%     5
+0x30cb200000-&gt;0x30cbe16000      2080      28      0.00%     4
+0x30cae00000-&gt;0x30cb207000      2576      20      0.00%     4
+0x30ca200000-&gt;0x30ca617000      2064      16      0.00%     4
+0x40000000-&gt;0x4010a000      36      12      0.00%     2
+0x30c9c1f000-&gt;0x30c9f89000      12      12      0.00%     3
+0x40108000-&gt;0x471be000      8      8      0.00%     1
+0x7fffa7dff000-&gt;0x0      4      4      0.00%     0
+</code></pre>
 
 <p>当然这只是一个简单的分析，如果更有价值需要我们挖掘更多的点出来，比如每个内存块是属于哪块memory pool，到底是什么地方分配的等，不过需要jvm支持(<code>注：上面的第一条，其实就是new+old+perm对应的虚拟内存及其物理内存映射情况</code>)。</p>
 
@@ -98,39 +93,38 @@ from->to    vs rss rss_percentage(rss/total_rss) merge_block_count</p>
 
 <p>当一个进程无故消失的时候，我们一般看<code>/var/log/message</code>里是否有<code>Out of memory: Kill process</code>关键字(如果是java进程我们先看是否有crash日志)，如果有就说明是被os因为oom而被kill了：</p>
 
-<p>```
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238016] java invoked oom-killer: gfp_mask=0x201da, order=0, oom_adj=0, oom_score_adj=0
+<pre><code>Aug 19 08:32:38 mybank-ant kernel: : [6176841.238016] java invoked oom-killer: gfp_mask=0x201da, order=0, oom_adj=0, oom_score_adj=0
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.238022] java cpuset=/ mems_allowed=0
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.238024] Pid: 25371, comm: java Not tainted 2.6.32-220.23.2.ali878.el6.x86_64 #1
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.238026] Call Trace:
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238039]  [<ffffffff810c35e1>] ? cpuset_print_task_mems_allowed+0x91/0xb0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238068]  [<ffffffff81114d70>] ? dump_header+0x90/0x1b0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238074]  [<ffffffff810e1b2e>] ? <strong>delayacct_freepages_end+0x2e/0x30
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238079]  [<ffffffff81213ffc>] ? security_real_capable_noaudit+0x3c/0x70
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238082]  [<ffffffff811151fa>] ? oom_kill_process+0x8a/0x2c0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238084]  [<ffffffff81115131>] ? select_bad_process+0xe1/0x120
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238087]  [<ffffffff81115650>] ? out_of_memory+0x220/0x3c0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238093]  [<ffffffff81125929>] ? </strong>alloc_pages_nodemask+0x899/0x930
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238099]  [<ffffffff81159b6a>] ? alloc_pages_current+0xaa/0x110
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238102]  [<ffffffff81111ea7>] ? <strong>page_cache_alloc+0x87/0x90
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238105]  [<ffffffff81127f4b>] ? </strong>do_page_cache_readahead+0xdb/0x270
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238108]  [<ffffffff81128101>] ? ra_submit+0x21/0x30
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238110]  [<ffffffff81113e17>] ? filemap_fault+0x5b7/0x600
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238113]  [<ffffffff8113ca64>] ? <strong>do_fault+0x54/0x510
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238116]  [<ffffffff811140a0>] ? </strong>generic_file_aio_write+0x240/0x470
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238118]  [<ffffffff8113d017>] ? handle_pte_fault+0xf7/0xb50
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238121]  [<ffffffff8111438e>] ? generic_file_aio_write+0xbe/0xe0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238133]  [<ffffffffa008a171>] ? ext4_file_write+0x61/0x1e0 [ext4]
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238135]  [<ffffffff8113dc54>] ? handle_mm_fault+0x1e4/0x2b0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238138]  [<ffffffff81177c7a>] ? do_sync_write+0xfa/0x140
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238143]  [<ffffffff81042c69>] ? __do_page_fault+0x139/0x480
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238147]  [<ffffffff8118ad22>] ? vfs_ioctl+0x22/0xa0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238151]  [<ffffffff814e4f8e>] ? do_page_fault+0x3e/0xa0
-Aug 19 08:32:38 mybank-ant kernel: : [6176841.238154]  [<ffffffff814e2345>] ? page_fault+0x25/0x30</p>
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238039]  [&lt;ffffffff810c35e1&gt;] ? cpuset_print_task_mems_allowed+0x91/0xb0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238068]  [&lt;ffffffff81114d70&gt;] ? dump_header+0x90/0x1b0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238074]  [&lt;ffffffff810e1b2e&gt;] ? __delayacct_freepages_end+0x2e/0x30
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238079]  [&lt;ffffffff81213ffc&gt;] ? security_real_capable_noaudit+0x3c/0x70
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238082]  [&lt;ffffffff811151fa&gt;] ? oom_kill_process+0x8a/0x2c0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238084]  [&lt;ffffffff81115131&gt;] ? select_bad_process+0xe1/0x120
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238087]  [&lt;ffffffff81115650&gt;] ? out_of_memory+0x220/0x3c0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238093]  [&lt;ffffffff81125929&gt;] ? __alloc_pages_nodemask+0x899/0x930
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238099]  [&lt;ffffffff81159b6a&gt;] ? alloc_pages_current+0xaa/0x110
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238102]  [&lt;ffffffff81111ea7&gt;] ? __page_cache_alloc+0x87/0x90
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238105]  [&lt;ffffffff81127f4b&gt;] ? __do_page_cache_readahead+0xdb/0x270
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238108]  [&lt;ffffffff81128101&gt;] ? ra_submit+0x21/0x30
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238110]  [&lt;ffffffff81113e17&gt;] ? filemap_fault+0x5b7/0x600
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238113]  [&lt;ffffffff8113ca64&gt;] ? __do_fault+0x54/0x510
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238116]  [&lt;ffffffff811140a0&gt;] ? __generic_file_aio_write+0x240/0x470
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238118]  [&lt;ffffffff8113d017&gt;] ? handle_pte_fault+0xf7/0xb50
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238121]  [&lt;ffffffff8111438e&gt;] ? generic_file_aio_write+0xbe/0xe0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238133]  [&lt;ffffffffa008a171&gt;] ? ext4_file_write+0x61/0x1e0 [ext4]
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238135]  [&lt;ffffffff8113dc54&gt;] ? handle_mm_fault+0x1e4/0x2b0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238138]  [&lt;ffffffff81177c7a&gt;] ? do_sync_write+0xfa/0x140
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238143]  [&lt;ffffffff81042c69&gt;] ? __do_page_fault+0x139/0x480
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238147]  [&lt;ffffffff8118ad22&gt;] ? vfs_ioctl+0x22/0xa0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238151]  [&lt;ffffffff814e4f8e&gt;] ? do_page_fault+0x3e/0xa0
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.238154]  [&lt;ffffffff814e2345&gt;] ? page_fault+0x25/0x30
 
-<p>...</p>
+...
 
-<p>Aug 19 08:32:38 mybank-ant kernel: : [6176841.247969] [24673]  1801 24673  1280126   926068   1       0             0 java
+Aug 19 08:32:38 mybank-ant kernel: : [6176841.247969] [24673]  1801 24673  1280126   926068   1       0             0 java
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.247971] [25084]  1801 25084     3756      101   0       0             0 top
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.247973] [25094]  1801 25094    25233       30   1       0             0 tail
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.247975] [25098]  1801 25098    25233       31   0       0             0 tail
@@ -142,91 +136,84 @@ Aug 19 08:32:38 mybank-ant kernel: : [6176841.247986] [26081]  1801 26081    252
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.247988] [26147]  1801 26147    25233       32   0       0             0 tail
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.247990] Out of memory: Kill process 24673 (java) score 946 or sacrifice child
 Aug 19 08:32:38 mybank-ant kernel: : [6176841.249016] Killed process 24673, UID 1801, (java) total-vm:5120504kB, anon-rss:3703788kB, file-rss:484kB
-```</p>
+</code></pre>
 
 <p>从上面我们看到了一个堆栈，也就是内核里选择被kill进程的过程，这个过程会对进程进行一系列的计算，每个进程都会给它们计算一个score，这个分数会记录在<code>/proc/&lt;pid&gt;/oom_score</code>里，通常这个分数越高，就越危险，被kill的可能性就越大，下面将内核相关的代码贴出来，有兴趣的可以看看，其中代码注释上也写了挺多相关的东西了：</p>
 
-<p>```
-/<em>
+<pre><code>/*
  * Simple selection loop. We chose the process with the highest
  * number of 'points'. We expect the caller will lock the tasklist.
  *
  * (not docbooked, we don't want this one cluttering up the manual)
- </em>/
-static struct task_struct <em>select_bad_process(unsigned long </em>ppoints,</p>
+ */
+static struct task_struct *select_bad_process(unsigned long *ppoints,
+                        struct mem_cgroup *mem)
+{
+    struct task_struct *p;
+    struct task_struct *chosen = NULL;
+    struct timespec uptime;
+    *ppoints = 0;
 
-<pre><code>                    struct mem_cgroup *mem)
-</code></pre>
+    do_posix_clock_monotonic_gettime(&amp;uptime);
+    for_each_process(p) {
+        unsigned long points;
 
-<p>{</p>
+        /*
+         * skip kernel threads and tasks which have already released
+         * their mm.
+         */
+        if (!p-&gt;mm)
+            continue;
+        /* skip the init task */
+        if (is_global_init(p))
+            continue;
+        if (mem &amp;&amp; !task_in_mem_cgroup(p, mem))
+            continue;
 
-<pre><code>struct task_struct *p;
-struct task_struct *chosen = NULL;
-struct timespec uptime;
-*ppoints = 0;
-
-do_posix_clock_monotonic_gettime(&amp;uptime);
-for_each_process(p) {
-    unsigned long points;
-
-    /*
-     * skip kernel threads and tasks which have already released
-     * their mm.
-     */
-    if (!p-&gt;mm)
-        continue;
-    /* skip the init task */
-    if (is_global_init(p))
-        continue;
-    if (mem &amp;&amp; !task_in_mem_cgroup(p, mem))
-        continue;
-
-    /*
-     * This task already has access to memory reserves and is
-     * being killed. Don't allow any other task access to the
-     * memory reserve.
-     *
-     * Note: this may have a chance of deadlock if it gets
-     * blocked waiting for another task which itself is waiting
-     * for memory. Is there a better alternative?
-     */
-    if (test_tsk_thread_flag(p, TIF_MEMDIE))
-        return ERR_PTR(-1UL);
-
-    /*
-     * This is in the process of releasing memory so wait for it
-     * to finish before killing some other task by mistake.
-     *
-     * However, if p is the current task, we allow the 'kill' to
-     * go ahead if it is exiting: this will simply set TIF_MEMDIE,
-     * which will allow it to gain access to memory reserves in
-     * the process of exiting and releasing its resources.
-     * Otherwise we could get an easy OOM deadlock.
-     */
-    if (p-&gt;flags &amp; PF_EXITING) {
-        if (p != current)
+        /*
+         * This task already has access to memory reserves and is
+         * being killed. Don't allow any other task access to the
+         * memory reserve.
+         *
+         * Note: this may have a chance of deadlock if it gets
+         * blocked waiting for another task which itself is waiting
+         * for memory. Is there a better alternative?
+         */
+        if (test_tsk_thread_flag(p, TIF_MEMDIE))
             return ERR_PTR(-1UL);
 
-        chosen = p;
-        *ppoints = ULONG_MAX;
+        /*
+         * This is in the process of releasing memory so wait for it
+         * to finish before killing some other task by mistake.
+         *
+         * However, if p is the current task, we allow the 'kill' to
+         * go ahead if it is exiting: this will simply set TIF_MEMDIE,
+         * which will allow it to gain access to memory reserves in
+         * the process of exiting and releasing its resources.
+         * Otherwise we could get an easy OOM deadlock.
+         */
+        if (p-&gt;flags &amp; PF_EXITING) {
+            if (p != current)
+                return ERR_PTR(-1UL);
+
+            chosen = p;
+            *ppoints = ULONG_MAX;
+        }
+
+        if (p-&gt;signal-&gt;oom_adj == OOM_DISABLE)
+            continue;
+
+        points = badness(p, uptime.tv_sec);
+        if (points &gt; *ppoints || !chosen) {
+            chosen = p;
+            *ppoints = points;
+        }
     }
 
-    if (p-&gt;signal-&gt;oom_adj == OOM_DISABLE)
-        continue;
-
-    points = badness(p, uptime.tv_sec);
-    if (points &gt; *ppoints || !chosen) {
-        chosen = p;
-        *ppoints = points;
-    }
+    return chosen;
 }
 
-return chosen;
-</code></pre>
-
-<p>}</p>
-
-<p>/<em>*
+/**
  * badness - calculate a numeric value for how bad this task has been
  * @p: task struct of which task we should calculate
  * @uptime: current uptime in seconds
@@ -243,139 +230,131 @@ return chosen;
  * 5) we try to kill the process the user expects us to kill, this
  *    algorithm has been meticulously tuned to meet the principle
  *    of least surprise ... (be careful when you change it)
- </em>/</p>
+ */
 
-<p>unsigned long badness(struct task_struct *p, unsigned long uptime)
-{</p>
+unsigned long badness(struct task_struct *p, unsigned long uptime)
+{
+    unsigned long points, cpu_time, run_time;
+    struct mm_struct *mm;
+    struct task_struct *child;
+    int oom_adj = p-&gt;signal-&gt;oom_adj;
+    struct task_cputime task_time;
+    unsigned long utime;
+    unsigned long stime;
 
-<pre><code>unsigned long points, cpu_time, run_time;
-struct mm_struct *mm;
-struct task_struct *child;
-int oom_adj = p-&gt;signal-&gt;oom_adj;
-struct task_cputime task_time;
-unsigned long utime;
-unsigned long stime;
+    if (oom_adj == OOM_DISABLE)
+        return 0;
 
-if (oom_adj == OOM_DISABLE)
-    return 0;
+    task_lock(p);
+    mm = p-&gt;mm;
+    if (!mm) {
+        task_unlock(p);
+        return 0;
+    }
 
-task_lock(p);
-mm = p-&gt;mm;
-if (!mm) {
+    /*
+     * The memory size of the process is the basis for the badness.
+     */
+    points = mm-&gt;total_vm;
+
+    /*
+     * After this unlock we can no longer dereference local variable `mm'
+     */
     task_unlock(p);
-    return 0;
-}
 
-/*
- * The memory size of the process is the basis for the badness.
- */
-points = mm-&gt;total_vm;
+    /*
+     * swapoff can easily use up all memory, so kill those first.
+     */
+    if (p-&gt;flags &amp; PF_OOM_ORIGIN)
+        return ULONG_MAX;
 
-/*
- * After this unlock we can no longer dereference local variable `mm'
- */
-task_unlock(p);
+    /*
+     * Processes which fork a lot of child processes are likely
+     * a good choice. We add half the vmsize of the children if they
+     * have an own mm. This prevents forking servers to flood the
+     * machine with an endless amount of children. In case a single
+     * child is eating the vast majority of memory, adding only half
+     * to the parents will make the child our kill candidate of choice.
+     */
+    list_for_each_entry(child, &amp;p-&gt;children, sibling) {
+        task_lock(child);
+        if (child-&gt;mm != mm &amp;&amp; child-&gt;mm)
+            points += child-&gt;mm-&gt;total_vm/2 + 1;
+        task_unlock(child);
+    }
 
-/*
- * swapoff can easily use up all memory, so kill those first.
- */
-if (p-&gt;flags &amp; PF_OOM_ORIGIN)
-    return ULONG_MAX;
-
-/*
- * Processes which fork a lot of child processes are likely
- * a good choice. We add half the vmsize of the children if they
- * have an own mm. This prevents forking servers to flood the
- * machine with an endless amount of children. In case a single
- * child is eating the vast majority of memory, adding only half
- * to the parents will make the child our kill candidate of choice.
- */
-list_for_each_entry(child, &amp;p-&gt;children, sibling) {
-    task_lock(child);
-    if (child-&gt;mm != mm &amp;&amp; child-&gt;mm)
-        points += child-&gt;mm-&gt;total_vm/2 + 1;
-    task_unlock(child);
-}
-
-/*
- * CPU time is in tens of seconds and run time is in thousands
-     * of seconds. There is no particular reason for this other than
-     * that it turned out to work very well in practice.
- */
-thread_group_cputime(p, &amp;task_time);
-utime = cputime_to_jiffies(task_time.utime);
-stime = cputime_to_jiffies(task_time.stime);
-cpu_time = (utime + stime) &gt;&gt; (SHIFT_HZ + 3);
+    /*
+     * CPU time is in tens of seconds and run time is in thousands
+         * of seconds. There is no particular reason for this other than
+         * that it turned out to work very well in practice.
+     */
+    thread_group_cputime(p, &amp;task_time);
+    utime = cputime_to_jiffies(task_time.utime);
+    stime = cputime_to_jiffies(task_time.stime);
+    cpu_time = (utime + stime) &gt;&gt; (SHIFT_HZ + 3);
 
 
-if (uptime &gt;= p-&gt;start_time.tv_sec)
-    run_time = (uptime - p-&gt;start_time.tv_sec) &gt;&gt; 10;
-else
-    run_time = 0;
+    if (uptime &gt;= p-&gt;start_time.tv_sec)
+        run_time = (uptime - p-&gt;start_time.tv_sec) &gt;&gt; 10;
+    else
+        run_time = 0;
 
-if (cpu_time)
-    points /= int_sqrt(cpu_time);
-if (run_time)
-    points /= int_sqrt(int_sqrt(run_time));
+    if (cpu_time)
+        points /= int_sqrt(cpu_time);
+    if (run_time)
+        points /= int_sqrt(int_sqrt(run_time));
 
-/*
- * Niced processes are most likely less important, so double
- * their badness points.
- */
-if (task_nice(p) &gt; 0)
-    points *= 2;
+    /*
+     * Niced processes are most likely less important, so double
+     * their badness points.
+     */
+    if (task_nice(p) &gt; 0)
+        points *= 2;
 
-/*
- * Superuser processes are usually more important, so we make it
- * less likely that we kill those.
- */
-if (has_capability_noaudit(p, CAP_SYS_ADMIN) ||
-    has_capability_noaudit(p, CAP_SYS_RESOURCE))
-    points /= 4;
+    /*
+     * Superuser processes are usually more important, so we make it
+     * less likely that we kill those.
+     */
+    if (has_capability_noaudit(p, CAP_SYS_ADMIN) ||
+        has_capability_noaudit(p, CAP_SYS_RESOURCE))
+        points /= 4;
 
-/*
- * We don't want to kill a process with direct hardware access.
- * Not only could that mess up the hardware, but usually users
- * tend to only have this flag set on applications they think
- * of as important.
- */
-if (has_capability_noaudit(p, CAP_SYS_RAWIO))
-    points /= 4;
+    /*
+     * We don't want to kill a process with direct hardware access.
+     * Not only could that mess up the hardware, but usually users
+     * tend to only have this flag set on applications they think
+     * of as important.
+     */
+    if (has_capability_noaudit(p, CAP_SYS_RAWIO))
+        points /= 4;
 
-/*
- * If p's nodes don't overlap ours, it may still help to kill p
- * because p may have allocated or otherwise mapped memory on
- * this node before. However it will be less likely.
- */
-if (!has_intersects_mems_allowed(p))
-    points /= 8;
+    /*
+     * If p's nodes don't overlap ours, it may still help to kill p
+     * because p may have allocated or otherwise mapped memory on
+     * this node before. However it will be less likely.
+     */
+    if (!has_intersects_mems_allowed(p))
+        points /= 8;
 
-/*
- * Adjust the score by oom_adj.
- */
-if (oom_adj) {
-    if (oom_adj &gt; 0) {
-        if (!points)
-            points = 1;
-        points &lt;&lt;= oom_adj;
-    } else
-        points &gt;&gt;= -(oom_adj);
+    /*
+     * Adjust the score by oom_adj.
+     */
+    if (oom_adj) {
+        if (oom_adj &gt; 0) {
+            if (!points)
+                points = 1;
+            points &lt;&lt;= oom_adj;
+        } else
+            points &gt;&gt;= -(oom_adj);
+    }
+
+#ifdef DEBUG
+    printk(KERN_DEBUG "OOMkill: task %d (%s) got %lu points\n",
+    p-&gt;pid, p-&gt;comm, points);
+#endif
+    return points;
 }
 </code></pre>
-
-<h1>ifdef DEBUG</h1>
-
-<pre><code>printk(KERN_DEBUG "OOMkill: task %d (%s) got %lu points\n",
-p-&gt;pid, p-&gt;comm, points);
-</code></pre>
-
-<h1>endif</h1>
-
-<pre><code>return points;
-</code></pre>
-
-<p>}
-```</p>
 
 <h2>物理内存到底去哪了？</h2>
 
@@ -383,8 +362,7 @@ p-&gt;pid, p-&gt;comm, points);
 
 <p>这是我们查这个问题首先要想到的一个地方，是否是因为什么地方不断创建DirectByteBuffer对象，但是由于没有被回收导致了内存泄露呢，之前有篇文章已经详细介绍了这种特殊对象<a href="http://lovestblog.cn/blog/2015/05/12/direct-buffer/">JVM源码分析之堆外内存完全解读</a>，对阿里内部的童鞋，可以直接使用zprofiler的heap视图里的堆外内存分析功能拿到统计结果，知道后台到底绑定了多少堆外内存还没有被回收：</p>
 
-<p><code>
-object  position    limit   capacity
+<pre><code>object  position    limit   capacity
  java.nio.DirectByteBuffer @ 0x760afaed0    133 133 6380562
  java.nio.DirectByteBuffer @ 0x790d51ae0    0   262144  262144
  java.nio.DirectByteBuffer @ 0x790d20b80    133934  133934  262144
@@ -411,232 +389,197 @@ object  position    limit   capacity
  java.nio.DirectByteBuffer @ 0x761a76300    74369   74369   131072
  java.nio.DirectByteBuffer @ 0x7607423d0    0   131072  131072
  总共: 25 / 875 条目; 还有850条,双击展开 1267762 3826551 12083282
-</code></p>
+</code></pre>
 
 <h3>某个动态库里频繁分配？</h3>
 
 <p>对于动态库里频繁分配的问题，主要得使用google的perftools工具了，该工具网上介绍挺多的，就不对其用法做详细介绍了，通过该工具我们能得到native方法分配内存的情况，该工具主要利用了unix的一个环境变量LD_PRELOAD，它允许你要加载的动态库优先加载起来，相当于一个Hook了，于是可以针对同一个函数可以选择不同的动态库里的实现了，比如googleperftools就是将malloc方法替换成了tcmalloc的实现，这样就可以跟踪内存分配路径了，得到的效果类似如下：</p>
 
-<p>```
-Total: 1670.0 MB
-  1616.3  96.8%  96.8%   1616.3  96.8% zcalloc</p>
-
-<pre><code>40.3   2.4%  99.2%     40.3   2.4% os::malloc
- 9.4   0.6%  99.8%      9.4   0.6% init
- 1.6   0.1%  99.9%      1.7   0.1% readCEN
- 1.3   0.1%  99.9%      1.3   0.1% ObjectSynchronizer::omAlloc
- 0.5   0.0% 100.0%   1591.0  95.3% Java_java_util_zip_Deflater_init
- 0.1   0.0% 100.0%      0.1   0.0% _dl_allocate_tls
- 0.1   0.0% 100.0%      0.2   0.0% addMetaName
- 0.1   0.0% 100.0%      0.2   0.0% allocZip
- 0.1   0.0% 100.0%      0.1   0.0% instanceKlass::add_dependent_nmethod
- 0.1   0.0% 100.0%      0.1   0.0% newEntry
- 0.0   0.0% 100.0%      0.0   0.0% strdup
- 0.0   0.0% 100.0%     25.8   1.5% Java_java_util_zip_Inflater_init
- 0.0   0.0% 100.0%      0.0   0.0% growMetaNames
- 0.0   0.0% 100.0%      0.0   0.0% _dl_new_object
- 0.0   0.0% 100.0%      0.0   0.0% pthread_cond_wait@GLIBC_2.2.5
- 0.0   0.0% 100.0%      1.4   0.1% Thread::Thread
- 0.0   0.0% 100.0%      0.0   0.0% pthread_cond_timedwait@GLIBC_2.2.5
- 0.0   0.0% 100.0%      0.0   0.0% JLI_MemAlloc
- 0.0   0.0% 100.0%      0.0   0.0% read_alias_file
- 0.0   0.0% 100.0%      0.0   0.0% _nl_intern_locale_data
- 0.0   0.0% 100.0%      0.0   0.0% nss_parse_service_list
- 0.0   0.0% 100.0%      0.0   0.0% getprotobyname
- 0.0   0.0% 100.0%      0.0   0.0% getpwuid
- 0.0   0.0% 100.0%      0.0   0.0% _dl_check_map_versions
- 0.0   0.0% 100.0%   1590.5  95.2% deflateInit2_
+<pre><code>Total: 1670.0 MB
+  1616.3  96.8%  96.8%   1616.3  96.8% zcalloc
+    40.3   2.4%  99.2%     40.3   2.4% os::malloc
+     9.4   0.6%  99.8%      9.4   0.6% init
+     1.6   0.1%  99.9%      1.7   0.1% readCEN
+     1.3   0.1%  99.9%      1.3   0.1% ObjectSynchronizer::omAlloc
+     0.5   0.0% 100.0%   1591.0  95.3% Java_java_util_zip_Deflater_init
+     0.1   0.0% 100.0%      0.1   0.0% _dl_allocate_tls
+     0.1   0.0% 100.0%      0.2   0.0% addMetaName
+     0.1   0.0% 100.0%      0.2   0.0% allocZip
+     0.1   0.0% 100.0%      0.1   0.0% instanceKlass::add_dependent_nmethod
+     0.1   0.0% 100.0%      0.1   0.0% newEntry
+     0.0   0.0% 100.0%      0.0   0.0% strdup
+     0.0   0.0% 100.0%     25.8   1.5% Java_java_util_zip_Inflater_init
+     0.0   0.0% 100.0%      0.0   0.0% growMetaNames
+     0.0   0.0% 100.0%      0.0   0.0% _dl_new_object
+     0.0   0.0% 100.0%      0.0   0.0% pthread_cond_wait@GLIBC_2.2.5
+     0.0   0.0% 100.0%      1.4   0.1% Thread::Thread
+     0.0   0.0% 100.0%      0.0   0.0% pthread_cond_timedwait@GLIBC_2.2.5
+     0.0   0.0% 100.0%      0.0   0.0% JLI_MemAlloc
+     0.0   0.0% 100.0%      0.0   0.0% read_alias_file
+     0.0   0.0% 100.0%      0.0   0.0% _nl_intern_locale_data
+     0.0   0.0% 100.0%      0.0   0.0% nss_parse_service_list
+     0.0   0.0% 100.0%      0.0   0.0% getprotobyname
+     0.0   0.0% 100.0%      0.0   0.0% getpwuid
+     0.0   0.0% 100.0%      0.0   0.0% _dl_check_map_versions
+     0.0   0.0% 100.0%   1590.5  95.2% deflateInit2_
 </code></pre>
-
-<p>```</p>
 
 <p>从上面的输出中我们看到了<code>zcalloc</code>函数总共分配了1616.3M的内存，还有<code>Java_java_util_zip_Deflater_init</code>分配了1591.0M内存，<code>deflateInit2_</code>分配了1590.5M，然而总共才分配了1670.0M内存，所以这几个函数肯定是调用者和被调用者的关系：</p>
 
-<p>```
-JNIEXPORT jlong JNICALL
-Java_java_util_zip_Deflater_init(JNIEnv *env, jclass cls, jint level,</p>
+<pre><code>JNIEXPORT jlong JNICALL
+Java_java_util_zip_Deflater_init(JNIEnv *env, jclass cls, jint level,
+                                 jint strategy, jboolean nowrap)
+{
+    z_stream *strm = calloc(1, sizeof(z_stream));
 
-<pre><code>                             jint strategy, jboolean nowrap)
-</code></pre>
-
-<p>{</p>
-
-<pre><code>z_stream *strm = calloc(1, sizeof(z_stream));
-
-if (strm == 0) {
-    JNU_ThrowOutOfMemoryError(env, 0);
-    return jlong_zero;
-} else {
-    char *msg;
-    switch (deflateInit2(strm, level, Z_DEFLATED,
-                         nowrap ? -MAX_WBITS : MAX_WBITS,
-                         DEF_MEM_LEVEL, strategy)) {
-      case Z_OK:
-        return ptr_to_jlong(strm);
-      case Z_MEM_ERROR:
-        free(strm);
+    if (strm == 0) {
         JNU_ThrowOutOfMemoryError(env, 0);
         return jlong_zero;
-      case Z_STREAM_ERROR:
-        free(strm);
-        JNU_ThrowIllegalArgumentException(env, 0);
-        return jlong_zero;
-      default:
-        msg = strm-&gt;msg;
-        free(strm);
-        JNU_ThrowInternalError(env, msg);
-        return jlong_zero;
+    } else {
+        char *msg;
+        switch (deflateInit2(strm, level, Z_DEFLATED,
+                             nowrap ? -MAX_WBITS : MAX_WBITS,
+                             DEF_MEM_LEVEL, strategy)) {
+          case Z_OK:
+            return ptr_to_jlong(strm);
+          case Z_MEM_ERROR:
+            free(strm);
+            JNU_ThrowOutOfMemoryError(env, 0);
+            return jlong_zero;
+          case Z_STREAM_ERROR:
+            free(strm);
+            JNU_ThrowIllegalArgumentException(env, 0);
+            return jlong_zero;
+          default:
+            msg = strm-&gt;msg;
+            free(strm);
+            JNU_ThrowInternalError(env, msg);
+            return jlong_zero;
+        }
     }
 }
-</code></pre>
 
-<p>}</p>
 
-<p>int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,</p>
+int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
+                  version, stream_size)
+    z_streamp strm;
+    int  level;
+    int  method;
+    int  windowBits;
+    int  memLevel;
+    int  strategy;
+    const char *version;
+    int stream_size;
+{
+    deflate_state *s;
+    int wrap = 1;
+    static const char my_version[] = ZLIB_VERSION;
 
-<pre><code>              version, stream_size)
-z_streamp strm;
-int  level;
-int  method;
-int  windowBits;
-int  memLevel;
-int  strategy;
-const char *version;
-int stream_size;
-</code></pre>
+    ushf *overlay;
+    /* We overlay pending_buf and d_buf+l_buf. This works since the average
+     * output size for (length,distance) codes is &lt;= 24 bits.
+     */
 
-<p>{</p>
+    if (version == Z_NULL || version[0] != my_version[0] ||
+        stream_size != sizeof(z_stream)) {
+        return Z_VERSION_ERROR;
+    }
+    if (strm == Z_NULL) return Z_STREAM_ERROR;
 
-<pre><code>deflate_state *s;
-int wrap = 1;
-static const char my_version[] = ZLIB_VERSION;
+    strm-&gt;msg = Z_NULL;
+    if (strm-&gt;zalloc == (alloc_func)0) {
+        strm-&gt;zalloc = zcalloc;
+        strm-&gt;opaque = (voidpf)0;
+    }
+    if (strm-&gt;zfree == (free_func)0) strm-&gt;zfree = zcfree;
 
-ushf *overlay;
-/* We overlay pending_buf and d_buf+l_buf. This works since the average
- * output size for (length,distance) codes is &lt;= 24 bits.
- */
+#ifdef FASTEST
+    if (level != 0) level = 1;
+#else
+    if (level == Z_DEFAULT_COMPRESSION) level = 6;
+#endif
 
-if (version == Z_NULL || version[0] != my_version[0] ||
-    stream_size != sizeof(z_stream)) {
-    return Z_VERSION_ERROR;
+    if (windowBits &lt; 0) { /* suppress zlib wrapper */
+        wrap = 0;
+        windowBits = -windowBits;
+    }
+#ifdef GZIP
+    else if (windowBits &gt; 15) {
+        wrap = 2;       /* write gzip wrapper instead */
+        windowBits -= 16;
+    }
+#endif
+    if (memLevel &lt; 1 || memLevel &gt; MAX_MEM_LEVEL || method != Z_DEFLATED ||
+        windowBits &lt; 8 || windowBits &gt; 15 || level &lt; 0 || level &gt; 9 ||
+        strategy &lt; 0 || strategy &gt; Z_FIXED) {
+        return Z_STREAM_ERROR;
+    }
+    if (windowBits == 8) windowBits = 9;  /* until 256-byte window bug fixed */
+    s = (deflate_state *) ZALLOC(strm, 1, sizeof(deflate_state));
+    if (s == Z_NULL) return Z_MEM_ERROR;
+    strm-&gt;state = (struct internal_state FAR *)s;
+    s-&gt;strm = strm;
+
+    s-&gt;wrap = wrap;
+    s-&gt;gzhead = Z_NULL;
+    s-&gt;w_bits = windowBits;
+    s-&gt;w_size = 1 &lt;&lt; s-&gt;w_bits;
+    s-&gt;w_mask = s-&gt;w_size - 1;
+
+    s-&gt;hash_bits = memLevel + 7;
+    s-&gt;hash_size = 1 &lt;&lt; s-&gt;hash_bits;
+    s-&gt;hash_mask = s-&gt;hash_size - 1;
+    s-&gt;hash_shift =  ((s-&gt;hash_bits+MIN_MATCH-1)/MIN_MATCH);
+
+    s-&gt;window = (Bytef *) ZALLOC(strm, s-&gt;w_size, 2*sizeof(Byte));
+    s-&gt;prev   = (Posf *)  ZALLOC(strm, s-&gt;w_size, sizeof(Pos));
+    s-&gt;head   = (Posf *)  ZALLOC(strm, s-&gt;hash_size, sizeof(Pos));
+
+    s-&gt;lit_bufsize = 1 &lt;&lt; (memLevel + 6); /* 16K elements by default */
+
+    overlay = (ushf *) ZALLOC(strm, s-&gt;lit_bufsize, sizeof(ush)+2);
+    s-&gt;pending_buf = (uchf *) overlay;
+    s-&gt;pending_buf_size = (ulg)s-&gt;lit_bufsize * (sizeof(ush)+2L);
+
+    if (s-&gt;window == Z_NULL || s-&gt;prev == Z_NULL || s-&gt;head == Z_NULL ||
+        s-&gt;pending_buf == Z_NULL) {
+        s-&gt;status = FINISH_STATE;
+        strm-&gt;msg = (char*)ERR_MSG(Z_MEM_ERROR);
+        deflateEnd (strm);
+        return Z_MEM_ERROR;
+    }
+    s-&gt;d_buf = overlay + s-&gt;lit_bufsize/sizeof(ush);
+    s-&gt;l_buf = s-&gt;pending_buf + (1+sizeof(ush))*s-&gt;lit_bufsize;
+
+    s-&gt;level = level;
+    s-&gt;strategy = strategy;
+    s-&gt;method = (Byte)method;
+
+    return deflateReset(strm);
 }
-if (strm == Z_NULL) return Z_STREAM_ERROR;
-
-strm-&gt;msg = Z_NULL;
-if (strm-&gt;zalloc == (alloc_func)0) {
-    strm-&gt;zalloc = zcalloc;
-    strm-&gt;opaque = (voidpf)0;
-}
-if (strm-&gt;zfree == (free_func)0) strm-&gt;zfree = zcfree;
 </code></pre>
-
-<h1>ifdef FASTEST</h1>
-
-<pre><code>if (level != 0) level = 1;
-</code></pre>
-
-<h1>else</h1>
-
-<pre><code>if (level == Z_DEFAULT_COMPRESSION) level = 6;
-</code></pre>
-
-<h1>endif</h1>
-
-<pre><code>if (windowBits &lt; 0) { /* suppress zlib wrapper */
-    wrap = 0;
-    windowBits = -windowBits;
-}
-</code></pre>
-
-<h1>ifdef GZIP</h1>
-
-<pre><code>else if (windowBits &gt; 15) {
-    wrap = 2;       /* write gzip wrapper instead */
-    windowBits -= 16;
-}
-</code></pre>
-
-<h1>endif</h1>
-
-<pre><code>if (memLevel &lt; 1 || memLevel &gt; MAX_MEM_LEVEL || method != Z_DEFLATED ||
-    windowBits &lt; 8 || windowBits &gt; 15 || level &lt; 0 || level &gt; 9 ||
-    strategy &lt; 0 || strategy &gt; Z_FIXED) {
-    return Z_STREAM_ERROR;
-}
-if (windowBits == 8) windowBits = 9;  /* until 256-byte window bug fixed */
-s = (deflate_state *) ZALLOC(strm, 1, sizeof(deflate_state));
-if (s == Z_NULL) return Z_MEM_ERROR;
-strm-&gt;state = (struct internal_state FAR *)s;
-s-&gt;strm = strm;
-
-s-&gt;wrap = wrap;
-s-&gt;gzhead = Z_NULL;
-s-&gt;w_bits = windowBits;
-s-&gt;w_size = 1 &lt;&lt; s-&gt;w_bits;
-s-&gt;w_mask = s-&gt;w_size - 1;
-
-s-&gt;hash_bits = memLevel + 7;
-s-&gt;hash_size = 1 &lt;&lt; s-&gt;hash_bits;
-s-&gt;hash_mask = s-&gt;hash_size - 1;
-s-&gt;hash_shift =  ((s-&gt;hash_bits+MIN_MATCH-1)/MIN_MATCH);
-
-s-&gt;window = (Bytef *) ZALLOC(strm, s-&gt;w_size, 2*sizeof(Byte));
-s-&gt;prev   = (Posf *)  ZALLOC(strm, s-&gt;w_size, sizeof(Pos));
-s-&gt;head   = (Posf *)  ZALLOC(strm, s-&gt;hash_size, sizeof(Pos));
-
-s-&gt;lit_bufsize = 1 &lt;&lt; (memLevel + 6); /* 16K elements by default */
-
-overlay = (ushf *) ZALLOC(strm, s-&gt;lit_bufsize, sizeof(ush)+2);
-s-&gt;pending_buf = (uchf *) overlay;
-s-&gt;pending_buf_size = (ulg)s-&gt;lit_bufsize * (sizeof(ush)+2L);
-
-if (s-&gt;window == Z_NULL || s-&gt;prev == Z_NULL || s-&gt;head == Z_NULL ||
-    s-&gt;pending_buf == Z_NULL) {
-    s-&gt;status = FINISH_STATE;
-    strm-&gt;msg = (char*)ERR_MSG(Z_MEM_ERROR);
-    deflateEnd (strm);
-    return Z_MEM_ERROR;
-}
-s-&gt;d_buf = overlay + s-&gt;lit_bufsize/sizeof(ush);
-s-&gt;l_buf = s-&gt;pending_buf + (1+sizeof(ush))*s-&gt;lit_bufsize;
-
-s-&gt;level = level;
-s-&gt;strategy = strategy;
-s-&gt;method = (Byte)method;
-
-return deflateReset(strm);
-</code></pre>
-
-<p>}
-```</p>
 
 <p>上述代码也验证了他们这种关系。</p>
 
 <p>那现在的问题就是找出哪里调用<code>Java_java_util_zip_Deflater_init</code>了，从这方法的命名上知道它是一个java的native方法实现，对应的是<code>java.util.zip.Deflater</code>这个类的<code>init</code>方法，所以要知道<code>init</code>方法哪里被调用了，跟踪调用栈我们会想到btrace工具，但是btrace是通过插桩的方式来实现的，对于native方法是无法插桩的，于是我们看调用它的地方，找到对应的方法，然后进行btrace脚本编写：</p>
 
-<p>```
-import com.sun.btrace.annotations.<em>;
-import static com.sun.btrace.BTraceUtils.</em>;</p>
+<pre><code>import com.sun.btrace.annotations.*;
+import static com.sun.btrace.BTraceUtils.*;
 
-<p>@BTrace public class Test {</p>
-
-<pre><code>@OnMethod(
-    clazz="java.util.zip.Deflater",
-    method="&lt;init&gt;"
-)
-public static void onnewThread(int i,boolean b) {
-    jstack();
- }
+@BTrace public class Test {
+    @OnMethod(
+        clazz="java.util.zip.Deflater",
+        method="&lt;init&gt;"
+    )
+    public static void onnewThread(int i,boolean b) {
+        jstack();
+     }
+}
 </code></pre>
-
-<p>}</p>
-
-<p>```</p>
 
 <p>于是跟踪对应的进程，我们能抓到调用Deflater构造函数的堆栈</p>
 
-<p><code>
-org.apache.commons.compress.compressors.deflate.DeflateCompressorOutputStream.&lt;init&gt;(DeflateCompressorOutputStream.java:47)
+<pre><code>org.apache.commons.compress.compressors.deflate.DeflateCompressorOutputStream.&lt;init&gt;(DeflateCompressorOutputStream.java:47)
 com.xxx.unimsg.parse.util.CompressUtil.deflateCompressAndEncode(CompressUtil.java:199)
 com.xxx.unimsg.parse.util.CompressUtil.compress(CompressUtil.java:80)
 com.xxx.unimsg.UnifyMessageHelper.compressXml(UnifyMessageHelper.java:65)
@@ -655,7 +598,7 @@ com.alipay.finsupport.component.monitor.MethodMonitorInterceptor.invoke(MethodMo
 org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:172)
 org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:202)
 ...
-</code></p>
+</code></pre>
 
 <p>从上面的堆栈我们找出了调用<code>java.util.zip.Deflate.init()</code>的地方</p>
 
@@ -663,8 +606,7 @@ org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.j
 
 <p>上面已经定位了具体的代码了，于是再细致跟踪了下对应的代码，其实并不是代码实现上的问题，而是代码设计上没有考虑到流量很大的场景，当流量很大的时候，不管自己系统是否能承受这么大的压力，都来者不拒，拿到数据就做deflate，而这个过程是需要分配堆外内存的，当量达到一定程度的时候此时会发生oom killer，另外我们在分析过程中发现其实物理内存是有下降的</p>
 
-<p><code>
-30071.txt:     0.0   0.0% 100.0%     96.7  57.0% Java_java_util_zip_Deflater_init
+<pre><code>30071.txt:     0.0   0.0% 100.0%     96.7  57.0% Java_java_util_zip_Deflater_init
 30071.txt:     0.1   0.0%  99.9%    196.0  72.6% Java_java_util_zip_Deflater_init
 30071.txt:     0.1   0.0%  99.9%    290.3  78.5% Java_java_util_zip_Deflater_init
 30071.txt:     0.1   0.0%  99.9%    392.7  83.6% Java_java_util_zip_Deflater_init
@@ -692,7 +634,7 @@ org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.j
 30071.txt:     0.1   0.0%  99.9%    271.5  77.9% Java_java_util_zip_Deflater_init
 30071.txt:     0.4   0.0%  99.9%   1260.4  93.1% Java_java_util_zip_Deflater_init
 30071.txt:     0.3   0.0%  99.9%    976.4  90.6% Java_java_util_zip_Deflater_init
-</code></p>
+</code></pre>
 
 <p>这也就说明了其实代码使用上并没有错，因此建议将deflate放到队列里去做，比如限制队列大小是100，每次最多100个数据可以被deflate，处理一个放进一个，以至于不会被活活撑死。</p>
 ]]></content>

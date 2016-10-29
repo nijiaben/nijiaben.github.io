@@ -1,987 +1,543 @@
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
-<head>
-  <meta charset="utf-8">
-  <title>Blog Archive - 你假笨</title>
-  <meta name="author" content="你假笨">
+<!DOCTYPE HTML>
 
-   
-  <meta name="description" content="技术宅改变世界">
-  
-  <meta name="keywords" content="">
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>Blog Archives - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="2016 May 18 gc, jvm YGC前后新生代变大？ Apr 24 classloader, jdk8, jvm JVM源码分析之JDK8下的僵尸(无法回收)类加载器 Apr 19 jvm, stackoverflow JVM源码分析之栈溢出完全解读 Apr 3 jdk8, jvm, &hellip;">
+	
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
   <meta name="MobileOptimized" content="320">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/archives/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
   
-  <link rel="canonical" href="http://nijiaben.github.io/blog/archives">
-  <link href="/favicon.ico" rel="icon">
-  <!--
-  <link href='http://fonts.googleapis.com/css?family=Quicksand:300,400' rel='stylesheet' type='text/css'>
-  <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,300' rel='stylesheet' type='text/css'>
-  -->
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
-  <link href="/js/google-code-prettify/vibrant-ink.css" media="screen, projection" rel="stylesheet" type="text/css"]]>
-  <script src="/js/jquery.js"></script>
-  <script src="/js/bootstrap-collapse.js"></script>
-  <script src="/js/modernizr-2.0.js"></script>
-  <script src="/js/octopress.js" type="text/javascript"></script>
-  <script src="/js/application.js"></script>
-  <script type="text/javascript "src="/js/google-code-prettify/prettify.js"></script>
-  <script type="text/javascript"]]>
-    	$(function(){     
-		 $('pre').addClass('prettyprint').attr('style','overflow:auto');
-	         window.prettyPrint && prettyPrint();
-                 $('table').addClass('table')});
-  </script>
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<!-- <link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
--->
-
-  
-  <script type="text/javascript">
-    var _gaq = _gaq || [];
-    _gaq.push(['_setAccount', 'UA-52812422-1']);
-    _gaq.push(['_trackPageview']);
-
-    (function() {
-      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-    })();
-  </script>
-
 
 </head>
 
-<body   >
-  <div class="navbar navbar-inverse navbar-static-top">
-  	<div class="navbar-inner">
-  	  <div class="container">
-        <a class="btn btn-navbar" data-toggle="collapse" data-target=".navbar-responsive-collapse">
-          <span class="fui-menu-24"></span>
-        </a>
-  	  	<div class="nav-collapse collapse navbar-responsive-collapse" style="height:0;">
-  	      <ul class="nav">
-    
-        <li ><a href="/">博客</a></li>
-    
-        <li ><a href="/archives/index.html">目录</a></li>
-    
-        <li ><a href="/comments/latest.html">最新评论</a></li>
-    
-        <li ><a href="/about/index.html">关于你假笨</a></li>
-    
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li>
 </ul>
 
-<ul class="nav pull-right">
-    
-    
-    
-    
-    <li><a href="http://weibo.com/nijiaben" title="Sina Weibo Profile"><i class="icon-weibo social-navbar"></i></a></li>
-    
-    
-    
-    
-    
-    
-    <li><a href="/atom.xml" title="RSS Feed"><i class="icon-rss-sign social-navbar"></i></a></li>
-    
 
-    
-</ul>
-
-  	    </div>
-  	  </div>
-  	</div>
-  </div>
-  <div class="container" id="main">
-      <div class="row-fluid">
-        <div id="content">
-          <article role="article">
-  
-  <header>
-    <div class="jumbotron">
-      Blog Archive
-    </div>
-    
-  </header>
-  
-  <div clas id="blog-archives">
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	  
-	    <h1>2016</h1>
-	
-	</div>
-	
-	<div class="span11">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-05-18T18:59:44+08:00" pubdate><span class='month'>May</span> <span class='day'>18</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/05/18/ygc-worse/">YGC前后新生代变大？</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
+<section class="aboutme">
+  <p>
+    技术宅改变世界
+  </p>
+</section>
+</nav>
+<nav id="sub-nav">
+	<div class="social">
 		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/gc/'>GC</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
 		
 	</div>
-</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><div itemscope itemtype="http://schema.org/Blog">
 
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-04-24T11:21:24+08:00" pubdate><span class='month'>Apr</span> <span class='day'>24</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/04/24/classloader-unload/">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/classloader/'>ClassLoader</a>, <a class='category' href='/blog/categories/jdk8/'>JDK8</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-04-19T01:24:25+08:00" pubdate><span class='month'>Apr</span> <span class='day'>19</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/04/19/stack-over-flow/">JVM源码分析之栈溢出完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a>, <a class='category' href='/blog/categories/stackoverflow/'>StackOverflow</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-04-03T12:50:39+08:00" pubdate><span class='month'>Apr</span> <span class='day'>03</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/04/03/type-inference/">JDK8在泛型类型推导上的变化</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jdk8/'>JDK8</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a>, <a class='category' href='/blog/categories/typeinference/'>TypeInference</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-03-31T22:11:56+08:00" pubdate><span class='month'>Mar</span> <span class='day'>31</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/03/31/class-init/">不可逆的类初始化过程</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/class/'>Class</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-03-31T18:27:35+08:00" pubdate><span class='month'>Mar</span> <span class='day'>31</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/03/31/cpu-thread/">如何定位消耗CPU最多的线程</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/cpu/'>CPU</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-03-27T11:31:25+08:00" pubdate><span class='month'>Mar</span> <span class='day'>27</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/03/27/object-wait-notify/">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2016-03-15T13:51:58+08:00" pubdate><span class='month'>Mar</span> <span class='day'>15</span><span class='year'><!--2016--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2016/03/15/ygc-classloader/">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/classloader/'>ClassLoader</a>, <a class='category' href='/blog/categories/gc/'>GC</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	  
-	    <h1>2015</h1>
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-10-21T18:54:01+08:00" pubdate><span class='month'>Oct</span> <span class='day'>21</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/10/21/deadlock/">消失的死锁</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/deadlock/'>DeadLock</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-09-14T13:17:50+08:00" pubdate><span class='month'>Sep</span> <span class='day'>14</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/09/14/javaagent/">JVM源码分析之javaagent原理完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/agent/'>Agent</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-08-21T18:58:53+08:00" pubdate><span class='month'>Aug</span> <span class='day'>21</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/08/21/rssxmx/">进程物理内存远大于Xmx的问题分析</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a>, <a class='category' href='/blog/categories/oomkiller/'>OOMKiller</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-07-09T14:35:31+08:00" pubdate><span class='month'>Jul</span> <span class='day'>09</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/07/09/final-reference/">JVM源码分析之FinalReference完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/finalreference/'>FinalReference</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-05-12T13:49:57+08:00" pubdate><span class='month'>May</span> <span class='day'>12</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/05/12/direct-buffer/">JVM源码分析之堆外内存完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2015-05-07T20:02:51+08:00" pubdate><span class='month'>May</span> <span class='day'>07</span><span class='year'><!--2015--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2015/05/07/system-gc/">JVM源码分析之SystemGC完全解读</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a>, <a class='category' href='/blog/categories/systemgc/'>SystemGC</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	  
-	    <h1>2014</h1>
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-07-24T14:10:26+08:00" pubdate><span class='month'>Jul</span> <span class='day'>24</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/07/24/jvm-thread-dump-bug/">JVM Bug:多个线程持有一把锁?</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/jvm/'>JVM</a>, <a class='category' href='/blog/categories/thread/'>Thread</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-07-19T09:58:49+08:00" pubdate><span class='month'>Jul</span> <span class='day'>19</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/07/19/java-debug-log/">从日志上理解JAVA调试机制</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/debug/'>DEBUG</a>, <a class='category' href='/blog/categories/jdwp/'>JDWP</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-07-08T16:39:46+08:00" pubdate><span class='month'>Jul</span> <span class='day'>08</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/classloader/'>ClassLoader</a>, <a class='category' href='/blog/categories/deadlock/'>DeadLock</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-06-28T11:33:07+08:00" pubdate><span class='month'>Jun</span> <span class='day'>28</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/06/28/hsdb-string/">通过HSDB来了解String值的真身在哪里</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/hsdb/'>HSDB</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-06-18T19:15:52+08:00" pubdate><span class='month'>Jun</span> <span class='day'>18</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/attach/'>Attach</a>, <a class='category' href='/blog/categories/jvm/'>JVM</a></span>
-		</footer>
-		
-	</div>
-</div>
-
-
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
 	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-05-20T19:31:28+08:00" pubdate><span class='month'>May</span> <span class='day'>20</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/05/20/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/tcp/'>TCP</a></span>
-		</footer>
-		
-	</div>
-</div>
-
 
-	  </article>
-	</div>
-  </div>
 
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
 	
-	<div class="span11 border-top">
 	
-
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-05-04T10:43:57+08:00" pubdate><span class='month'>May</span> <span class='day'>04</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/05/04/pcduino-web-site/">pcduino搭建web站点IP映射解决方案</a></h1>
-	</div>
-</div>
-
-<div class="row-fluid">
-	<div class="span1">
-	</div>
-	<div class="span10">
-		
-
-		<footer class="archive">
-		  <span class="categories">posted in <a class='category' href='/blog/categories/pcduino/'>PCDUINO</a>, <a class='category' href='/blog/categories/web/'>WEB</a></span>
-		</footer>
-		
-	</div>
-</div>
+	<section class="archives"><h1 class="year">2016</h1>
 
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-05-18T18:59:44+08:00" itemprop="datePublished">May 18</time></span>
+		<br>
+		<span class="tags">
 
-	  </article>
-	</div>
-  </div>
-
-  
-  <div class="row-fluid">
-	<div class="span1">
-	
-	</div>
-	
-	<div class="span11 border-top">
-	
 
-	  <article>
-	  
-<div class="row-fluid">
-	<div class="span1">
-		<h1 class="date-time"><time datetime="2014-04-23T23:47:00+08:00" pubdate><span class='month'>Apr</span> <span class='day'>23</span><span class='year'><!--2014--></span></time></h1>
-	</div>
-	<div class="span10">
-		<h1><a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a></h1>
-	</div>
-</div>
+	<a class='category' href='/blog/categories/gc/'>gc</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
 
 
-	  </article>
+</span>
+	    
 	</div>
-  </div>
-
-</div>
-
+	<h1 class="title" itemprop="name"><a href="/blog/2016/05/18/ygc-worse/">YGC前后新生代变大？</a></h1>
 </article>
 
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-04-24T11:21:24+08:00" itemprop="datePublished">Apr 24</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/24/classloader-unload/">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-04-19T01:24:25+08:00" itemprop="datePublished">Apr 19</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/stackoverflow/'>stackoverflow</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/19/stack-over-flow/">JVM源码分析之栈溢出完全解读</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-04-03T12:50:39+08:00" itemprop="datePublished">Apr  3</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/typeinference/'>typeinference</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/04/03/type-inference/">JDK8在泛型类型推导上的变化</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-03-31T22:11:56+08:00" itemprop="datePublished">Mar 31</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/class/'>class</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/">不可逆的类初始化过程</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-03-31T18:27:35+08:00" itemprop="datePublished">Mar 31</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/cpu/'>cpu</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/cpu-thread/">如何定位消耗CPU最多的线程</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-03-27T11:31:25+08:00" itemprop="datePublished">Mar 27</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/27/object-wait-notify/">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-03-15T13:51:58+08:00" itemprop="datePublished">Mar 15</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/gc/'>gc</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/15/ygc-classloader/">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
+</article>
+
+	
+
+
+	
+	
+		</section>
+	
+	<section class="archives"><h1 class="year">2015</h1>
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-10-21T18:54:01+08:00" itemprop="datePublished">Oct 21</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/deadlock/'>deadlock</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/10/21/deadlock/">消失的死锁</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-09-14T13:17:50+08:00" itemprop="datePublished">Sep 14</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/agent/'>agent</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/09/14/javaagent/">JVM源码分析之javaagent原理完全解读</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-08-21T18:58:53+08:00" itemprop="datePublished">Aug 21</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/oomkiller/'>oomkiller</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/08/21/rssxmx/">进程物理内存远大于Xmx的问题分析</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-07-09T14:35:31+08:00" itemprop="datePublished">Jul  9</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/finalreference/'>finalreference</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/07/09/final-reference/">JVM源码分析之FinalReference完全解读</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-05-12T13:49:57+08:00" itemprop="datePublished">May 12</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/05/12/direct-buffer/">JVM源码分析之堆外内存完全解读</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2015-05-07T20:02:51+08:00" itemprop="datePublished">May  7</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/systemgc/'>systemgc</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2015/05/07/system-gc/">JVM源码分析之SystemGC完全解读</a></h1>
+</article>
+
+	
+
+
+	
+	
+		</section>
+	
+	<section class="archives"><h1 class="year">2014</h1>
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-07-24T14:10:26+08:00" itemprop="datePublished">Jul 24</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/thread/'>thread</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/24/jvm-thread-dump-bug/">JVM Bug:多个线程持有一把锁?</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-07-19T09:58:49+08:00" itemprop="datePublished">Jul 19</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/debug/'>debug</a>, <a class='category' href='/blog/categories/jdwp/'>jdwp</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/19/java-debug-log/">从日志上理解JAVA调试机制</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-07-08T16:39:46+08:00" itemprop="datePublished">Jul  8</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/deadlock/'>deadlock</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/08/jdk-sql-deadlock/">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-06-28T11:33:07+08:00" itemprop="datePublished">Jun 28</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/hsdb/'>hsdb</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/06/28/hsdb-string/">通过HSDB来了解String值的真身在哪里</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-06-18T19:15:52+08:00" itemprop="datePublished">Jun 18</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/attach/'>attach</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-05-20T19:31:28+08:00" itemprop="datePublished">May 20</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/tcp/'>tcp</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/05/20/tcp-broken-pipe/">从tcp原理角度理解Broken pipe和Connection reset by peer的区别</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-05-04T10:43:57+08:00" itemprop="datePublished">May  4</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/pcduino/'>pcduino</a>, <a class='category' href='/blog/categories/web/'>web</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/05/04/pcduino-web-site/">pcduino搭建web站点IP映射解决方案</a></h1>
+</article>
+
+	
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2014-04-23T23:47:00+08:00" itemprop="datePublished">Apr 23</time></span>
+		<br>
+		<span class="tags">
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/04/23/new-begin/">Octopress新纪元</a></h1>
+</article>
+
+  </section>
+</div></div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
 
 
 
-        </div>
-      </div>
-      <div class="row-fluid">
-        <footer class="footer-page" role="contentinfo">
-          <p>
-  Copyright &copy; 2016 - 你假笨 -
-  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span> - Theme by <a href="http://alexgaribay.com">Alex Garibay</a>
-</p>
-
-
-        </footer>
-      </div>
-  </div>
-  
-
-
-
-
-
-  <script type="text/javascript">
-//    (function() {
- //     var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
-   //   script.src = 'https://apis.google.com/js/plusone.js';
-    //  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
-   // })();
-  </script>
 
 
 

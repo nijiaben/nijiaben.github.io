@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: FinalReference | 你假笨]]></title>
+  <title><![CDATA[Category: finalreference | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/finalreference/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -39,64 +39,58 @@
 
 <p>首先我们看看FinalReference在JDK里的实现：</p>
 
-<p>```
-class FinalReference<T> extends Reference<T> {</p>
+<pre><code>class FinalReference&lt;T&gt; extends Reference&lt;T&gt; {
 
-<pre><code>public FinalReference(T referent, ReferenceQueue&lt;? super T&gt; q) {
-    super(referent, q);
+    public FinalReference(T referent, ReferenceQueue&lt;? super T&gt; q) {
+        super(referent, q);
+    }
+
 }
 </code></pre>
-
-<p>}
-```</p>
 
 <p>大家应该注意到了类访问权限是package的，这也就意味着我们不能直接去对其进行扩展，但是JDK里对此类进行了扩展实现<code>java.lang.ref.Finalizer</code>，这个类也是我们在概述里提到的，而此类的访问权限也是package的，并且是final的，意味着真的不能被扩展了，接下来的重点我们围绕<code>java.lang.ref.Finalizer</code>展开(PS：后续讲Finalizer相关的其实也就是在说FinalReference)</p>
 
-<p>```
-final class Finalizer extends FinalReference { /* Package-private; must be in</p>
+<pre><code>final class Finalizer extends FinalReference { /* Package-private; must be in
+                                                  same package as the Reference
+                                                  class */
 
-<pre><code>                                              same package as the Reference
-                                              class */
+    /* A native method that invokes an arbitrary object's finalize method is
+       required since the finalize method is protected
+     */
+    static native void invokeFinalizeMethod(Object o) throws Throwable;
 
-/* A native method that invokes an arbitrary object's finalize method is
-   required since the finalize method is protected
- */
-static native void invokeFinalizeMethod(Object o) throws Throwable;
+    private static ReferenceQueue queue = new ReferenceQueue();
+    private static Finalizer unfinalized = null;
+    private static final Object lock = new Object();
 
-private static ReferenceQueue queue = new ReferenceQueue();
-private static Finalizer unfinalized = null;
-private static final Object lock = new Object();
+    private Finalizer
+        next = null,
+        prev = null;
 
-private Finalizer
-    next = null,
-    prev = null;
-
-private Finalizer(Object finalizee) {
-    super(finalizee, queue);
-    add();
-}
-
-/* Invoked by VM */
-static void register(Object finalizee) {
-    new Finalizer(finalizee);
-}  
-
-private void add() {
-    synchronized (lock) {
-        if (unfinalized != null) {
-            this.next = unfinalized;
-            unfinalized.prev = this;
-        }
-        unfinalized = this;
+    private Finalizer(Object finalizee) {
+        super(finalizee, queue);
+        add();
     }
-}
 
-...
+    /* Invoked by VM */
+    static void register(Object finalizee) {
+        new Finalizer(finalizee);
+    }  
+
+    private void add() {
+        synchronized (lock) {
+            if (unfinalized != null) {
+                this.next = unfinalized;
+                unfinalized.prev = this;
+            }
+            unfinalized = this;
+        }
+    }
+
+    ...
+
+   }    
 </code></pre>
-
-<p>   }</p>
-
-<p>```</p>
 
 <h3>Finalizer的构造函数</h3>
 
@@ -115,12 +109,8 @@ private void add() {
 
 <p>在讲这个问题之前，我们先来看下<code>java.lang.Object</code>里的一个方法</p>
 
-<p>```</p>
-
-<pre><code>protected void finalize() throws Throwable { }
+<pre><code>    protected void finalize() throws Throwable { }
 </code></pre>
-
-<p>```</p>
 
 <p>在Object类里定义了一个名为finalize的空方法，这意味着Java世界里的所有类都会继承这个方法，甚至可以覆写该方法，并且根据方法覆写原则，如果子类覆盖此方法，方法访问权限都是至少是protected级别的，这样其子类就算没有覆写此方法也会继承此方法。</p>
 
@@ -132,13 +122,13 @@ private void add() {
 
 <p>对象的创建其实是被拆分成多个步骤的，比如<code>A a=new A(2)</code>这样一条语句对应的字节码如下：</p>
 
-<p><code>
-0: new           #1                  // class A
+<pre><code>0: new           #1                  // class A
 3: dup
 4: iconst_2
 5: invokespecial #11                 // Method "&lt;init&gt;":(I)V
-</code>
-先执行new分配好对象空间，然后再执行invokespecial调用构造函数，jvm里其实可以让用户选择在这两个时机中的任意一个将当前对象传递给Finalizer.register方法来注册到Finalizer对象链里，这个选择依赖于RegisterFinalizersAtInit这个vm参数是否被设置，默认值为true，也就是在调用构造函数返回之前调用Finalizer.register方法，如果通过-XX:-RegisterFinalizersAtInit关闭了该参数，那将在对象空间分配好之后就将这个对象注册进去。</p>
+</code></pre>
+
+<p>先执行new分配好对象空间，然后再执行invokespecial调用构造函数，jvm里其实可以让用户选择在这两个时机中的任意一个将当前对象传递给Finalizer.register方法来注册到Finalizer对象链里，这个选择依赖于RegisterFinalizersAtInit这个vm参数是否被设置，默认值为true，也就是在调用构造函数返回之前调用Finalizer.register方法，如果通过-XX:-RegisterFinalizersAtInit关闭了该参数，那将在对象空间分配好之后就将这个对象注册进去。</p>
 
 <p>另外需要提一点的是当我们通过clone的方式复制一个对象的时候，如果当前类是一个f类，那么在clone完成的时候将调用Finalizer.register方法进行注册。</p>
 
@@ -146,11 +136,10 @@ private void add() {
 
 <p>这个实现比较有意思，在这里简单提一下，我们知道一个构造函数执行的时候，会去调用父类的构造函数，主要是为了能对继承自父类的属性也能做初始化，那么任何一个对象的初始化最终都会调用到Object的空构造函数里（任何空的构造函数其实并不空，会含有三条字节码指令，如下代码所示），为了不对所有的类的构造函数都做埋点调用Finalizer.register方法，hotspot的实现是在Object这个类在做初始化的时候将构造函数里的<code>return</code>指令替换为<code>_return_register_finalizer</code>指令，该指令并不是标准的字节码指令，是hotspot扩展的指令，这样在处理该指令的时候调用Finalizer.register方法，这样就在侵入性很小的情况下完美地解决了这个问题。</p>
 
-<p><code>
-0: aload_0
+<pre><code>0: aload_0
 1: invokespecial #21                 // Method java/lang/Object."&lt;init&gt;":()V
 4: return
-</code></p>
+</code></pre>
 
 <h2>f类对象的GC回收</h2>
 
@@ -158,89 +147,76 @@ private void add() {
 
 <p>在Finalizer类的clinit方法（静态块）里我们看到它会创建了一个FinalizerThread的守护线程，这个线程的优先级并不是最高的，意味着在cpu很紧张的情况下其被调度的优先级可能会受到影响</p>
 
-<p>```
-  private static class FinalizerThread extends Thread {</p>
-
-<pre><code>    private volatile boolean running;
-    FinalizerThread(ThreadGroup g) {
-        super(g, "Finalizer");
-    }
-    public void run() {
-        if (running)
-            return;
-        running = true;
-        for (;;) {
-            try {
-                Finalizer f = (Finalizer)queue.remove();
-                f.runFinalizer();
-            } catch (InterruptedException x) {
-                continue;
+<pre><code>  private static class FinalizerThread extends Thread {
+        private volatile boolean running;
+        FinalizerThread(ThreadGroup g) {
+            super(g, "Finalizer");
+        }
+        public void run() {
+            if (running)
+                return;
+            running = true;
+            for (;;) {
+                try {
+                    Finalizer f = (Finalizer)queue.remove();
+                    f.runFinalizer();
+                } catch (InterruptedException x) {
+                    continue;
+                }
             }
         }
     }
-}
 
-static {
-    ThreadGroup tg = Thread.currentThread().getThreadGroup();
-    for (ThreadGroup tgn = tg;
-         tgn != null;
-         tg = tgn, tgn = tg.getParent());
-    Thread finalizer = new FinalizerThread(tg);
-    finalizer.setPriority(Thread.MAX_PRIORITY - 2);
-    finalizer.setDaemon(true);
-    finalizer.start();
-}
-</code></pre>
-
-<p>```
-这个线程主要就是从queue里取Finalizer对象，然后执行该对象的runFinalizer方法，这个方法主要是将Finalizer对象从Finalizer对象链里剥离出来，这样意味着下次gc发生的时候就可能将其关联的f对象gc掉了，最后将这个Finalizer对象关联的f对象传给了一个native方法invokeFinalizeMethod</p>
-
-<p>```
-private void runFinalizer() {</p>
-
-<pre><code>    synchronized (this) {
-        if (hasBeenFinalized()) return;
-        remove();
+    static {
+        ThreadGroup tg = Thread.currentThread().getThreadGroup();
+        for (ThreadGroup tgn = tg;
+             tgn != null;
+             tg = tgn, tgn = tg.getParent());
+        Thread finalizer = new FinalizerThread(tg);
+        finalizer.setPriority(Thread.MAX_PRIORITY - 2);
+        finalizer.setDaemon(true);
+        finalizer.start();
     }
-    try {
-        Object finalizee = this.get();
-        if (finalizee != null &amp;&amp; !(finalizee instanceof java.lang.Enum)) {
-            invokeFinalizeMethod(finalizee);
-            /* Clear stack slot containing this variable, to decrease
-               the chances of false retention with a conservative GC */
-            finalizee = null;
+</code></pre>
+
+<p>这个线程主要就是从queue里取Finalizer对象，然后执行该对象的runFinalizer方法，这个方法主要是将Finalizer对象从Finalizer对象链里剥离出来，这样意味着下次gc发生的时候就可能将其关联的f对象gc掉了，最后将这个Finalizer对象关联的f对象传给了一个native方法invokeFinalizeMethod</p>
+
+<pre><code>private void runFinalizer() {
+        synchronized (this) {
+            if (hasBeenFinalized()) return;
+            remove();
         }
-    } catch (Throwable x) { }
-    super.clear();
+        try {
+            Object finalizee = this.get();
+            if (finalizee != null &amp;&amp; !(finalizee instanceof java.lang.Enum)) {
+                invokeFinalizeMethod(finalizee);
+                /* Clear stack slot containing this variable, to decrease
+                   the chances of false retention with a conservative GC */
+                finalizee = null;
+            }
+        } catch (Throwable x) { }
+        super.clear();
+    }
+
+ static native void invokeFinalizeMethod(Object o) throws Throwable;
+</code></pre>
+
+<p>其实invokeFinalizeMethod方法就是调了这个f对象的finalize方法，看到这里大家应该恍然大悟了，整个过程都串起来了</p>
+
+<pre><code>JNIEXPORT void JNICALL
+Java_java_lang_ref_Finalizer_invokeFinalizeMethod(JNIEnv *env, jclass clazz,
+                                                  jobject ob)
+{
+    jclass cls;
+    jmethodID mid;
+
+    cls = (*env)-&gt;GetObjectClass(env, ob);
+    if (cls == NULL) return;
+    mid = (*env)-&gt;GetMethodID(env, cls, "finalize", "()V");
+    if (mid == NULL) return;
+    (*env)-&gt;CallVoidMethod(env, ob, mid);
 }
 </code></pre>
-
-<p> static native void invokeFinalizeMethod(Object o) throws Throwable;</p>
-
-<p>```
-其实invokeFinalizeMethod方法就是调了这个f对象的finalize方法，看到这里大家应该恍然大悟了，整个过程都串起来了</p>
-
-<p>```
-JNIEXPORT void JNICALL
-Java_java_lang_ref_Finalizer_invokeFinalizeMethod(JNIEnv *env, jclass clazz,</p>
-
-<pre><code>                                              jobject ob)
-</code></pre>
-
-<p>{</p>
-
-<pre><code>jclass cls;
-jmethodID mid;
-
-cls = (*env)-&gt;GetObjectClass(env, ob);
-if (cls == NULL) return;
-mid = (*env)-&gt;GetMethodID(env, cls, "finalize", "()V");
-if (mid == NULL) return;
-(*env)-&gt;CallVoidMethod(env, ob, mid);
-</code></pre>
-
-<p>}
-```</p>
 
 <h3>f对象的finalize方法抛出异常会导致FinalizeThread退出吗</h3>
 
@@ -259,17 +235,14 @@ if (mid == NULL) return;
 <h2>Finalizer导致的内存泄露</h2>
 
 <p>这里举一个简单的例子，我们使用挺广的socket通信，SocksSocketImpl的父类其实就实现了finalize方法:
-```
-/<em>*
+<code>
+/**
  * Cleans up if the user forgets to close it.
- </em>/
-protected void finalize() throws IOException {</p>
-
-<pre><code>close();
-</code></pre>
-
-<p>}
-```
+ */
+protected void finalize() throws IOException {
+    close();
+}
+</code>
 其实这么做的主要目的是万一用户忘记关闭socket了，那么在这个对象被回收的时候能主动关闭socket来释放一些系统资源，但是如果真的是用户忘记关闭了，那这些socket对象可能因为FinalizeThread迟迟没有执行到这些socket对象的finalize方法，而导致内存泄露，这种问题我们碰到过多次，需要特别注意的是对于已经没有地方引用的这些f对象，并不会在最近的那一次gc里马上回收掉，而是会延迟到下一个或者下几个gc时才被回收，因为执行finalize方法的动作无法在gc过程中执行，万一finalize方法执行很长呢，所以只能在这个gc周期里将这个垃圾对象重新标活，直到执行完finalize方法从queue里删除，这样下次gc的时候就真的是漂浮垃圾了会被回收，因此给大家的一个建议是千万不要在运行期不断创建f对象，不然会很悲剧。</p>
 
 <h2>Finalizer的客观评价</h2>

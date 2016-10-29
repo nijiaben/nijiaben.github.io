@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: Attach | 你假笨]]></title>
+  <title><![CDATA[Category: attach | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/attach/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-05-18T23:46:24+08:00</updated>
+  <updated>2016-10-29T12:04:57+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -587,7 +587,7 @@ static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
 </pre>
 
 
-<p>&#8195;&#8195;从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { "threaddump",       thread_dump }的映射关系，然后执行thread_dump方法</p>
+<p>&#8195;&#8195;从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { &ldquo;threaddump&rdquo;,       thread_dump }的映射关系，然后执行thread_dump方法</p>
 
 <p>&#8195;&#8195;再来看看其要调用的AttachListener::dequeue()，</p>
 
