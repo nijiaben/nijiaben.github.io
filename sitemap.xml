@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
+<loc>http://nijiaben.github.io/blog/2016/10/29/metaspace/</loc>
+<lastmod>2016-10-29T15:38:00+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/08/29/oom/</loc>
+<lastmod>2016-08-29T15:35:09+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/07/20/jstat/</loc>
+<lastmod>2016-07-20T15:32:00+08:00</lastmod>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/2016/06/29/ooc-offheap/</loc>
+<lastmod>2016-06-29T14:33:51+08:00</lastmod>
+</url>
+<url>
 <loc>http://nijiaben.github.io/blog/2016/05/18/ygc-worse/</loc>
 <lastmod>2016-05-18T18:59:44+08:00</lastmod>
 </url>
@@ -179,9 +195,15 @@
 <loc>http://nijiaben.github.io/blog/categories/stackoverflow/</loc>
 </url>
 <url>
-<loc>http://nijiaben.github.io/posts/2/</loc>
+<loc>http://nijiaben.github.io/blog/categories/directbytebuffer/</loc>
 </url>
 <url>
-<loc>http://nijiaben.github.io/posts/3/</loc>
+<loc>http://nijiaben.github.io/blog/categories/jstat/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/oom/</loc>
+</url>
+<url>
+<loc>http://nijiaben.github.io/blog/categories/metaspace/</loc>
 </url>
 </urlset>

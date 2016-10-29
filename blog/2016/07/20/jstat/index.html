@@ -1,0 +1,506 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之Jstat工具原理完全解读 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之Jstat工具原理完全解读 概述 jstat是hotspot自带的工具，和java一样也位于JAVA_HOME/bin下面，我们通过该工具可以实时了解当前进程的gc，compiler，class，memory等相关的情况，具体我们可以通过jstat - &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/07/20/jstat/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
+</ul>
+
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之Jstat工具原理完全解读</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
+
+<p>jstat是hotspot自带的工具，和java一样也位于<code>JAVA_HOME/bin</code>下面，我们通过该工具可以实时了解当前进程的gc，compiler，class，memory等相关的情况，具体我们可以通过jstat -options来看我们到底支持哪些类型的数据，譬如JDK8下的结果是：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">-</span><span class="kd">class</span>
+</span><span class='line'><span class="err">-</span><span class="nc">compiler</span>
+</span><span class='line'><span class="o">-</span><span class="n">gc</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccause</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcmetacapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnew</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnewcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcold</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcoldcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcutil</span>
+</span><span class='line'><span class="o">-</span><span class="n">printcompilation</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<!--more-->
+
+
+<h2>jstat的输出</h2>
+
+<p>jstat大家用得其实挺多的，最常见的用法是jstat -gcutil，输出如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">~</span> <span class="n">ᐅ</span> <span class="n">jstat</span> <span class="o">-</span><span class="n">gcutil</span> <span class="mi">692</span> <span class="mi">1000</span>
+</span><span class='line'>  <span class="n">S0</span>     <span class="n">S1</span>     <span class="n">E</span>      <span class="n">O</span>      <span class="n">M</span>     <span class="n">CCS</span>    <span class="n">YGC</span>     <span class="n">YGCT</span>    <span class="n">FGC</span>    <span class="n">FGCT</span>     <span class="n">GCT</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.79</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>那每一列是怎么定义，怎么计算的呢，其实在tools.jar里存在一个文件叫做jstat_options，这个文件里定义了上面的每种类型的输出结果，比如说gcutil</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">option</span> <span class="n">gcutil</span> <span class="o">{</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^S0^&quot;</span> <span class="cm">/* Survivor 0 Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^S1^&quot;</span> <span class="cm">/* Survivor 1 Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^E^&quot;</span>  <span class="cm">/* Eden Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^O^&quot;</span>  <span class="cm">/* Old Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^M^&quot;</span>  <span class="cm">/* Metaspace Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCS^&quot;</span>    <span class="cm">/* Compressed Class Space Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^YGC^&quot;</span>    <span class="cm">/* Young Generation Collections */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">invocations</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^YGCT^&quot;</span>   <span class="cm">/* Young Generation Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">time</span><span class="o">/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^FGC^&quot;</span>    <span class="cm">/* Full Collections */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">invocations</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">5</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^FGCT^&quot;</span>   <span class="cm">/* Full Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">time</span><span class="o">/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^GCT^&quot;</span>    <span class="cm">/* Total Garbage Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">time</span> <span class="o">+</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">time</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的定义我们知道gcutil的每一列是什么意思，怎么计算出来的，其中类似<code>sun.gc.generation.0.space.0.capacity</code>这样的一些变量是jvm里创建并实时更新的值</p>
+
+<h2>jstat如何获取到这些变量的值</h2>
+
+<p>变量值显然是从目标进程里获取来的，但是是怎样来的？local socket还是memory share？其实是从一个共享文件里来的，这个文件叫PerfData，主要指的是/tmp/hsperfdata_\<user>/\<pid>这个文件</p>
+
+<h3>PerfData文件</h3>
+
+<h4>文件创建</h4>
+
+<p>这个文件是否存在取决于两个参数，一个UsePerfData，另一个是PerfDisableSharedMem，如果设置了-XX:+PerfDisableSharedMem或者-XX:-UsePerfData，那这个文件是不会存在的，默认情况下PerfDisableSharedMem是关闭的，UsePerfData是打开的，所以默认情况下PerfData文件是存在的。对于UsePerfData和PerfDisableSharedMem这两个参数，这里着重讲一下：</p>
+
+<ul>
+<li>UsePerfData：如果关闭了UsePerfData这个参数，那么jvm启动过程中perf memory都不会被创建，默认情况是是打开的</li>
+<li>PerfDisableSharedMem：该参数决定了存储PerfData的内存是不是可以被共享，也就是说不管这个参数设置没设置，jvm在启动的时候都会分配一块内存来存PerfData，只是说这个PerfData是不是其他进程可见的问题，如果设置了这个参数，说明不能被共享，此时其他进程将访问不了该内存，这样一来，譬如我们jps，jstat等都无法工作。默认这个参数是关闭的，也就是默认支持共享的方式</li>
+</ul>
+
+
+<p>具体代码在PerfMemory::create_memory_region里</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="k">if</span> <span class="o">(</span><span class="n">PerfDisableSharedMem</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">// do not share the memory for the performance data.</span>
+</span><span class='line'>    <span class="n">_start</span> <span class="o">=</span> <span class="n">create_standard_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>  <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">_start</span> <span class="o">=</span> <span class="n">create_shared_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">_start</span> <span class="o">==</span> <span class="n">NULL</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="c1">// creation of the shared memory region failed, attempt</span>
+</span><span class='line'>      <span class="c1">// to create a contiguous, non-shared memory region instead.</span>
+</span><span class='line'>      <span class="c1">//</span>
+</span><span class='line'>      <span class="k">if</span> <span class="o">(</span><span class="n">PrintMiscellaneous</span> <span class="o">&amp;&amp;</span> <span class="n">Verbose</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">warning</span><span class="o">(</span><span class="s">&quot;Reverting to non-shared PerfMemory region.\n&quot;</span><span class="o">);</span>
+</span><span class='line'>      <span class="o">}</span>
+</span><span class='line'>      <span class="n">PerfDisableSharedMem</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>      <span class="n">_start</span> <span class="o">=</span> <span class="n">create_standard_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>文件删除</h4>
+
+<p>那这个文件什么时候删除？正常情况下当进程退出的时候会自动删除，但是某些极端情况下，比如kill -9，这种信号jvm是不能捕获的，所以导致进程直接退出了，而没有做一些收尾性的工作，这个时候你会发现进程虽然没了，但是这个文件其实还是存在的，那这个文件是不是就一直留着，只能等待人为的删除呢，jvm里考虑到了这种情况，会在当前用户接下来的任何一个java进程(比如说我们执行jps)起来的时候会去做一个判断，看/tmp/hsperfdata_\<user>下的进程是不是还存在，如果不存在了就直接删除该文件，判断是否存在的具体操作其实就是发一个kill -0的信号看是否有异常。</p>
+
+<h4>文件更新</h4>
+
+<p>由于这个文件是通过mmap的方式映射到了内存里，而jstat是直接通过DirectByteBuffer的方式从PerfData里读取的，所以只要内存里的值变了，那我们从jstat看到的值就会发生变化，内存里的值什么时候变，取决于-XX:PerfDataSamplingInterval这个参数，默认是50ms，也就是说50ms更新一次值，基本上可以认为是实时的了。</p>
+
+<h4>PerfData其他相关VM参数</h4>
+
+<ul>
+<li>-XX:PerfDataMemorySize：指定/tmp/hsperfdata_\<user>下perfData文件的大小，默认是32KB，如果用户设置了该值，jvm里会自动和os的page size对齐，比如linux下pagesize默认是4KB，那如果你设置了31KB，那自动会分配32KB</li>
+<li>-XX:+PerfDataSaveToFile：是否在进程退出的时候讲PerfData里的数据保存到一个特定的文件里，文件路径由下面的参数指定，否则就在当前目录下</li>
+<li>-XX:PerfDataSaveFile：指定保存PerfData文件的路径</li>
+<li>-XX:PerfDataSamplingInterval：指定perfData的采样间隔，默认是50ms，基本算实时采样了</li>
+</ul>
+
+
+<h2>jstat里的坑</h2>
+
+<p>本人暂时想到的两大坑：</p>
+
+<ul>
+<li><p>一次正常的Background CMS GC之后，发现FGC的值加了2次，后面发现主要原因是CMS有init mark和remark两个会暂停应用的阶段，同时因为是对old做gc，因此算了两次</p></li>
+<li><p>JDK8下metaspace的使用情况不准确，比如说CCSC的值表示的是 Compressed Class Space Capacity，但是发现这个值的计算却不是reserve的值，所以我们可能会发现metaspace其实用了非常少，但是通过jstat看起使用率已经非常大了，因此这种情况最好是通过jmx的方式去取那些值做一个计算</p></li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">size_t</span> <span class="nl">CompressedClassSpaceCounters:</span><span class="o">:</span><span class="n">capacity</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>  <span class="k">return</span> <span class="nl">MetaspaceAux:</span><span class="o">:</span><span class="n">committed_bytes</span><span class="o">(</span><span class="nl">Metaspace:</span><span class="o">:</span><span class="n">ClassType</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

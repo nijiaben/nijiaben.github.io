@@ -1,0 +1,492 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之不可控的堆外内存 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之不可控的堆外内存 概述 之前写过篇文章，关于堆外内存的，JVM源码分析之堆外内存完全解读，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下， &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/06/29/ooc-offheap/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
+</ul>
+
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之不可控的堆外内存</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
+
+<p>之前写过篇文章，关于堆外内存的，<a href="http://mp.weixin.qq.com/s?__biz=MzIzNjI1ODc2OA==&amp;mid=403168235&amp;idx=1&amp;sn=ecc804ba7231996d43c05138566d074a&amp;scene=19#wechat_redirect">JVM源码分析之堆外内存完全解读</a>，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下，然后统计所有DirectByteBuffer对象后面占用的内存达到了7G，远远超出阈值，这个问题很诡异，于是好好查了下原因，虽然最终发现是我们统计的问题，但是期间发现的其他一些问题还是值得分享一下的。</p>
+
+<!--more-->
+
+
+<h2>不得不提的DirectByteBuffer构造函数</h2>
+
+<p>打开DirectByteBuffer这个类，我们会发现有5个构造函数</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">,</span> <span class="n">Object</span> <span class="n">ob</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">protected</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">,</span> <span class="kt">long</span> <span class="n">addr</span><span class="o">,</span><span class="n">FileDescriptor</span> <span class="n">fd</span><span class="o">,</span><span class="n">Runnable</span> <span class="n">unmapper</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="n">DirectBuffer</span> <span class="n">db</span><span class="o">,</span> <span class="kt">int</span> <span class="n">mark</span><span class="o">,</span> <span class="kt">int</span> <span class="n">pos</span><span class="o">,</span> <span class="kt">int</span> <span class="n">lim</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">,</span><span class="kt">int</span> <span class="n">off</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们从java层面创建DirectByteBuffer对象，一般都是通过ByteBuffer的allocateDirect方法</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="n">ByteBuffer</span> <span class="nf">allocateDirect</span><span class="o">(</span><span class="kt">int</span> <span class="n">capacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也就是会使用上面提到的第一个构造函数，即</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>                   <span class="c1">// package-private</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">super</span><span class="o">(-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">cap</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">boolean</span> <span class="n">pa</span> <span class="o">=</span> <span class="n">VM</span><span class="o">.</span><span class="na">isDirectMemoryPageAligned</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ps</span> <span class="o">=</span> <span class="n">Bits</span><span class="o">.</span><span class="na">pageSize</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">size</span> <span class="o">=</span> <span class="n">Math</span><span class="o">.</span><span class="na">max</span><span class="o">(</span><span class="mi">1L</span><span class="o">,</span> <span class="o">(</span><span class="kt">long</span><span class="o">)</span><span class="n">cap</span> <span class="o">+</span> <span class="o">(</span><span class="n">pa</span> <span class="o">?</span> <span class="n">ps</span> <span class="o">:</span> <span class="mi">0</span><span class="o">));</span>
+</span><span class='line'>        <span class="n">Bits</span><span class="o">.</span><span class="na">reserveMemory</span><span class="o">(</span><span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">base</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">base</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">allocateMemory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">OutOfMemoryError</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Bits</span><span class="o">.</span><span class="na">unreserveMemory</span><span class="o">(</span><span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="n">x</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">unsafe</span><span class="o">.</span><span class="na">setMemory</span><span class="o">(</span><span class="n">base</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span> <span class="o">(</span><span class="kt">byte</span><span class="o">)</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">pa</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">base</span> <span class="o">%</span> <span class="n">ps</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// Round up to page boundary</span>
+</span><span class='line'>            <span class="n">address</span> <span class="o">=</span> <span class="n">base</span> <span class="o">+</span> <span class="n">ps</span> <span class="o">-</span> <span class="o">(</span><span class="n">base</span> <span class="o">&amp;</span> <span class="o">(</span><span class="n">ps</span> <span class="o">-</span> <span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">address</span> <span class="o">=</span> <span class="n">base</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">cleaner</span> <span class="o">=</span> <span class="n">Cleaner</span><span class="o">.</span><span class="na">create</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="k">new</span> <span class="nf">Deallocator</span><span class="o">(</span><span class="n">base</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">));</span>
+</span><span class='line'>        <span class="n">att</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而这个构造函数里的<code>Bits.reserveMemory(size, cap)</code>方法会做堆外内存的阈值check</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">reserveMemory</span><span class="o">(</span><span class="kt">long</span> <span class="n">size</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="n">Bits</span><span class="o">.</span><span class="na">class</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">memoryLimitSet</span> <span class="o">&amp;&amp;</span> <span class="n">VM</span><span class="o">.</span><span class="na">isBooted</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">maxMemory</span> <span class="o">=</span> <span class="n">VM</span><span class="o">.</span><span class="na">maxDirectMemory</span><span class="o">();</span>
+</span><span class='line'>                <span class="n">memoryLimitSet</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">// -XX:MaxDirectMemorySize limits the total capacity rather than the</span>
+</span><span class='line'>            <span class="c1">// actual memory usage, which will differ when buffers are page</span>
+</span><span class='line'>            <span class="c1">// aligned.</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">cap</span> <span class="o">&lt;=</span> <span class="n">maxMemory</span> <span class="o">-</span> <span class="n">totalCapacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">reservedMemory</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">totalCapacity</span> <span class="o">+=</span> <span class="n">cap</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>                <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">System</span><span class="o">.</span><span class="na">gc</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">100</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// Restore interrupt status</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="n">Bits</span><span class="o">.</span><span class="na">class</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">totalCapacity</span> <span class="o">+</span> <span class="n">cap</span> <span class="o">&gt;</span> <span class="n">maxMemory</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">OutOfMemoryError</span><span class="o">(</span><span class="s">&quot;Direct buffer memory&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">reservedMemory</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">totalCapacity</span> <span class="o">+=</span> <span class="n">cap</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此当我们已经分配的内存超过阈值的时候会触发一次gc动作，并重新做一次分配，如果还是超过阈值，那将会抛出OOM，因此分配动作会失败。</p>
+
+<p>所以从这一切看来，只要设置了<code>-XX:MaxDirectMemorySize=1G</code>是不会出现超过这个阈值的情况的，会看到不断的做GC。</p>
+
+<h2>构造函数再探</h2>
+
+<p>那其他的构造函数主要是用在什么情况下的呢？</p>
+
+<p>我们知道DirectByteBuffer回收靠的是里面有个cleaner的属性，但是我们发现有几个构造函数里cleaner这个属性却是null，那这种情况下他们怎么被回收呢？</p>
+
+<p>那下面请大家先看下DirectByteBuffer里的这两个函数：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="kd">public</span> <span class="n">ByteBuffer</span> <span class="nf">slice</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">pos</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">position</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">lim</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">assert</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;=</span> <span class="n">lim</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">rem</span> <span class="o">=</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;=</span> <span class="n">lim</span> <span class="o">?</span> <span class="n">lim</span> <span class="o">-</span> <span class="n">pos</span> <span class="o">:</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">off</span> <span class="o">=</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;&lt;</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">assert</span> <span class="o">(</span><span class="n">off</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="o">-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">rem</span><span class="o">,</span> <span class="n">rem</span><span class="o">,</span> <span class="n">off</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">ByteBuffer</span> <span class="nf">duplicate</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="k">this</span><span class="o">,</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">markValue</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">position</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">capacity</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从名字和实现上基本都能猜出是干什么的了，slice其实是从一块已知的内存里取出剩下的一部分，用一个新的DirectByteBuffer对象指向它，而duplicate就是创建一个现有DirectByteBuffer的全新副本，各种指针都一样。</p>
+
+<p>因此从这个实现来看，后面关联的堆外内存其实是同一块，所以如果我们做统计的时候如果仅仅将所有DirectByteBuffer对象的capacity加起来，那可能会导致算出来的结果偏大不少，这其实也是我查的那个问题，本来设置了阈值1G，但是发现达到了7G的效果。所以这种情况下使用的构造函数，可以让cleaner为null，回收靠原来的那个DirectByteBuffer对象被回收。</p>
+
+<h2>被遗忘的检查</h2>
+
+<p>但是还有种情况，也是本文要讲的重点，在jvm里可以通过jni方法回调上面的DirectByteBuffer构造函数，这个构造函数是</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">super</span><span class="o">(-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">cap</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">address</span> <span class="o">=</span> <span class="n">addr</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">cleaner</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">att</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而调用这个构造函数的jni方法是<code>jni_NewDirectByteBuffer</code></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">extern</span> <span class="s">&quot;C&quot;</span> <span class="n">jobject</span> <span class="n">JNICALL</span> <span class="nf">jni_NewDirectByteBuffer</span><span class="o">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="o">,</span> <span class="kt">void</span><span class="o">*</span> <span class="n">address</span><span class="o">,</span> <span class="n">jlong</span> <span class="n">capacity</span><span class="o">)</span>
+</span><span class='line'><span class="o">{</span>
+</span><span class='line'>  <span class="c1">// thread_from_jni_environment() will block if VM is gone.</span>
+</span><span class='line'>  <span class="n">JavaThread</span><span class="o">*</span> <span class="n">thread</span> <span class="o">=</span> <span class="nl">JavaThread:</span><span class="o">:</span><span class="n">thread_from_jni_environment</span><span class="o">(</span><span class="n">env</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">JNIWrapper</span><span class="o">(</span><span class="s">&quot;jni_NewDirectByteBuffer&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>  <span class="nf">DTRACE_PROBE3</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__entry</span><span class="o">,</span> <span class="n">env</span><span class="o">,</span> <span class="n">address</span><span class="o">,</span> <span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'> <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_ENTRY</span><span class="o">(</span>
+</span><span class='line'>                                       <span class="n">env</span><span class="o">,</span> <span class="n">address</span><span class="o">,</span> <span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="o">(!</span><span class="n">directBufferSupportInitializeEnded</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(!</span><span class="n">initializeDirectBufferSupport</span><span class="o">(</span><span class="n">env</span><span class="o">,</span> <span class="n">thread</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>      <span class="nf">DTRACE_PROBE1</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__return</span><span class="o">,</span> <span class="n">NULL</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>      <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN</span><span class="o">(</span>
+</span><span class='line'>                                             <span class="n">NULL</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">NULL</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="c1">// Being paranoid about accidental sign extension on address</span>
+</span><span class='line'>  <span class="n">jlong</span> <span class="n">addr</span> <span class="o">=</span> <span class="o">(</span><span class="n">jlong</span><span class="o">)</span> <span class="o">((</span><span class="n">uintptr_t</span><span class="o">)</span> <span class="n">address</span><span class="o">);</span>
+</span><span class='line'>  <span class="c1">// NOTE that package-private DirectByteBuffer constructor currently</span>
+</span><span class='line'>  <span class="c1">// takes int capacity</span>
+</span><span class='line'>  <span class="n">jint</span>  <span class="n">cap</span>  <span class="o">=</span> <span class="o">(</span><span class="n">jint</span><span class="o">)</span>  <span class="n">capacity</span><span class="o">;</span>
+</span><span class='line'>  <span class="n">jobject</span> <span class="n">ret</span> <span class="o">=</span> <span class="n">env</span><span class="o">-&gt;</span><span class="n">NewObject</span><span class="o">(</span><span class="n">directByteBufferClass</span><span class="o">,</span> <span class="n">directByteBufferConstructor</span><span class="o">,</span> <span class="n">addr</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>  <span class="nf">DTRACE_PROBE1</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__return</span><span class="o">,</span> <span class="n">ret</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>  <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN</span><span class="o">(</span>
+</span><span class='line'>                                         <span class="n">ret</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>  <span class="k">return</span> <span class="n">ret</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>想象这么种情况，我们写了一个native方法，里面分配了一块内存，同时通过上面这个方法和一个DirectByteBuffer对象关联起来，那从java层面来看这个DirectByteBuffer确实是一个有效的占有不少native内存的对象，但是这个对象后面关联的内存完全绕过了MaxDirectMemorySize的check，所以也可能给你造成这种现象，明明设置了MaxDirectMemorySize，但是发现DirectByteBuffer关联的堆外内存其实是大于它的。</p>
+
+<h2>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h2>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

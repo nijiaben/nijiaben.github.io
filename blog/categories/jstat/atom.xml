@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: jstat | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/jstat/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-10-29T15:40:38+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之Jstat工具原理完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/07/20/jstat/"/>
+    <updated>2016-07-20T15:32:00+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/07/20/jstat</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>jstat是hotspot自带的工具，和java一样也位于<code>JAVA_HOME/bin</code>下面，我们通过该工具可以实时了解当前进程的gc，compiler，class，memory等相关的情况，具体我们可以通过jstat -options来看我们到底支持哪些类型的数据，譬如JDK8下的结果是：</p>
+
+<pre><code class="java">-class
+-compiler
+-gc
+-gccapacity
+-gccause
+-gcmetacapacity
+-gcnew
+-gcnewcapacity
+-gcold
+-gcoldcapacity
+-gcutil
+-printcompilation
+</code></pre>
+
+<!--more-->
+
+
+<h2>jstat的输出</h2>
+
+<p>jstat大家用得其实挺多的，最常见的用法是jstat -gcutil，输出如下：</p>
+
+<pre><code>
+~ ᐅ jstat -gcutil 692 1000
+  S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT
+  0.00  41.49  59.79  83.66  89.92  78.74    295    5.436    10    3.855    9.291
+  0.00  41.49  59.80  83.66  89.92  78.74    295    5.436    10    3.855    9.291
+  0.00  41.49  59.80  83.66  89.92  78.74    295    5.436    10    3.855    9.291
+  0.00  41.49  59.80  83.66  89.92  78.74    295    5.436    10    3.855    9.291
+  0.00  41.49  59.80  83.66  89.92  78.74    295    5.436    10    3.855    9.291
+</code></pre>
+
+<p>那每一列是怎么定义，怎么计算的呢，其实在tools.jar里存在一个文件叫做jstat_options，这个文件里定义了上面的每种类型的输出结果，比如说gcutil</p>
+
+<pre><code>option gcutil {
+  column {
+    header "^S0^"   /* Survivor 0 Space - Percent Used */
+    data (1-((sun.gc.generation.0.space.1.capacity - sun.gc.generation.0.space.1.used)/sun.gc.generation.0.space.1.capacity)) * 100
+    scale raw
+    align right
+    width 6
+    format "0.00"
+  }
+
+  column {
+    header "^S1^"   /* Survivor 1 Space - Percent Used */
+    data (1-((sun.gc.generation.0.space.2.capacity - sun.gc.generation.0.space.2.used)/sun.gc.generation.0.space.2.capacity)) * 100
+    scale raw
+    align right
+    width 6
+    format "0.00"
+  }
+
+  column {
+    header "^E^"    /* Eden Space - Percent Used */
+    data (1-((sun.gc.generation.0.space.0.capacity - sun.gc.generation.0.space.0.used)/sun.gc.generation.0.space.0.capacity)) * 100
+    align right
+    scale raw
+    width 6
+    format "0.00"
+  }
+
+  column {
+    header "^O^"    /* Old Space - Percent Used */
+    data (1-((sun.gc.generation.1.space.0.capacity - sun.gc.generation.1.space.0.used)/sun.gc.generation.1.space.0.capacity)) * 100
+    align right
+    scale raw
+    width 6
+    format "0.00"
+  }
+
+  column {
+    header "^M^"    /* Metaspace Space - Percent Used */
+    data (1-((sun.gc.metaspace.capacity - sun.gc.metaspace.used)/sun.gc.metaspace.capacity)) * 100
+    align right
+    width 6
+    scale raw
+    format "0.00"
+  }
+
+  column {
+    header "^CCS^"  /* Compressed Class Space Space - Percent Used */
+    data (1-((sun.gc.compressedclassspace.capacity - sun.gc.compressedclassspace.used)/sun.gc.compressedclassspace.capacity)) * 100
+    align right
+    width 6
+    scale raw
+    format "0.00"
+  }
+
+  column {
+    header "^YGC^"  /* Young Generation Collections */
+    data sun.gc.collector.0.invocations
+    align right
+    width 6
+    format "0"
+  }
+
+  column {
+    header "^YGCT^" /* Young Generation Collection Time */
+    data sun.gc.collector.0.time/sun.os.hrt.frequency
+    align right
+    scale sec
+    width 8
+    format "0.000"
+  }
+
+  column {
+    header "^FGC^"  /* Full Collections */
+    data sun.gc.collector.1.invocations
+    align right
+    width 5
+    scale raw
+    format "0"
+  }
+
+  column {
+    header "^FGCT^" /* Full Collection Time */
+    data sun.gc.collector.1.time/sun.os.hrt.frequency
+    align right
+    scale sec
+    width 8
+    format "0.000"
+  }
+
+  column {
+    header "^GCT^"  /* Total Garbage Collection Time */
+    data (sun.gc.collector.0.time + sun.gc.collector.1.time)/sun.os.hrt.frequency
+    align right
+    width 8
+    scale sec
+    format "0.000"
+  }
+}
+</code></pre>
+
+<p>从上面的定义我们知道gcutil的每一列是什么意思，怎么计算出来的，其中类似<code>sun.gc.generation.0.space.0.capacity</code>这样的一些变量是jvm里创建并实时更新的值</p>
+
+<h2>jstat如何获取到这些变量的值</h2>
+
+<p>变量值显然是从目标进程里获取来的，但是是怎样来的？local socket还是memory share？其实是从一个共享文件里来的，这个文件叫PerfData，主要指的是/tmp/hsperfdata_\<user>/\<pid>这个文件</p>
+
+<h3>PerfData文件</h3>
+
+<h4>文件创建</h4>
+
+<p>这个文件是否存在取决于两个参数，一个UsePerfData，另一个是PerfDisableSharedMem，如果设置了-XX:+PerfDisableSharedMem或者-XX:-UsePerfData，那这个文件是不会存在的，默认情况下PerfDisableSharedMem是关闭的，UsePerfData是打开的，所以默认情况下PerfData文件是存在的。对于UsePerfData和PerfDisableSharedMem这两个参数，这里着重讲一下：</p>
+
+<ul>
+<li>UsePerfData：如果关闭了UsePerfData这个参数，那么jvm启动过程中perf memory都不会被创建，默认情况是是打开的</li>
+<li>PerfDisableSharedMem：该参数决定了存储PerfData的内存是不是可以被共享，也就是说不管这个参数设置没设置，jvm在启动的时候都会分配一块内存来存PerfData，只是说这个PerfData是不是其他进程可见的问题，如果设置了这个参数，说明不能被共享，此时其他进程将访问不了该内存，这样一来，譬如我们jps，jstat等都无法工作。默认这个参数是关闭的，也就是默认支持共享的方式</li>
+</ul>
+
+
+<p>具体代码在PerfMemory::create_memory_region里</p>
+
+<pre><code>  if (PerfDisableSharedMem) {
+    // do not share the memory for the performance data.
+    _start = create_standard_memory(size);
+  } else {
+    _start = create_shared_memory(size);
+    if (_start == NULL) {
+      // creation of the shared memory region failed, attempt
+      // to create a contiguous, non-shared memory region instead.
+      //
+      if (PrintMiscellaneous &amp;&amp; Verbose) {
+        warning("Reverting to non-shared PerfMemory region.\n");
+      }
+      PerfDisableSharedMem = true;
+      _start = create_standard_memory(size);
+    }
+  }
+</code></pre>
+
+<h4>文件删除</h4>
+
+<p>那这个文件什么时候删除？正常情况下当进程退出的时候会自动删除，但是某些极端情况下，比如kill -9，这种信号jvm是不能捕获的，所以导致进程直接退出了，而没有做一些收尾性的工作，这个时候你会发现进程虽然没了，但是这个文件其实还是存在的，那这个文件是不是就一直留着，只能等待人为的删除呢，jvm里考虑到了这种情况，会在当前用户接下来的任何一个java进程(比如说我们执行jps)起来的时候会去做一个判断，看/tmp/hsperfdata_\<user>下的进程是不是还存在，如果不存在了就直接删除该文件，判断是否存在的具体操作其实就是发一个kill -0的信号看是否有异常。</p>
+
+<h4>文件更新</h4>
+
+<p>由于这个文件是通过mmap的方式映射到了内存里，而jstat是直接通过DirectByteBuffer的方式从PerfData里读取的，所以只要内存里的值变了，那我们从jstat看到的值就会发生变化，内存里的值什么时候变，取决于-XX:PerfDataSamplingInterval这个参数，默认是50ms，也就是说50ms更新一次值，基本上可以认为是实时的了。</p>
+
+<h4>PerfData其他相关VM参数</h4>
+
+<ul>
+<li>-XX:PerfDataMemorySize：指定/tmp/hsperfdata_\<user>下perfData文件的大小，默认是32KB，如果用户设置了该值，jvm里会自动和os的page size对齐，比如linux下pagesize默认是4KB，那如果你设置了31KB，那自动会分配32KB</li>
+<li>-XX:+PerfDataSaveToFile：是否在进程退出的时候讲PerfData里的数据保存到一个特定的文件里，文件路径由下面的参数指定，否则就在当前目录下</li>
+<li>-XX:PerfDataSaveFile：指定保存PerfData文件的路径</li>
+<li>-XX:PerfDataSamplingInterval：指定perfData的采样间隔，默认是50ms，基本算实时采样了</li>
+</ul>
+
+
+<h2>jstat里的坑</h2>
+
+<p>本人暂时想到的两大坑：</p>
+
+<ul>
+<li><p>一次正常的Background CMS GC之后，发现FGC的值加了2次，后面发现主要原因是CMS有init mark和remark两个会暂停应用的阶段，同时因为是对old做gc，因此算了两次</p></li>
+<li><p>JDK8下metaspace的使用情况不准确，比如说CCSC的值表示的是 Compressed Class Space Capacity，但是发现这个值的计算却不是reserve的值，所以我们可能会发现metaspace其实用了非常少，但是通过jstat看起使用率已经非常大了，因此这种情况最好是通过jmx的方式去取那些值做一个计算</p></li>
+</ul>
+
+
+<pre><code>size_t CompressedClassSpaceCounters::capacity() {
+  return MetaspaceAux::committed_bytes(Metaspace::ClassType);
+}
+</code></pre>
+]]></content>
+  </entry>
+  
+</feed>

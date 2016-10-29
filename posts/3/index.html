@@ -9,7 +9,7 @@
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="pcduino, web pcduino搭建web站点IP映射解决方案 &#8195;&#8195;在pcduino上搭建站点，有两个问题首先需要解决 域名绑定 端口映射 &#8195;&#8195;如果你的pcduino连的路由器的IP已经是公网IP，按照如下步骤查看 打开路由器管理页面， &hellip;">
+	<meta name="description" content="classloader, deadlock, jvm JDK的sql设计不合理导致的驱动类初始化死锁问题 问题描述 &#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子， &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -48,18 +48,14 @@
 </div>
 
 <nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
     <li><a href="/">文章</a></li>
     <li><a href="/blog/archives">归档</a></li>
     <li><a href="/comments/latest.html">最新评论</a></li>
-    <li><a href="/about/index.html">关于你假笨</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
 </ul>
 
-
-<section class="aboutme">
-  <p>
-    技术宅改变世界
-  </p>
-</section>
 </nav>
 <nav id="sub-nav">
 	<div class="social">
@@ -81,6 +77,9 @@
     	
 			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
 		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
 	</div>
 </nav>
 </header>				
@@ -93,6 +92,158 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner">
 <div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-07-08T16:39:46+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/deadlock/'>deadlock</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/08/jdk-sql-deadlock/" itemprop="url">JDK的sql设计不合理导致的驱动类初始化死锁问题</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>问题描述</h2>
+
+<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
+
+
+		
+		<a href="/blog/2014/07/08/jdk-sql-deadlock/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-28T11:33:07+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/hsdb/'>hsdb</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/06/28/hsdb-string/" itemprop="url">通过HSDB来了解String值的真身在哪里</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>&#8195;&#8195;最近通过<code>@RednaxelaFX</code>的一篇文章得知了HSDB，并好好研究了一下用法，对学习jvm的人来说绝对是一个利器，可以摆脱GDB，直接图形化看内存结构布局，具体的用法我就不多说了，这篇<a href="http://rednaxelafx.iteye.com/blog/1847971">文章</a>介绍得很详细了，这次写文章主要是想通过这一利器来分析下String的值在java里的内存情况，不同场景下的String的值到底是在内存里的哪块区域，这里强调的是值，并不是对象，因为对象我们都知道是存在heap里的，我们看java.lang.String的源码会看到有一个value数组，这里才是真正的值，本文顺带也是hsdb用法的一个介绍，如此利器希望给大家带来不一样的乐趣。</p>
+
+
+		
+		<a href="/blog/2014/06/28/hsdb-string/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-18T19:15:52+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/attach/'>attach</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/06/18/jvm-attach/" itemprop="url">JVM Attach机制实现</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>Attach是什么</h2>
+
+<p>   &#8195;&#8195;在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
+
+
+		
+		<a href="/blog/2014/06/18/jvm-attach/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-05-20T19:31:28+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/tcp/'>tcp</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/05/20/tcp-broken-pipe/" itemprop="url">从tcp原理角度理解Broken pipe和Connection Reset by Peer的区别</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>&#8195;&#8195;以前我们经常会碰到<code>Broken pipe</code>或者<code>Connection reset by peer</code>之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
+
+<h2>三次握手和四次挥手过程</h2>
+
+<p>&#8195;&#8195;在讲具体的原因之前，我们有必要补充下tcp这块的一些基础知识，我们都知道tcp通信有三次握手和四次挥手，网上介绍的文章也一大堆，图我也懒得画了，直接网上找一个图给大家</p>
+
+
+		
+		<a href="/blog/2014/05/20/tcp-broken-pipe/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
     <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">

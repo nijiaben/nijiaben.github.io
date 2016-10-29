@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-10-29T12:04:57+08:00</updated>
+  <updated>2016-10-29T15:40:38+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,1240 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之Metaspace解密]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/10/29/metaspace/"/>
+    <updated>2016-10-29T15:38:00+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/10/29/metaspace</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>metaspace，顾名思义，元数据空间，专门用来存元数据的，它是jdk8里特有的数据结构用来替代perm，这块空间很有自己的特点，前段时间公司这块的问题太多了，主要是因为升级了中间件所致，看到大家讨论来讨论去，看得出很多人对metaspace还是模棱两可，不是很了解它，因此我觉得有必要写篇文章来介绍一下它，解开它神秘的面纱，当我们再次碰到它的相关问题的时候不会再感到束手无策。</p>
+
+<p>通过这篇文章，你将可以了解到</p>
+
+<ul>
+<li>为什么会有metaspace</li>
+<li>metaspace的组成</li>
+<li>metaspace的VM参数</li>
+<li>jstat里我们应该关注metaspace的哪些值</li>
+</ul>
+
+
+<!--more-->
+
+
+<h2>为什么会有metaspace</h2>
+
+<p>metaspace的由来民间已有很多传说，不过我这里只谈我自己的理解，因为我不是oracle参与这块的开发者，所以对其真正的由来不怎么了解。</p>
+
+<p>我们都知道jdk8之前有perm这一整块内存来存klass等信息，我们的参数里也必不可少地会配置-XX:PermSize以及-XX:MaxPermSize来控制这块内存的大小，jvm在启动的时候会根据这些配置来分配一块连续的内存块，但是随着动态类加载的情况越来越多，这块内存我们变得不太可控，到底设置多大合适是每个开发者要考虑的问题，如果设置太小了，系统运行过程中就容易出现内存溢出，设置大了又总感觉浪费，尽管不会实质分配这么大的物理内存。基于这么一个可能的原因，于是metaspace出现了，希望内存的管理不再受到限制，也不要怎么关注元数据这块的OOM问题，虽然到目前来看，也并没有完美地解决这个问题。</p>
+
+<p>或许从JVM代码里也能看出一些端倪来，比如<code>MaxMetaspaceSize</code>默认值很大，<code>CompressedClassSpaceSize</code>默认也有1G，从这些参数我们能猜到metaspace的作者不希望出现它相关的OOM问题。</p>
+
+<h2>metaspace的组成</h2>
+
+<p>metaspace其实由两大部分组成</p>
+
+<ul>
+<li>Klass Metaspace</li>
+<li>NoKlass Metaspace</li>
+</ul>
+
+
+<p>Klass Metaspace就是用来存klass的，klass是我们熟知的class文件在jvm里的运行时数据结构，不过有点要提的是我们看到的类似A.class其实是存在heap里的，是java.lang.Class的一个对象实例。这块内存是紧接着Heap的，和我们之前的perm一样，这块内存大小可通过<code>-XX:CompressedClassSpaceSize</code>参数来控制，这个参数前面提到了默认是1G，但是这块内存也可以没有，假如没有开启压缩指针就不会有这块内存，这种情况下klass都会存在NoKlass Metaspace里，另外如果我们把-Xmx设置大于32G的话，其实也是没有这块内存的，因为会这么大内存会关闭压缩指针开关。还有就是这块内存最多只会存在一块。</p>
+
+<p>NoKlass Metaspace专门来存klass相关的其他的内容，比如method，constantPool等，这块内存是由多块内存组合起来的，所以可以认为是不连续的内存块组成的。这块内存是必须的，虽然叫做NoKlass Metaspace，但是也其实可以存klass的内容，上面已经提到了对应场景。</p>
+
+<p>Klass Metaspace和NoKlass Mestaspace都是所有classloader共享的，所以类加载器们要分配内存，但是每个类加载器都有一个SpaceManager，来管理属于这个类加载的内存小块。如果Klass Metaspace用完了，那就会OOM了，不过一般情况下不会，NoKlass Mestaspace是由一块块内存慢慢组合起来的，在没有达到限制条件的情况下，会不断加长这条链，让它可以持续工作。</p>
+
+<h2>metaspace的几个参数</h2>
+
+<p>如果我们要改变metaspace的一些行为，我们一般会对其相关的一些参数做调整，因为metaspace的参数本身不是很多，所以我这里将涉及到的所有参数都做一个介绍，也许好些参数大家都是有误解的</p>
+
+<ul>
+<li>UseLargePagesInMetaspace</li>
+<li>InitialBootClassLoaderMetaspaceSize</li>
+<li>MetaspaceSize</li>
+<li>MaxMetaspaceSize</li>
+<li>CompressedClassSpaceSize</li>
+<li>MinMetaspaceExpansion</li>
+<li>MaxMetaspaceExpansion</li>
+<li>MinMetaspaceFreeRatio</li>
+<li>MaxMetaspaceFreeRatio</li>
+</ul>
+
+
+<h3>UseLargePagesInMetaspace</h3>
+
+<p>默认false，这个参数是说是否在metaspace里使用LargePage，一般情况下我们使用4KB的page size，这个参数依赖于UseLargePages这个参数开启，不过这个参数我们一般不开。</p>
+
+<h3>InitialBootClassLoaderMetaspaceSize</h3>
+
+<p>64位下默认4M，32位下默认2200K，metasapce前面已经提到主要分了两大块，Klass Metaspace以及NoKlass Metaspace，而NoKlass Metaspace是由一块块内存组合起来的，这个参数决定了NoKlass Metaspace的第一个内存Block的大小，即2*InitialBootClassLoaderMetaspaceSize，同时为bootstrapClassLoader的第一块内存chunk分配了InitialBootClassLoaderMetaspaceSize的大小</p>
+
+<h3>MetaspaceSize</h3>
+
+<p>默认20.8M左右(x86下开启c2模式)，主要是控制metaspaceGC发生的初始阈值，也是最小阈值，但是触发metaspaceGC的阈值是不断变化的，与之对比的主要是指Klass Metaspace与NoKlass Metaspace两块committed的内存和。</p>
+
+<h3>MaxMetaspaceSize</h3>
+
+<p>默认基本是无穷大，但是我还是建议大家设置这个参数，因为很可能会因为没有限制而导致metaspace被无止境使用(一般是内存泄漏)而被OS Kill。这个参数会限制metaspace(包括了Klass Metaspace以及NoKlass Metaspace)被committed的内存大小，会保证committed的内存不会超过这个值，一旦超过就会触发GC，这里要注意和MaxPermSize的区别，MaxMetaspaceSize并不会在jvm启动的时候分配一块这么大的内存出来，而MaxPermSize是会分配一块这么大的内存的。</p>
+
+<h3>CompressedClassSpaceSize</h3>
+
+<p>默认1G，这个参数主要是设置Klass Metaspace的大小，不过这个参数设置了也不一定起作用，前提是能开启压缩指针，假如-Xmx超过了32G，压缩指针是开启不来的。如果有Klass Metaspace，那这块内存是和Heap连着的。</p>
+
+<h3>MinMetaspaceExpansion</h3>
+
+<p>MinMetaspaceExpansion和MaxMetaspaceExpansion这两个参数或许和大家认识的并不一样，也许很多人会认为这两个参数不就是内存不够的时候，然后扩容的最小大小吗？其实不然</p>
+
+<p>这两个参数和扩容其实并没有直接的关系，也就是并不是为了增大committed的内存，而是为了增大触发metaspace GC的阈值</p>
+
+<p>这两个参数主要是在比较特殊的场景下救急使用，比如gcLocker或者<code>should_concurrent_collect</code>的一些场景，因为这些场景下接下来会做一次GC，相信在接下来的GC中可能会释放一些metaspace的内存，于是先临时扩大下metaspace触发GC的阈值，而有些内存分配失败其实正好是因为这个阈值触顶导致的，于是可以通过增大阈值暂时绕过去</p>
+
+<p>默认332.8K，增大触发metaspace GC阈值的最小要求。假如我们要救急分配的内存很小，没有达到MinMetaspaceExpansion，但是我们会将这次触发metaspace GC的阈值提升MinMetaspaceExpansion，之所以要大于这次要分配的内存大小主要是为了防止别的线程也有类似的请求而频繁触发相关的操作，不过如果要分配的内存超过了MaxMetaspaceExpansion，那MinMetaspaceExpansion将会是要分配的内存大小基础上的一个增量</p>
+
+<h3>MaxMetaspaceExpansion</h3>
+
+<p>默认5.2M，增大触发metaspace GC阈值的最大要求。假如说我们要分配的内存超过了MinMetaspaceExpansion但是低于MaxMetaspaceExpansion，那增量是MaxMetaspaceExpansion，如果超过了MaxMetaspaceExpansion，那增量是MinMetaspaceExpansion加上要分配的内存大小</p>
+
+<p>注：每次分配只会给对应的线程一次扩展触发metaspace GC阈值的机会，如果扩展了，但是还不能分配，那就只能等着做GC了</p>
+
+<h3>MinMetaspaceFreeRatio</h3>
+
+<p>MinMetaspaceFreeRatio和下面的MaxMetaspaceFreeRatio，主要是影响触发metaspaceGC的阈值</p>
+
+<p>默认40，表示每次GC完之后，假设我们允许接下来metaspace可以继续被commit的内存占到了被commit之后总共committed的内存量的MinMetaspaceFreeRatio%，如果这个总共被committed的量比当前触发metaspaceGC的阈值要大，那么将尝试做扩容，也就是增大触发metaspaceGC的阈值，不过这个增量至少是MinMetaspaceExpansion才会做，不然不会增加这个阈值</p>
+
+<p>这个参数主要是为了避免触发metaspaceGC的阈值和gc之后committed的内存的量比较接近，于是将这个阈值进行扩大</p>
+
+<p>一般情况下在gc完之后，如果被committed的量还是比较大的时候，换个说法就是离触发metaspaceGC的阈值比较接近的时候，这个调整会比较明显</p>
+
+<p>注：这里不用gc之后used的量来算，主要是担心可能出现committed的量超过了触发metaspaceGC的阈值，这种情况一旦发生会很危险，会不断做gc，这应该是jdk8在某个版本之后才修复的bug</p>
+
+<h3>MaxMetaspaceFreeRatio</h3>
+
+<p>默认70，这个参数和上面的参数基本是相反的，是为了避免触发metaspaceGC的阈值过大，而想对这个值进行缩小。这个参数在gc之后committed的内存比较小的时候并且离触发metaspaceGC的阈值比较远的时候，调整会比较明显</p>
+
+<h2>jstat里的metaspace字段</h2>
+
+<p>我们看GC是否异常，除了通过GC日志来做分析之外，我们还可以通过jstat这样的工具展示的数据来分析，前面我公众号里有篇文章介绍了jstat这块的实现，有兴趣的可以到我的公众号<code>你假笨</code>里去翻阅下jstat的这篇文章。</p>
+
+<p>我们通过jstat可以看到metaspace相关的这么一些指标，分别是<code>M</code>，<code>CCS</code>，<code>MC</code>，<code>MU</code>，<code>CCSC</code>，<code>CCSU</code>，<code>MCMN</code>，<code>MCMX</code>，<code>CCSMN</code>，<code>CCSMX</code></p>
+
+<p>它们的定义如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^M^&quot;</span>  <span class="cm">/* Metaspace - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCS^&quot;</span>    <span class="cm">/* Compressed Class Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^MC^&quot;</span> <span class="cm">/* Metaspace Capacity - Current */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">center</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^MU^&quot;</span> <span class="cm">/* Metaspae Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">used</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">center</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>   <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCSC^&quot;</span>   <span class="cm">/* Compressed Class Space Capacity - Current */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCSU^&quot;</span>   <span class="cm">/* Compressed Class Space Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">used</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^MCMN^&quot;</span>   <span class="cm">/* Metaspace Capacity - Minimum */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">minCapacity</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^MCMX^&quot;</span>   <span class="cm">/* Metaspace Capacity - Maximum */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">maxCapacity</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCSMN^&quot;</span>    <span class="cm">/* Compressed Class Space Capacity - Minimum */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">minCapacity</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCSMX^&quot;</span>  <span class="cm">/* Compressed Class Space Capacity - Maximum */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">maxCapacity</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">K</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我这里对这些字段分类介绍下</p>
+
+<h3>MC &amp; MU &amp; CCSC &amp; CCSU</h3>
+
+<ul>
+<li><p>MC表示Klass Metaspace以及NoKlass Metaspace两者总共committed的内存大小，单位是KB，虽然从上面的定义里我们看到了是capacity，但是实质上计算的时候并不是capacity，而是committed，这个是要注意的</p></li>
+<li><p>MU这个无可厚非，说的就是Klass Metaspace以及NoKlass Metaspace两者已经使用了的内存大小</p></li>
+<li><p>CCSC表示的是Klass Metaspace的已经被commit的内存大小，单位也是KB</p></li>
+<li><p>CCSU表示Klass Metaspace的已经被使用的内存大小</p></li>
+</ul>
+
+
+<h3>M &amp; CCS</h3>
+
+<ul>
+<li><p>M表示的是Klass Metaspace以及NoKlass Metaspace两者总共的使用率，其实可以根据上面的四个指标算出来，即(CCSU+MU)/(CCSC+MC)</p></li>
+<li><p>CCS表示的是NoKlass Metaspace的使用率，也就是CCSU/CCSC算出来的</p></li>
+</ul>
+
+
+<p>PS：所以我们有时候看到M的值达到了90%以上，其实这个并不一定说明metaspace用了很多了，因为内存是慢慢commit的，所以我们的分母是慢慢变大的，不过当我们committed到一定量的时候就不会再增长了</p>
+
+<h3>MCMN &amp; MCMX &amp; CCSMN &amp; CCSMX</h3>
+
+<ul>
+<li><p>MCMN和CCSMN这两个值大家可以忽略，一直都是0</p></li>
+<li><p>MCMX表示Klass Metaspace以及NoKlass Metaspace两者总共的reserved的内存大小，比如默认情况下Klass Metaspace是通过CompressedClassSpaceSize这个参数来reserved 1G的内存，NoKlass Metaspace默认reserved的内存大小是2* InitialBootClassLoaderMetaspaceSize</p></li>
+<li><p>CCSMX表示Klass Metaspace reserved的内存大小</p></li>
+</ul>
+
+
+<p>综上所述，其实看metaspace最主要的还是看<code>MC</code>，<code>MU</code>，<code>CCSC</code>，<code>CCSU</code>这几个具体的大小来判断metaspace到底用了多少更靠谱</p>
+
+<p>本来还想写metaspace内存分配和GC的内容，不过那块说起来又是一个比较大的话题，因为那块大家看起来可能会比较枯燥，有机会再写</p>
+
+<p>PS:本文最先发布在听云博客</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之临门一脚的OutOfMemoryError完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/08/29/oom/"/>
+    <updated>2016-08-29T15:35:09+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/08/29/oom</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>OutOfMemoryError，说的是java.lang.OutOfMemoryError，是JDK里自带的异常，顾名思义，说的就是内存溢出，当我们的系统内存严重不足的时候就会抛出这个异常(PS:注意这是一个Error，不是一个Exception，所以当我们要catch异常的时候要注意哦)，这个异常说常见也常见，说不常见其实也见得不多，不过作为Java程序员至少应该都听过吧，如果你对jvm不是很熟，或者对OutOfMemoryError这个异常了解不是很深的话，这篇文章肯定还是可以给你带来一些惊喜的，通过这篇文章你至少可以了解到如下几点：</p>
+
+<ul>
+<li>OutOfMemoryError一定会被加载吗</li>
+<li>什么时候抛出OutOfMemoryError</li>
+<li>会创建无数OutOfMemoryError实例吗</li>
+<li>为什么大部分OutOfMemoryError异常是无堆栈的</li>
+<li>我们如何去分析这样的异常</li>
+</ul>
+
+
+<!--more-->
+
+
+<h2>OutOfMemoryError类加载</h2>
+
+<p>既然要说OutOfMemoryError，那就得从这个类的加载说起来，那这个类什么时候被加载呢？你或许会不假思索地说，根据java类的延迟加载机制，这个类一般情况下不会被加载，除非当我们抛出OutOfMemoryError这个异常的时候才会第一次被加载，如果我们的系统一直不抛出这个异常，那这个类将一直不会被加载。说起来好像挺对，不过我这里首先要纠正这个说法，要明确的告诉你这个类在jvm启动的时候就已经被加载了，不信你就执行<code>java -verbose:class -version</code>打印JDK版本看看，看是否有OutOfMemoryError这个类被加载，再输出里你将能找到下面的内容：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">[</span><span class="n">Loaded</span> <span class="n">java</span><span class="o">.</span><span class="na">lang</span><span class="o">.</span><span class="na">OutOfMemoryError</span> <span class="n">from</span> <span class="o">/</span><span class="n">Library</span><span class="o">/</span><span class="n">Java</span><span class="o">/</span><span class="n">JavaVirtualMachines</span><span class="o">/</span><span class="n">jdk1</span><span class="o">.</span><span class="mf">7.0</span><span class="n">_79</span><span class="o">.</span><span class="na">jdk</span><span class="o">/</span><span class="n">Contents</span><span class="o">/</span><span class="n">Home</span><span class="o">/</span><span class="n">jre</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">rt</span><span class="o">.</span><span class="na">jar</span><span class="o">]</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这意味着这个类其实在vm启动的时候就已经被加载了，那JVM里到底在哪里进行加载的呢，且看下面的方法:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">bool</span> <span class="nf">universe_post_init</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="o">...</span>
+</span><span class='line'>  
+</span><span class='line'>  
+</span><span class='line'>  <span class="c1">// Setup preallocated OutOfMemoryError errors</span>
+</span><span class='line'>    <span class="n">k</span> <span class="o">=</span> <span class="nl">SystemDictionary:</span><span class="o">:</span><span class="n">resolve_or_fail</span><span class="o">(</span><span class="nl">vmSymbols:</span><span class="o">:</span><span class="n">java_lang_OutOfMemoryError</span><span class="o">(),</span> <span class="kc">true</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">k_h</span> <span class="o">=</span> <span class="n">instanceKlassHandle</span><span class="o">(</span><span class="n">THREAD</span><span class="o">,</span> <span class="n">k</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_java_heap</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_metaspace</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_class_metaspace</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_array_size</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_gc_overhead_limit</span> <span class="o">=</span>
+</span><span class='line'>      <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_realloc_objects</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>  <span class="o">...</span>
+</span><span class='line'>  
+</span><span class='line'>  
+</span><span class='line'>  <span class="k">if</span> <span class="o">(!</span><span class="n">DumpSharedSpaces</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">// These are the only Java fields that are currently set during shared space dumping.</span>
+</span><span class='line'>    <span class="c1">// We prefer to not handle this generally, so we always reinitialize these detail messages.</span>
+</span><span class='line'>    <span class="n">Handle</span> <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;Java heap space&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_java_heap</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;Metaspace&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_metaspace</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;Compressed class space&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_class_metaspace</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;Requested array size exceeds VM limit&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_array_size</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;GC overhead limit exceeded&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_gc_overhead_limit</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;Java heap space: failed reallocation of scalar replaced objects&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_realloc_objects</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">msg</span> <span class="o">=</span> <span class="nl">java_lang_String:</span><span class="o">:</span><span class="n">create_from_str</span><span class="o">(</span><span class="s">&quot;/ by zero&quot;</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">set_message</span><span class="o">(</span><span class="nl">Universe:</span><span class="o">:</span><span class="n">_arithmetic_exception_instance</span><span class="o">,</span> <span class="n">msg</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// Setup the array of errors that have preallocated backtrace</span>
+</span><span class='line'>    <span class="n">k</span> <span class="o">=</span> <span class="nl">Universe:</span><span class="o">:</span><span class="n">_out_of_memory_error_java_heap</span><span class="o">-&gt;</span><span class="n">klass</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">assert</span><span class="o">(</span><span class="n">k</span><span class="o">-&gt;</span><span class="n">name</span><span class="o">()</span> <span class="o">==</span> <span class="nl">vmSymbols:</span><span class="o">:</span><span class="n">java_lang_OutOfMemoryError</span><span class="o">(),</span> <span class="s">&quot;should be out of memory error&quot;</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">k_h</span> <span class="o">=</span> <span class="n">instanceKlassHandle</span><span class="o">(</span><span class="n">THREAD</span><span class="o">,</span> <span class="n">k</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="o">(</span><span class="n">StackTraceInThrowable</span><span class="o">)</span> <span class="o">?</span> <span class="o">(</span><span class="kt">int</span><span class="o">)</span><span class="n">PreallocatedOutOfMemoryErrorCount</span> <span class="o">:</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_preallocated_out_of_memory_error_array</span> <span class="o">=</span> <span class="nl">oopFactory:</span><span class="o">:</span><span class="n">new_objArray</span><span class="o">(</span><span class="n">k_h</span><span class="o">(),</span> <span class="n">len</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">len</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="n">oop</span> <span class="n">err</span> <span class="o">=</span> <span class="n">k_h</span><span class="o">-&gt;</span><span class="n">allocate_instance</span><span class="o">(</span><span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>      <span class="n">Handle</span> <span class="n">err_h</span> <span class="o">=</span> <span class="n">Handle</span><span class="o">(</span><span class="n">THREAD</span><span class="o">,</span> <span class="n">err</span><span class="o">);</span>
+</span><span class='line'>      <span class="nl">java_lang_Throwable:</span><span class="o">:</span><span class="n">allocate_backtrace</span><span class="o">(</span><span class="n">err_h</span><span class="o">,</span> <span class="n">CHECK_false</span><span class="o">);</span>
+</span><span class='line'>      <span class="nl">Universe:</span><span class="o">:</span><span class="n">preallocated_out_of_memory_errors</span><span class="o">()-&gt;</span><span class="n">obj_at_put</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="n">err_h</span><span class="o">());</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="nl">Universe:</span><span class="o">:</span><span class="n">_preallocated_out_of_memory_error_avail_count</span> <span class="o">=</span> <span class="o">(</span><span class="n">jint</span><span class="o">)</span><span class="n">len</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>上面的代码其实就是在vm启动过程中加载了OutOfMemoryError这个类，并且创建了好几个OutOfMemoryError对象，每个OutOfMemoryError对象代表了一种内存溢出的场景，比如说<code>Java heap space</code>不足导致的OutOfMemoryError，抑或<code>Metaspace</code>不足导致的OutOfMemoryError，上面的代码来源于JDK8，所以能看到metaspace的内容，如果是JDK8之前，你将看到Perm的OutOfMemoryError，不过本文metaspace不是重点，所以不展开讨论，如果大家有兴趣，可以专门写一篇文章来介绍metsapce来龙去脉，说来这个坑填起来还挺大的。</p>
+
+<h3>能通过agent拦截到这个类加载吗</h3>
+
+<p>熟悉字节码增强的人，可能会条件反射地想到是否可以拦截到这个类的加载呢，这样我们就可以做一些譬如内存溢出的监控啥的，哈哈，我要告诉你的是<code>NO WAY</code>，因为通过agent的方式来监听类加载过程是在vm初始化完成之后才开始的，而这个类的加载是在vm初始化过程中，因此不可能拦截到这个类的加载，于此类似的还有<code>java.lang.Object</code>,<code>java.lang.Class</code>等。</p>
+
+<h3>为什么要在vm启动过程中加载这个类</h3>
+
+<p>这个问题或许看了后面的内容你会有所体会，先卖个关子。包括为什么要预先创建这几个实例对象后面也会解释。</p>
+
+<h2>何时抛出OutOfMemoryError</h2>
+
+<p>要抛出OutOfMemoryError，那肯定是有地方需要进行内存分配，可能是heap里，也可能是metsapce里（如果是在JDK8之前的会是Perm里），不同地方的分配，其策略也不一样，简单来说就是尝试分配，实在没办法就gc，gc还是不能分配就抛出异常。</p>
+
+<p>不过还是以Heap里的分配为例说一下具体的过程：</p>
+
+<p>正确情况下对象创建需要分配的内存是来自于Heap的Eden区域里，当Eden内存不够用的时候，某些情况下会尝试到Old里进行分配(比如说要分配的内存很大)，如果还是没有分配成功，于是会触发一次ygc的动作，而ygc完成之后我们会再次尝试分配，如果仍不足以分配此时的内存，那会接着做一次full gc(不过此时的soft reference不会被强制回收)，将老生代也回收一下，接着再做一次分配，仍然不够分配那会做一次强制将soft reference也回收的full gc，如果还是不能分配，那这个时候就不得不抛出OutOfMemoryError了。这就是Heap里分配内存抛出OutOfMemoryError的具体过程了。</p>
+
+<h2>OutOfMemoryError对象可能会很多吗</h2>
+
+<p>想象有这么一种场景，我们的代码写得足够烂，并且存在内存泄漏，这意味着系统跑到一定程度之后，只要我们创建对象要分配内存的时候就会进行gc，但是gc没啥效果，进而抛出OutOfMemoryError的异常，那意味着每发生此类情况就应该创建一个OutOfMemoryError对象，并且抛出来，也就是说我们会看到一个带有堆栈的OutOfMemoryError异常被抛出，那事实是如此吗？如果真是如此，那为什么在VM启动的时候会创建那几个OutOfMemoryError对象呢？</p>
+
+<h3>抛出异常的java代码位置需要我们关心吗</h3>
+
+<p>这个问题或许你仔细想想就清楚了，如果没想清楚，请在这里停留一分钟仔细想想再往后面看。</p>
+
+<p>抛出OutOfMemoryError异常的java方法其实只是临门一脚而已，导致内存泄漏的不一定就是这个方法，当然也不排除可能是这个方法，不过这种情况的可能性真的非常小。所以你大可不必去关心抛出这个异常的堆栈。</p>
+
+<p>既然可以不关心其异常堆栈，那意味着这个异常其实没必要每次都创建一个不一样的了，因为不需要堆栈的话，其他的东西都可以完全相同，这样一来回到我们前面提到的那个问题，<code>为什么要在vm启动过程中加载这个类</code>，或许你已经有答案了，在vm启动过程中我们把类加载起来，并创建几个没有堆栈的对象缓存起来，只需要设置下不同的提示信息即可，当需要抛出特定类型的OutOfMemoryError异常的时候，就直接拿出缓存里的这几个对象就可以了。</p>
+
+<p>所以OutOfMemoryError的对象其实并不会太多，哪怕你代码写得再烂，当然，如果你代码里要不断<code>new OutOfMemoryError()</code>，那我就无话可说啦。</p>
+
+<h2>为什么我们有时候还是可以看到有堆栈的OutOfMemoryError</h2>
+
+<p>如果都是用jvm启动的时候创建的那几个OutOfMemoryError对象，那不应该再出现有堆栈的OutOfMemoryError异常，但是实际上我们偶尔还是能看到有堆栈的异常，如果你细心点的话，可能会总结出一个规律，发现最多出现4次有堆栈的OutOfMemoryError异常，当4次过后，你都将看到无堆栈的OutOfMemoryError异常。</p>
+
+<p>这个其实在我们上面贴的代码里也有体现，最后有一个for循环，这个循环里会创建几个OutOfMemoryError对象，如果我们将<code>StackTraceInThrowable</code>设置为true的话(默认就是true的)，意味着我们抛出来的异常正确情况下都将是有堆栈的，那根据<code>PreallocatedOutOfMemoryErrorCount</code>这个参数来决定预先创建几个OutOfMemoryError异常对象，但是这个参数除非在debug版本下可以被设置之外，正常release出来的版本其实是无法设置这个参数的，它会是一个常量，值为4，因此在jvm启动的时候会预先创建4个OutOfMemoryError异常对象，但是这几个异常对象的堆栈，是可以动态设置的，比如说某个地方要抛出OutOfMemoryError异常了，于是先从预存的OutOfMemoryError里取出一个（其他是预存的对象还有），将此时的堆栈填上，然后抛出来，并且这个对象的使用是一次性的，也就是这个对象被抛出之后将不会再次被利用，直到预设的这几个OutOfMemoryError对象被用完了，那接下来抛出的异常都将是一开始缓存的那几个无栈的OutOfMemoryError对象。</p>
+
+<p>这就是我们看到的最多出现4次有堆栈的OutOfMemoryError异常及大部分情况下都将看到没有堆栈的OutOfMemoryError对象的原因。</p>
+
+<h2>如何分析OutOfMemoryError异常</h2>
+
+<p>既然看堆栈也没什么意义，那只能从提示上入手了，我们看到这类异常，首先要确定的到底是哪块内存何种情况导致的内存溢出，比如说是Perm导致的，那抛出来的异常信息里会带有<code>Perm</code>的关键信息，那我们应该重点看Perm的大小，以及Perm里的内容；如果是Heap的，那我们就必须做内存Dump，然后分析为什么会发生这样的情况，内存里到底存了什么对象，至于内存分析的最佳的分析工具自然是MAT啦，不了解的请google之。</p>
+
+<p>PS:本文最先发布在听云博客</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之Jstat工具原理完全解读]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/07/20/jstat/"/>
+    <updated>2016-07-20T15:32:00+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/07/20/jstat</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>jstat是hotspot自带的工具，和java一样也位于<code>JAVA_HOME/bin</code>下面，我们通过该工具可以实时了解当前进程的gc，compiler，class，memory等相关的情况，具体我们可以通过jstat -options来看我们到底支持哪些类型的数据，譬如JDK8下的结果是：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">-</span><span class="kd">class</span>
+</span><span class='line'><span class="err">-</span><span class="nc">compiler</span>
+</span><span class='line'><span class="o">-</span><span class="n">gc</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccause</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcmetacapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnew</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnewcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcold</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcoldcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcutil</span>
+</span><span class='line'><span class="o">-</span><span class="n">printcompilation</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<!--more-->
+
+
+<h2>jstat的输出</h2>
+
+<p>jstat大家用得其实挺多的，最常见的用法是jstat -gcutil，输出如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">~</span> <span class="n">ᐅ</span> <span class="n">jstat</span> <span class="o">-</span><span class="n">gcutil</span> <span class="mi">692</span> <span class="mi">1000</span>
+</span><span class='line'>  <span class="n">S0</span>     <span class="n">S1</span>     <span class="n">E</span>      <span class="n">O</span>      <span class="n">M</span>     <span class="n">CCS</span>    <span class="n">YGC</span>     <span class="n">YGCT</span>    <span class="n">FGC</span>    <span class="n">FGCT</span>     <span class="n">GCT</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.79</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span><span class='line'>  <span class="mf">0.00</span>  <span class="mf">41.49</span>  <span class="mf">59.80</span>  <span class="mf">83.66</span>  <span class="mf">89.92</span>  <span class="mf">78.74</span>    <span class="mi">295</span>    <span class="mf">5.436</span>    <span class="mi">10</span>    <span class="mf">3.855</span>    <span class="mf">9.291</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>那每一列是怎么定义，怎么计算的呢，其实在tools.jar里存在一个文件叫做jstat_options，这个文件里定义了上面的每种类型的输出结果，比如说gcutil</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">option</span> <span class="n">gcutil</span> <span class="o">{</span>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^S0^&quot;</span> <span class="cm">/* Survivor 0 Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^S1^&quot;</span> <span class="cm">/* Survivor 1 Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^E^&quot;</span>  <span class="cm">/* Eden Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^O^&quot;</span>  <span class="cm">/* Old Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">generation</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">space</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^M^&quot;</span>  <span class="cm">/* Metaspace Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">metaspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^CCS^&quot;</span>    <span class="cm">/* Compressed Class Space Space - Percent Used */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="mi">1</span><span class="o">-((</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span> <span class="o">-</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">used</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">compressedclassspace</span><span class="o">.</span><span class="na">capacity</span><span class="o">))</span> <span class="o">*</span> <span class="mi">100</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.00&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^YGC^&quot;</span>    <span class="cm">/* Young Generation Collections */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">invocations</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">6</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^YGCT^&quot;</span>   <span class="cm">/* Young Generation Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">time</span><span class="o">/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^FGC^&quot;</span>    <span class="cm">/* Full Collections */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">invocations</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">5</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">raw</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^FGCT^&quot;</span>   <span class="cm">/* Full Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">time</span><span class="o">/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">column</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">header</span> <span class="s">&quot;^GCT^&quot;</span>    <span class="cm">/* Total Garbage Collection Time */</span>
+</span><span class='line'>    <span class="n">data</span> <span class="o">(</span><span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="na">time</span> <span class="o">+</span> <span class="n">sun</span><span class="o">.</span><span class="na">gc</span><span class="o">.</span><span class="na">collector</span><span class="o">.</span><span class="mi">1</span><span class="o">.</span><span class="na">time</span><span class="o">)/</span><span class="n">sun</span><span class="o">.</span><span class="na">os</span><span class="o">.</span><span class="na">hrt</span><span class="o">.</span><span class="na">frequency</span>
+</span><span class='line'>    <span class="n">align</span> <span class="n">right</span>
+</span><span class='line'>    <span class="n">width</span> <span class="mi">8</span>
+</span><span class='line'>    <span class="n">scale</span> <span class="n">sec</span>
+</span><span class='line'>    <span class="n">format</span> <span class="s">&quot;0.000&quot;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的定义我们知道gcutil的每一列是什么意思，怎么计算出来的，其中类似<code>sun.gc.generation.0.space.0.capacity</code>这样的一些变量是jvm里创建并实时更新的值</p>
+
+<h2>jstat如何获取到这些变量的值</h2>
+
+<p>变量值显然是从目标进程里获取来的，但是是怎样来的？local socket还是memory share？其实是从一个共享文件里来的，这个文件叫PerfData，主要指的是/tmp/hsperfdata_\<user>/\<pid>这个文件</p>
+
+<h3>PerfData文件</h3>
+
+<h4>文件创建</h4>
+
+<p>这个文件是否存在取决于两个参数，一个UsePerfData，另一个是PerfDisableSharedMem，如果设置了-XX:+PerfDisableSharedMem或者-XX:-UsePerfData，那这个文件是不会存在的，默认情况下PerfDisableSharedMem是关闭的，UsePerfData是打开的，所以默认情况下PerfData文件是存在的。对于UsePerfData和PerfDisableSharedMem这两个参数，这里着重讲一下：</p>
+
+<ul>
+<li>UsePerfData：如果关闭了UsePerfData这个参数，那么jvm启动过程中perf memory都不会被创建，默认情况是是打开的</li>
+<li>PerfDisableSharedMem：该参数决定了存储PerfData的内存是不是可以被共享，也就是说不管这个参数设置没设置，jvm在启动的时候都会分配一块内存来存PerfData，只是说这个PerfData是不是其他进程可见的问题，如果设置了这个参数，说明不能被共享，此时其他进程将访问不了该内存，这样一来，譬如我们jps，jstat等都无法工作。默认这个参数是关闭的，也就是默认支持共享的方式</li>
+</ul>
+
+
+<p>具体代码在PerfMemory::create_memory_region里</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="k">if</span> <span class="o">(</span><span class="n">PerfDisableSharedMem</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">// do not share the memory for the performance data.</span>
+</span><span class='line'>    <span class="n">_start</span> <span class="o">=</span> <span class="n">create_standard_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>  <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">_start</span> <span class="o">=</span> <span class="n">create_shared_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">_start</span> <span class="o">==</span> <span class="n">NULL</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="c1">// creation of the shared memory region failed, attempt</span>
+</span><span class='line'>      <span class="c1">// to create a contiguous, non-shared memory region instead.</span>
+</span><span class='line'>      <span class="c1">//</span>
+</span><span class='line'>      <span class="k">if</span> <span class="o">(</span><span class="n">PrintMiscellaneous</span> <span class="o">&amp;&amp;</span> <span class="n">Verbose</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">warning</span><span class="o">(</span><span class="s">&quot;Reverting to non-shared PerfMemory region.\n&quot;</span><span class="o">);</span>
+</span><span class='line'>      <span class="o">}</span>
+</span><span class='line'>      <span class="n">PerfDisableSharedMem</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>      <span class="n">_start</span> <span class="o">=</span> <span class="n">create_standard_memory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>文件删除</h4>
+
+<p>那这个文件什么时候删除？正常情况下当进程退出的时候会自动删除，但是某些极端情况下，比如kill -9，这种信号jvm是不能捕获的，所以导致进程直接退出了，而没有做一些收尾性的工作，这个时候你会发现进程虽然没了，但是这个文件其实还是存在的，那这个文件是不是就一直留着，只能等待人为的删除呢，jvm里考虑到了这种情况，会在当前用户接下来的任何一个java进程(比如说我们执行jps)起来的时候会去做一个判断，看/tmp/hsperfdata_\<user>下的进程是不是还存在，如果不存在了就直接删除该文件，判断是否存在的具体操作其实就是发一个kill -0的信号看是否有异常。</p>
+
+<h4>文件更新</h4>
+
+<p>由于这个文件是通过mmap的方式映射到了内存里，而jstat是直接通过DirectByteBuffer的方式从PerfData里读取的，所以只要内存里的值变了，那我们从jstat看到的值就会发生变化，内存里的值什么时候变，取决于-XX:PerfDataSamplingInterval这个参数，默认是50ms，也就是说50ms更新一次值，基本上可以认为是实时的了。</p>
+
+<h4>PerfData其他相关VM参数</h4>
+
+<ul>
+<li>-XX:PerfDataMemorySize：指定/tmp/hsperfdata_\<user>下perfData文件的大小，默认是32KB，如果用户设置了该值，jvm里会自动和os的page size对齐，比如linux下pagesize默认是4KB，那如果你设置了31KB，那自动会分配32KB</li>
+<li>-XX:+PerfDataSaveToFile：是否在进程退出的时候讲PerfData里的数据保存到一个特定的文件里，文件路径由下面的参数指定，否则就在当前目录下</li>
+<li>-XX:PerfDataSaveFile：指定保存PerfData文件的路径</li>
+<li>-XX:PerfDataSamplingInterval：指定perfData的采样间隔，默认是50ms，基本算实时采样了</li>
+</ul>
+
+
+<h2>jstat里的坑</h2>
+
+<p>本人暂时想到的两大坑：</p>
+
+<ul>
+<li><p>一次正常的Background CMS GC之后，发现FGC的值加了2次，后面发现主要原因是CMS有init mark和remark两个会暂停应用的阶段，同时因为是对old做gc，因此算了两次</p></li>
+<li><p>JDK8下metaspace的使用情况不准确，比如说CCSC的值表示的是 Compressed Class Space Capacity，但是发现这个值的计算却不是reserve的值，所以我们可能会发现metaspace其实用了非常少，但是通过jstat看起使用率已经非常大了，因此这种情况最好是通过jmx的方式去取那些值做一个计算</p></li>
+</ul>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">size_t</span> <span class="nl">CompressedClassSpaceCounters:</span><span class="o">:</span><span class="n">capacity</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>  <span class="k">return</span> <span class="nl">MetaspaceAux:</span><span class="o">:</span><span class="n">committed_bytes</span><span class="o">(</span><span class="nl">Metaspace:</span><span class="o">:</span><span class="n">ClassType</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之不可控的堆外内存]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/06/29/ooc-offheap/"/>
+    <updated>2016-06-29T14:33:51+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/06/29/ooc-offheap</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>之前写过篇文章，关于堆外内存的，<a href="http://mp.weixin.qq.com/s?__biz=MzIzNjI1ODc2OA==&amp;mid=403168235&amp;idx=1&amp;sn=ecc804ba7231996d43c05138566d074a&amp;scene=19#wechat_redirect">JVM源码分析之堆外内存完全解读</a>，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下，然后统计所有DirectByteBuffer对象后面占用的内存达到了7G，远远超出阈值，这个问题很诡异，于是好好查了下原因，虽然最终发现是我们统计的问题，但是期间发现的其他一些问题还是值得分享一下的。</p>
+
+<!--more-->
+
+
+<h2>不得不提的DirectByteBuffer构造函数</h2>
+
+<p>打开DirectByteBuffer这个类，我们会发现有5个构造函数</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">,</span> <span class="n">Object</span> <span class="n">ob</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">protected</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">,</span> <span class="kt">long</span> <span class="n">addr</span><span class="o">,</span><span class="n">FileDescriptor</span> <span class="n">fd</span><span class="o">,</span><span class="n">Runnable</span> <span class="n">unmapper</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="n">DirectBuffer</span> <span class="n">db</span><span class="o">,</span> <span class="kt">int</span> <span class="n">mark</span><span class="o">,</span> <span class="kt">int</span> <span class="n">pos</span><span class="o">,</span> <span class="kt">int</span> <span class="n">lim</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">,</span><span class="kt">int</span> <span class="n">off</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们从java层面创建DirectByteBuffer对象，一般都是通过ByteBuffer的allocateDirect方法</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="n">ByteBuffer</span> <span class="nf">allocateDirect</span><span class="o">(</span><span class="kt">int</span> <span class="n">capacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也就是会使用上面提到的第一个构造函数，即</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">DirectByteBuffer</span><span class="o">(</span><span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>                   <span class="c1">// package-private</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">super</span><span class="o">(-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">cap</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">boolean</span> <span class="n">pa</span> <span class="o">=</span> <span class="n">VM</span><span class="o">.</span><span class="na">isDirectMemoryPageAligned</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ps</span> <span class="o">=</span> <span class="n">Bits</span><span class="o">.</span><span class="na">pageSize</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">size</span> <span class="o">=</span> <span class="n">Math</span><span class="o">.</span><span class="na">max</span><span class="o">(</span><span class="mi">1L</span><span class="o">,</span> <span class="o">(</span><span class="kt">long</span><span class="o">)</span><span class="n">cap</span> <span class="o">+</span> <span class="o">(</span><span class="n">pa</span> <span class="o">?</span> <span class="n">ps</span> <span class="o">:</span> <span class="mi">0</span><span class="o">));</span>
+</span><span class='line'>        <span class="n">Bits</span><span class="o">.</span><span class="na">reserveMemory</span><span class="o">(</span><span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">base</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">base</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">allocateMemory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">OutOfMemoryError</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Bits</span><span class="o">.</span><span class="na">unreserveMemory</span><span class="o">(</span><span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="n">x</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">unsafe</span><span class="o">.</span><span class="na">setMemory</span><span class="o">(</span><span class="n">base</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span> <span class="o">(</span><span class="kt">byte</span><span class="o">)</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">pa</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">base</span> <span class="o">%</span> <span class="n">ps</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// Round up to page boundary</span>
+</span><span class='line'>            <span class="n">address</span> <span class="o">=</span> <span class="n">base</span> <span class="o">+</span> <span class="n">ps</span> <span class="o">-</span> <span class="o">(</span><span class="n">base</span> <span class="o">&amp;</span> <span class="o">(</span><span class="n">ps</span> <span class="o">-</span> <span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">address</span> <span class="o">=</span> <span class="n">base</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">cleaner</span> <span class="o">=</span> <span class="n">Cleaner</span><span class="o">.</span><span class="na">create</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="k">new</span> <span class="nf">Deallocator</span><span class="o">(</span><span class="n">base</span><span class="o">,</span> <span class="n">size</span><span class="o">,</span> <span class="n">cap</span><span class="o">));</span>
+</span><span class='line'>        <span class="n">att</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而这个构造函数里的<code>Bits.reserveMemory(size, cap)</code>方法会做堆外内存的阈值check</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">reserveMemory</span><span class="o">(</span><span class="kt">long</span> <span class="n">size</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="n">Bits</span><span class="o">.</span><span class="na">class</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">memoryLimitSet</span> <span class="o">&amp;&amp;</span> <span class="n">VM</span><span class="o">.</span><span class="na">isBooted</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">maxMemory</span> <span class="o">=</span> <span class="n">VM</span><span class="o">.</span><span class="na">maxDirectMemory</span><span class="o">();</span>
+</span><span class='line'>                <span class="n">memoryLimitSet</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">// -XX:MaxDirectMemorySize limits the total capacity rather than the</span>
+</span><span class='line'>            <span class="c1">// actual memory usage, which will differ when buffers are page</span>
+</span><span class='line'>            <span class="c1">// aligned.</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">cap</span> <span class="o">&lt;=</span> <span class="n">maxMemory</span> <span class="o">-</span> <span class="n">totalCapacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">reservedMemory</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">totalCapacity</span> <span class="o">+=</span> <span class="n">cap</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>                <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">System</span><span class="o">.</span><span class="na">gc</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">100</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// Restore interrupt status</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="n">Bits</span><span class="o">.</span><span class="na">class</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">totalCapacity</span> <span class="o">+</span> <span class="n">cap</span> <span class="o">&gt;</span> <span class="n">maxMemory</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">OutOfMemoryError</span><span class="o">(</span><span class="s">&quot;Direct buffer memory&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">reservedMemory</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">totalCapacity</span> <span class="o">+=</span> <span class="n">cap</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此当我们已经分配的内存超过阈值的时候会触发一次gc动作，并重新做一次分配，如果还是超过阈值，那将会抛出OOM，因此分配动作会失败。</p>
+
+<p>所以从这一切看来，只要设置了<code>-XX:MaxDirectMemorySize=1G</code>是不会出现超过这个阈值的情况的，会看到不断的做GC。</p>
+
+<h2>构造函数再探</h2>
+
+<p>那其他的构造函数主要是用在什么情况下的呢？</p>
+
+<p>我们知道DirectByteBuffer回收靠的是里面有个cleaner的属性，但是我们发现有几个构造函数里cleaner这个属性却是null，那这种情况下他们怎么被回收呢？</p>
+
+<p>那下面请大家先看下DirectByteBuffer里的这两个函数：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="kd">public</span> <span class="n">ByteBuffer</span> <span class="nf">slice</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">pos</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">position</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">lim</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">assert</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;=</span> <span class="n">lim</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">rem</span> <span class="o">=</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;=</span> <span class="n">lim</span> <span class="o">?</span> <span class="n">lim</span> <span class="o">-</span> <span class="n">pos</span> <span class="o">:</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">off</span> <span class="o">=</span> <span class="o">(</span><span class="n">pos</span> <span class="o">&lt;&lt;</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">assert</span> <span class="o">(</span><span class="n">off</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="o">-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">rem</span><span class="o">,</span> <span class="n">rem</span><span class="o">,</span> <span class="n">off</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">ByteBuffer</span> <span class="nf">duplicate</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="k">this</span><span class="o">,</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">markValue</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">position</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="k">this</span><span class="o">.</span><span class="na">capacity</span><span class="o">(),</span>
+</span><span class='line'>                                              <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从名字和实现上基本都能猜出是干什么的了，slice其实是从一块已知的内存里取出剩下的一部分，用一个新的DirectByteBuffer对象指向它，而duplicate就是创建一个现有DirectByteBuffer的全新副本，各种指针都一样。</p>
+
+<p>因此从这个实现来看，后面关联的堆外内存其实是同一块，所以如果我们做统计的时候如果仅仅将所有DirectByteBuffer对象的capacity加起来，那可能会导致算出来的结果偏大不少，这其实也是我查的那个问题，本来设置了阈值1G，但是发现达到了7G的效果。所以这种情况下使用的构造函数，可以让cleaner为null，回收靠原来的那个DirectByteBuffer对象被回收。</p>
+
+<h2>被遗忘的检查</h2>
+
+<p>但是还有种情况，也是本文要讲的重点，在jvm里可以通过jni方法回调上面的DirectByteBuffer构造函数，这个构造函数是</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="nf">DirectByteBuffer</span><span class="o">(</span><span class="kt">long</span> <span class="n">addr</span><span class="o">,</span> <span class="kt">int</span> <span class="n">cap</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">super</span><span class="o">(-</span><span class="mi">1</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">cap</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">address</span> <span class="o">=</span> <span class="n">addr</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">cleaner</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">att</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而调用这个构造函数的jni方法是<code>jni_NewDirectByteBuffer</code></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">extern</span> <span class="s">&quot;C&quot;</span> <span class="n">jobject</span> <span class="n">JNICALL</span> <span class="nf">jni_NewDirectByteBuffer</span><span class="o">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="o">,</span> <span class="kt">void</span><span class="o">*</span> <span class="n">address</span><span class="o">,</span> <span class="n">jlong</span> <span class="n">capacity</span><span class="o">)</span>
+</span><span class='line'><span class="o">{</span>
+</span><span class='line'>  <span class="c1">// thread_from_jni_environment() will block if VM is gone.</span>
+</span><span class='line'>  <span class="n">JavaThread</span><span class="o">*</span> <span class="n">thread</span> <span class="o">=</span> <span class="nl">JavaThread:</span><span class="o">:</span><span class="n">thread_from_jni_environment</span><span class="o">(</span><span class="n">env</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="n">JNIWrapper</span><span class="o">(</span><span class="s">&quot;jni_NewDirectByteBuffer&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>  <span class="nf">DTRACE_PROBE3</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__entry</span><span class="o">,</span> <span class="n">env</span><span class="o">,</span> <span class="n">address</span><span class="o">,</span> <span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'> <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_ENTRY</span><span class="o">(</span>
+</span><span class='line'>                                       <span class="n">env</span><span class="o">,</span> <span class="n">address</span><span class="o">,</span> <span class="n">capacity</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="o">(!</span><span class="n">directBufferSupportInitializeEnded</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(!</span><span class="n">initializeDirectBufferSupport</span><span class="o">(</span><span class="n">env</span><span class="o">,</span> <span class="n">thread</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>      <span class="nf">DTRACE_PROBE1</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__return</span><span class="o">,</span> <span class="n">NULL</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>      <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN</span><span class="o">(</span>
+</span><span class='line'>                                             <span class="n">NULL</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">NULL</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="c1">// Being paranoid about accidental sign extension on address</span>
+</span><span class='line'>  <span class="n">jlong</span> <span class="n">addr</span> <span class="o">=</span> <span class="o">(</span><span class="n">jlong</span><span class="o">)</span> <span class="o">((</span><span class="n">uintptr_t</span><span class="o">)</span> <span class="n">address</span><span class="o">);</span>
+</span><span class='line'>  <span class="c1">// NOTE that package-private DirectByteBuffer constructor currently</span>
+</span><span class='line'>  <span class="c1">// takes int capacity</span>
+</span><span class='line'>  <span class="n">jint</span>  <span class="n">cap</span>  <span class="o">=</span> <span class="o">(</span><span class="n">jint</span><span class="o">)</span>  <span class="n">capacity</span><span class="o">;</span>
+</span><span class='line'>  <span class="n">jobject</span> <span class="n">ret</span> <span class="o">=</span> <span class="n">env</span><span class="o">-&gt;</span><span class="n">NewObject</span><span class="o">(</span><span class="n">directByteBufferClass</span><span class="o">,</span> <span class="n">directByteBufferConstructor</span><span class="o">,</span> <span class="n">addr</span><span class="o">,</span> <span class="n">cap</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">ifndef</span> <span class="n">USDT2</span>
+</span><span class='line'>  <span class="nf">DTRACE_PROBE1</span><span class="o">(</span><span class="n">hotspot_jni</span><span class="o">,</span> <span class="n">NewDirectByteBuffer__return</span><span class="o">,</span> <span class="n">ret</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="k">else</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>  <span class="n">HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN</span><span class="o">(</span>
+</span><span class='line'>                                         <span class="n">ret</span><span class="o">);</span>
+</span><span class='line'><span class="err">#</span><span class="n">endif</span> <span class="cm">/* USDT2 */</span>
+</span><span class='line'>  <span class="k">return</span> <span class="n">ret</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>想象这么种情况，我们写了一个native方法，里面分配了一块内存，同时通过上面这个方法和一个DirectByteBuffer对象关联起来，那从java层面来看这个DirectByteBuffer确实是一个有效的占有不少native内存的对象，但是这个对象后面关联的内存完全绕过了MaxDirectMemorySize的check，所以也可能给你造成这种现象，明明设置了MaxDirectMemorySize，但是发现DirectByteBuffer关联的堆外内存其实是大于它的。</p>
+
+<h2>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h2>
+
+<p><img src="http://nijiaben.github.io/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[YGC前后新生代变大？]]></title>
@@ -6941,1307 +8175,6 @@ forceExit(int exit_code)
 <p>&#8195;&#8195;这个的时候，进程果然退出了，没有任何迹象，所以晚上花了点时间写了这篇文章记录下这诡异的问题</p>
 
 <p>&#8195;&#8195;这个暂时就介绍到这里，虽然还比较肤浅，有机会再从原理角度介绍jdwp的具体实现。</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JDK的sql设计不合理导致的驱动类初始化死锁问题]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock/"/>
-    <updated>2014-07-08T16:39:46+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/07/08/jdk-sql-deadlock</id>
-    <content type="html"><![CDATA[<h2>问题描述</h2>
-
-<p>&#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子，对于Thread2的实现其实是jdk里java.sql.DriverService的逻辑，也是我们第一次调用java.sql.DriverManager.registerDriver注册一个驱动实例要走的逻辑(jdk1.6下)，不过这篇文章是使用我们生产环境的一个系统的线程dump和内存dump为基础进行分析展开的。</p>
-
-<!--more-->
-
-
-
-
-<pre class="prettyPrint">
-
-import java.util.Iterator;
-
-import sun.misc.Service;
-
-public class Main {
-    public static void main(String[] args) throws ClassNotFoundException {
-        Thread1 thread1 = new Thread1();
-        Thread2 thread2 = new Thread2();
-        thread1.start();
-        thread2.start();
-    }
-}
-
-class Thread1 extends Thread {
-    public void run() {
-        try {
-            Class<?> clazz = Class.forName("com.mysql.jdbc.Driver", true, Thread.currentThread()
-                .getContextClassLoader());
-            System.out.println(clazz);
-        } catch (ClassNotFoundException e) {
-        }
-    }
-}
-
-class Thread2 extends Thread {
-    public void run() {
-        Iterator ps = Service.providers(java.sql.Driver.class);
-        try {
-            while (ps.hasNext()) {
-                System.out.println(ps.next());
-            } 
-        } catch (Throwable t) {
-           
-        }
-    }
-}
-</pre>
-
-
-<p>&#8195;&#8195;如果以上代码运行过程中发现有线程一直卡死在Class.forName的调用里，那么说明问题已经重现了。</p>
-
-<p>&#8195;&#8195;先上两张图</p>
-
-<p><code>内存态线程堆栈</code></p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/heap_thread_1.png"></p>
-
-<p><code>线程堆栈</code></p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/thread_1.png"></p>
-
-<h2>存疑点</h2>
-
-<p>&#8195;&#8195;仔细看看上面的线程dump分析和内存dump分析里的线程分析模块，您可能会有如下两个疑惑：</p>
-
-<ul>
-<li><p>【为什么线程[Thread-0]一直卡在Class.forName的位置】：这有点出乎意料，做一个类加载要么找不到抛出ClassNotFoundException，要么找到直接返回，为什么会一直卡在这个位置呢？</p></li>
-<li><p>【明明[Thread-0]注册的是mysql驱动为什么会去加载Odbc的驱动类】：通过[Thread-0]在栈上看倒数第二帧展开看到传入Class.forName的参数是com.mysql.jdbc.Driver，然后展开栈上顺序第二帧，看到传入的参数是sun.jdbc.odbc.JdbcOdbcDriver，这意味着在对mysql驱动类做加载初始化的过程中又触发了JdbcOdbc驱动类的加载</p></li>
-</ul>
-
-
-<h2>疑惑点解释</h2>
-
-<h3>疑惑二：</h3>
-
-<p>&#8195;&#8195;第一个疑惑我们先留着，先解释下第二个疑惑，大家可以对照堆栈通过反编译rt.jar还有ojdbc6-11.2.0.3.0.jar看具体的代码</p>
-
-<p><code>驱动类加载过程简要介绍:</code></p>
-
-<p>&#8195;&#8195;当要注册某个sql驱动的时候是通过调用java.sql.DriverManager.registerDriver来实现的(注意这个方法加了synchronized关键字，后面解释第一个疑惑的时候是关键)，而这个方法在第一次执行过程中，会在当前线程classloader的classpath下寻找所有/META-INF/services/java.sql.Driver文件，这个文件在mysql和oracle驱动jar里都有，里面写的是对应的驱动实现类名，这种机制是jdk提供的spi实现，找到这些文件之后，依次使用Class.forName(driverClassName, true, this.loader)来对这些驱动类进行加载，其中第二个参数是true，意味着不仅仅做一次loadClass的动作，还会初始化该类，即调用包含静态块的&lt; clinit >方法，执行完之后才会返回，这样就解释了第二个疑惑，在mysql驱动注册过程中还会对odbc驱动类进行加载并初始化</p>
-
-<p><code>感想:</code></p>
-
-<p>&#8195;&#8195;其实我觉得这种设计有点傻，为什么要干和自己不相关的事情呢，画蛇添足的设计，首先类初始化的开销是否放到一起做并没有多大区别，其次正由于这种设计导致了今天这个死锁的发生</p>
-
-<h3>疑惑一：</h3>
-
-<p>&#8195;&#8195;现在来说第一个疑惑，为什么会一直卡在Class.forName呢，到底卡在哪里，于是再通过jstack -m <pid>命令将jvm里的堆栈也打印出来，如下所示</p>
-
-<pre class="prettyPrint">
------------------ 5738 -----------------
-0x003f67a2      _dl_sysinfo_int80 + 0x2
-0xb79a71ae      _ZN2os13PlatformEvent4parkEv + 0xee
-0xb7997acb      _ZN13ObjectMonitor4waitExbP6Thread + 0x5fb
-0xb7a73c53      _ZN18ObjectSynchronizer19waitUninterruptiblyE6HandlexP6Thread + 0x53
-0xb777eb34      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x74
-0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
-0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
-0xb7807d99      JVM_FindClassFromClassLoader + 0x269
-0xb734c236      Java_java_lang_Class_forName0 + 0x116
-0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
-0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
-0xb4328fa7      * sun.misc.Service$LazyIterator.next() bci:31 line:271 (Interpreted frame)
-0xb4329483      * java.sql.DriverService.run() bci:26 line:664 (Interpreted frame)
-0xb43263e6      <StubRoutines>
-0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
-0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
-0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
-0xb780aace      JVM_DoPrivileged + 0x40e
-0xb734b95d      Java_java_security_AccessController_doPrivileged__Ljava_security_PrivilegedAction_2 + 0x3d
-0xb433064a      * java.security.AccessController.doPrivileged(java.security.PrivilegedAction) bci:0 (Interpreted frame)
-0xb4328fa7      * java.sql.DriverManager.loadInitialDrivers() bci:31 line:506 (Interpreted frame)
-0xb432910d      * java.sql.DriverManager.initialize() bci:11 line:612 (Interpreted frame)
-0xb432910d      * java.sql.DriverManager.registerDriver(java.sql.Driver) bci:6 line:281 (Interpreted frame)
-0xb432910d      * com.mysql.jdbc.Driver.<clinit>() bci:7 line:65 (Interpreted frame)
-0xb43263e6      <StubRoutines>
-0xb77a4e31      _ZN9JavaCalls11call_helperEP9JavaValueP12methodHandleP17JavaCallArgumentsP6Thread + 0x1c1
-0xb79a6418      _ZN2os20os_exception_wrapperEPFvP9JavaValueP12methodHandleP17JavaCallArgumentsP6ThreadES1_S3_S5_S7_ + 0x18
-0xb77a4c5f      _ZN9JavaCalls4callEP9JavaValue12methodHandleP17JavaCallArgumentsP6Thread + 0x2f
-0xb77800c1      _ZN13instanceKlass27call_class_initializer_implE19instanceKlassHandleP6Thread + 0xa1
-0xb777ed8e      _ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread + 0x2ce
-0xb777e288      _ZN13instanceKlass10initializeEP6Thread + 0x58
-0xb7821ad9      _Z28find_class_from_class_loaderP7JNIEnv_12symbolHandleh6HandleS2_hP6Thread + 0xb9
-0xb7807d99      JVM_FindClassFromClassLoader + 0x269
-0xb734c236      Java_java_lang_Class_forName0 + 0x116
-0xb433064a      * java.lang.Class.forName0(java.lang.String, boolean, java.lang.ClassLoader) bci:0 (Interpreted frame)
-0xb4328fa7      * java.lang.Class.forName(java.lang.String, boolean, java.lang.ClassLoader) bci:32 line:247 (Interpreted frame)
-0xb4328fa7      * Thread1.run() bci:9 line:17 (Interpreted frame)
-
-</pre>
-
-
-<p>&#8195;&#8195;我们看到其实正在做类的初始化动作，并且线程正在调用ObjectSynchronizer::waitUninterruptibly一直没返回，在看这方法的调用者instanceKlass1::initialize_impl，我们找到源码位置如下：</p>
-
-<pre class="prettyPrint">
-void instanceKlass::initialize_impl(instanceKlassHandle this_oop, TRAPS) {
-  // Make sure klass is linked (verified) before initialization
-  // A class could already be verified, since it has been reflected upon.
-  this_oop->link_class(CHECK);
-
-  DTRACE_CLASSINIT_PROBE(required, instanceKlass::cast(this_oop()), -1);
-
-  bool wait = false;
-
-  // refer to the JVM book page 47 for description of steps
-  // Step 1
-  { ObjectLocker ol(this_oop, THREAD);
-
-    Thread *self = THREAD; // it's passed the current thread
-
-    // Step 2
-    // If we were to use wait() instead of waitInterruptibly() then
-    // we might end up throwing IE from link/symbol resolution sites
-    // that aren't expected to throw.  This would wreak havoc.  See 6320309.
-    while(this_oop->is_being_initialized() && !this_oop->is_reentrant_initialization(self)) {
-        wait = true;
-      ol.waitUninterruptibly(CHECK);
-    }
-
-    // Step 3
-    if (this_oop->is_being_initialized() && this_oop->is_reentrant_initialization(self)) {
-      DTRACE_CLASSINIT_PROBE_WAIT(recursive, instanceKlass::cast(this_oop()), -1,wait);
-      return;
-    }
-
-    // Step 4
-    if (this_oop->is_initialized()) {
-      DTRACE_CLASSINIT_PROBE_WAIT(concurrent, instanceKlass::cast(this_oop()), -1,wait);
-      return;
-    }
-
-    // Step 5
-    if (this_oop->is_in_error_state()) {
-      DTRACE_CLASSINIT_PROBE_WAIT(erroneous, instanceKlass::cast(this_oop()), -1,wait);
-      ResourceMark rm(THREAD);
-      const char* desc = "Could not initialize class ";
-      const char* className = this_oop->external_name();
-      size_t msglen = strlen(desc) + strlen(className) + 1;
-      char* message = NEW_RESOURCE_ARRAY(char, msglen);
-      if (NULL == message) {
-        // Out of memory: can't create detailed error message
-        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), className);
-      } else {
-        jio_snprintf(message, msglen, "%s%s", desc, className);
-        THROW_MSG(vmSymbols::java_lang_NoClassDefFoundError(), message);
-      }
-    }
-
-    // Step 6
-    this_oop->set_init_state(being_initialized);
-    this_oop->set_init_thread(self);
-  }
-  ...
-}
-</pre>
-
-
-<p><code>类的初始化过程:</code></p>
-
-<p>&#8195;&#8195;当某个线程获得机会对某个类进行初始化的时候(请看上面的Step 6)，会设置这个类的init_state属性为being_initialized(如果初始化好了会设置为fully_initialized，异常的话会设置为initialization_error)，还会设置init_thread属性为当前线程，在这个设置过程中是有针对这个类提供了一把互斥锁的，因此当有别的线程进来的时候会被拦截在外面，如果设置完了，这把互斥锁也释放了，但是因为这个类的状态被设置了，因此并发问题也得到了解决，当另外一个线程也尝试初始化这个类的时候会判断这个类的状态是不是being_initialized，并且其init_thread不是当前线程，那么就会一直卡在那里，也就是此次线程dump的线程所处的状态，正在初始化类的线程会调用&lt; clinit >方法，如果正常结束了，那么就设置其状态为fully_initialized，并且通知之前卡在那里等待初始化完成的线程，然他们继续往下走(下一个动作就是再判断下状态，发现完成了就直接return了)</p>
-
-<p><code>猜想:</code></p>
-
-<p>&#8195;&#8195;在了解了上面的过程之后，于是我们猜测两种可能</p>
-
-<ul>
-<li>第一，这个类的状态还是being_intialized，还在while循环里没有跳出来</li>
-<li>第二，事件通知机制出现了问题，也就是pthread_cond_wait和pthread_cond_signal之间的通信过程出现了问题。</li>
-</ul>
-
-
-<p>&#8195;&#8195;不过第二种可能性非常小，比较linux久经考验了，那接下来我们验证其实是第一个猜想</p>
-
-<p><code>验证：</code></p>
-
-<p>&#8195;&#8195;我们通过GDB attach的方式连到了问题机器上(好在机器没有挂)，首先我们要找到具体的问题线程，我们通过上面的jstack -m命令看到了线程ID是5738，然后通过info threads找到对应的线程，并得到它的序号14</p>
-
-<pre class="prettyPrint">
-(gdb) info threads
-  17 process 5724  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  16 process 6878  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  15 process 5739  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  14 process 5738  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  13 process 5737  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  12 process 5736  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  11 process 5735  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  10 process 5734  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  9 process 5733  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  8 process 5732  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  7 process 5731  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  6 process 5730  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  5 process 5729  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  4 process 5728  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  3 process 5727  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  2 process 5726  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-  1 process 5725  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-</pre>
-
-
-<p>
-&#8195;&#8195;然后通过thread 14切换到对应的线程，并通过bt看到了如下的堆栈，正如我们想象的那样，正在做类的初始化，一直卡在那里</p>
-
-<pre class="prettyPrint">
-(gdb) thread 14
-[Switching to thread 14 (process 5738)]#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-(gdb) bt
-#0  0x003f67a2 in _dl_sysinfo_int80 () from /lib/ld-linux.so.2
-#1  0x005e0d76 in pthread_cond_wait@@GLIBC_2.3.2 () from /lib/tls/i686/nosegneg/libpthread.so.0
-#2  0x005e13ee in pthread_cond_wait@GLIBC_2.0 () from /lib/tls/i686/nosegneg/libpthread.so.0
-#3  0xb79a71ae in os::PlatformEvent::park () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#4  0xb7997acb in ObjectMonitor::wait () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#5  0xb7a73c53 in ObjectSynchronizer::waitUninterruptibly () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#6  0xb777eb34 in instanceKlass::initialize_impl () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#7  0xb777e288 in instanceKlass::initialize () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#8  0xb7821ad9 in find_class_from_class_loader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#9  0xb7807d99 in JVM_FindClassFromClassLoader () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/server/libjvm.so
-#10 0xb734c236 in Java_java_lang_Class_forName0 () from /home/opt/taobao/install/jdk1.6.0_33/jre/lib/i386/libjava.so
-#11 0xb433064a in ?? ()
-#12 0x0813b120 in ?? ()
-#13 0x70aaa690 in ?? ()
-#14 0x70aaa6a0 in ?? ()
-#15 0x00000001 in ?? ()
-#16 0x70aaa698 in ?? ()
-#17 0x00000000 in ?? ()
-
-</pre>
-
-
-<p>&#8195;&#8195;我们通过f 6选择第7帧，在通过disassemble反汇编该帧，也就是对instanceKlass::initialize_impl ()这个方法反汇编</p>
-
-<pre class="prettyPrint">
-0xb777eaed <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+45>:  lea    0xfffffff4(%ebp),%esp    //将%ebp偏移0xfffffff4位置的值存到%esp栈顶，然后下面的pop操作存到%ebx
-0xb777eaf0 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+48>:  pop    %ebx
-0xb777eaf1 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+49>:  pop    %esi
-0xb777eaf2 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+50>:  pop    %edi
-0xb777eaf3 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+51>:  pop    %ebp
-0xb777eaf4 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+52>:  ret
-0xb777eaf5 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+53>:  push   $0x1
-0xb777eaf7 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+55>:  lea    0xffffffd8(%ebp),%edx
-0xb777eafa <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+58>:  push   %esi
-0xb777eafb <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+59>:  push   %ebx
-0xb777eafc <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+60>:  push   %edx
-0xb777eafd <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+61>:  call   0xb7a73a80 <_ZN12ObjectLockerC1E6HandleP6Threadb>
-0xb777eb02 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+66>:  add    $0x10,%esp
-0xb777eb05 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+69>:  xor    %eax,%eax
-0xb777eb07 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+71>:  test   %ebx,%ebx
-0xb777eb09 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+73>:  je     0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>
-0xb777eb0b <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+75>:  mov    (%ebx),%eax      //将%ebx的值移到%eax
-0xb777eb0d <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+77>:  cmpl   $0x4,0xe0(%eax)  //对比%eax偏移0xe0位置的值和0x4(这个值其实就是上面提到的being_initialized状态，这就说明了%eax偏移0xe0位置其实存的就是初始化类的初始化状态)
-0xb777eb14 <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+84>:  jne    0xb777eb4f <_ZN13instanceKlass15initialize_implE19instanceKlassHandleP6Thread+143>
-</pre>
-
-
-<p>&#8195;&#8195;从上面的注释我们其实得出了，我们要看当前类的初始化状态，那就是看eax寄存器偏移0xe0的位置的值，而eax其实就是ebp寄存器偏移0xfffffff4位置的值，于是我们通过如下地址内存查到得到是4</p>
-
-<pre class="prettyPrint">
-(gdb) x $ebp + 0xfffffff4
-0x70aaa45c: 0x71af2180
-(gdb) x/3w 0x71af2180 + 0xe0
-0x71af2260: 0x00000004  0x0813c800  0x0000001a
-</pre>
-
-
-<p>    <br/>
-&#8195;&#8195;而4其实代表的就是being_initialized这个状态，代码如下</p>
-
-<pre class="prettyPrint">
-  enum ClassState {
-    unparsable_by_gc = 0,               
-    allocated,                          
-    loaded,                             
-    linked,                             
-    being_initialized,                  
-    fully_initialized,                  
-    initialization_error                
-  };
-</pre>
-
-
-<p>
-&#8195;&#8195;从这于是我们验证了第一个猜想，其实是状态一直没有变更，因此一直卡在那里，为了更进一步确认这个问题，要是我们能找到该类的init_thread线程id就更清楚了，拿到这个ID我们就能看到这个线程栈，就知道它在干什么了，但是很遗憾，这个很难获取到，至少我一直没有找到办法，因为线程ID在线程对象里一直没有存，都是调用的os函数来获取的，得换个思路。</p>
-
-<p>&#8195;&#8195;突然发现instanceKlass.hpp代码中得知两个属性原来是相邻的(init_state和init_thread)，于是断定下一个地址的值就代表是这个线程对象了，但是其属性何其多，找到想要的太不易了，最主要的是还担心自己看的代码和服务器上的jvm代码不一致，这样更蛋疼了，于是继续查看Thread.hpp中的JavaThread类，找到个关键字0xDEAD-2=0xDEAB,这个有可能是volatile TerminatedTypes _terminated属性的值，于是把线程对象打印出来，果然查到了关键字0xDEAB</p>
-
-<pre class="prettyPrint">
-(gdb) x/100w 0x0813c800
-0x813c800:  0xb7bc06e8  0x00000000  0x00000000  0x00000000
-0x813c810:  0x0813c488  0x0813d2c8  0x00000000  0x00000000
-0x813c820:  0x080f9bf8  0x080f8b50  0x70a59b60  0x00000000
-0x813c830:  0x00000000  0x00000000  0x00000000  0x00000000
-0x813c840:  0x00014148  0x00000505  0x00000000  0x00000000
-0x813c850:  0x00000000  0x00000000  0x00000000  0x3f800021
-0x813c860:  0x00000001  0x00000023  0x3f800021  0x0001b530
-0x813c870:  0x00000000  0x00000000  0x00000000  0x080ffdc0
-0x813c880:  0x00000001  0x00000000  0x080ffe24  0x00000014
-0x813c890:  0x00000031  0x00000000  0x00000000  0x0813dab0
-0x813c8a0:  0x0813c428  0x0813ce98  0x70a5b000  0x00051000
-0x813c8b0:  0x00000000  0xffffffff  0x00000000  0x080ffdc0
-0x813c8c0:  0x00002bad  0x0813d400  0x0813d500  0x0813d700
-0x813c8d0:  0x0813d800  0x00000000  0x00000000  0x104aa1ad
-0x813c8e0:  0x544a5ab2  0x32378fc7  0x00008767  0x00000000
-0x813c8f0:  0x00000000  0x00000000  0x0ee9547d  0x00000000
-0x813c900:  0x00000000  0x00000000  0x0813b000  0x75878760
-0x813c910:  0x70a59a94  0x00000000  0x70a59abc  0xb7829020
-0x813c920:  0xb7bb7100  0x00000000  0x00000000  0x00000000
-0x813c930:  0x00000000  0x00000000  0x00000000  0x00000000
-0x813c940:  0x00000000  0x00000000  0x00000000  0x00000000
-0x813c950:  0x00000000  0x00000000  0x00000000  0x0000000a
-0x813c960:  0x0813da98  0x00000000  0x0000deab  0x00000001
-0x813c970:  0x00000000  0x00000000  0x00000002  0x00000000
-0x813c980:  0x00000000  0x00000000  0x00000000  0x00000000
-</pre>
-
-
-<p>&#8195;&#8195;因此顺着这个属性继续往上找，找到了_thread_state表示线程状态的值（向上偏移三个字），0x0000000a，即10，然后查看代码知道原来线程是出于block状态</p>
-
-<pre class="prettyPrint">
- public:                                    
-  volatile JavaThreadState _thread_state;
- private:
-  ThreadSafepointState *_safepoint_state;        
-  address               _saved_exception_pc;    
-  volatile TerminatedTypes _terminated;
-</pre>
-
-
-<p><code>JavaThreadState</code></p>
-
-<pre class="prettyPrint">
- enum JavaThreadState {
-  _thread_uninitialized     =  0, 
-  _thread_new               =  2, 
-  _thread_new_trans         =  3, 
-  _thread_in_native         =  4, 
-  _thread_in_native_trans   =  5, 
-  _thread_in_vm             =  6, 
-  _thread_in_vm_trans       =  7, 
-  _thread_in_Java           =  8, 
-  _thread_in_Java_trans     =  9, 
-  _thread_blocked           = 10, 
-  _thread_blocked_trans     = 11, 
-  _thread_max_state         = 12  
-};
-</pre>
-
-
-<p>&#8195;&#8195;这样一来查看下线程dump，发现<code>Thread-1</code>正好处于BLOCKED状态，也就是说Thread-1就是那个正在对mysql驱动类做初始化的线程，这说明<code>Thread-0</code>和<code>Thread-1</code>成功互锁了</p>
-
-<p>&#8195;&#8195;于是我们展开<code>Thread-1</code>，看到<code>- waiting to lock &lt;0x71ae2ec0&gt; (a java.lang.Class for java.sql.DriverManager)</code>，该线程正在等待java.sql.DriverManager类型锁，而blocked在那里，而这个类型锁是被<code>Thread-0</code>线程持有的，从<code>Thread-1</code>这个线程堆栈来看它其实也是在做Class.forName动作，并且通过<code>Thread-1</code>,展开第四帧我们可以看到其正在对加载sun.jdbc.odbc.JdbcOdbcDriver</p>
-
-<p><code>问题现场遐想:</code></p>
-
-<p>&#8195;&#8195;于是我们大胆设想一个场景，<code>Thread-1</code>先获取到初始化sun.jdbc.odbc.JdbcOdbcDriver的机会，然后在执行sun.jdbc.odbc.JdbcOdbcDriver这个类的静态块的时候调用DriverManager.registerDriver(new Driver());，而该方法之前已经提到了是会加同步锁的，再想象一下，在这个这个静态块之前，并且设置了sun.jdbc.odbc.JdbcOdbcDriver类的初始化状态为being_initialized之后，<code>Thread-0</code>这个线程执行到了卡在的那个位置，并且我们从其堆栈可以看出它已经持有了java.sql.DriverManager这个类型的锁，因此这两个线程陷入了互锁状态</p>
-
-<h3>解决方案</h3>
-
-<p>&#8195;&#8195;解决方案目前想到的是将驱动类的加载过程变成单线程加载，不存在并发情况就没问题了</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[通过HSDB来了解String值的真身在哪里]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/06/28/hsdb-string/"/>
-    <updated>2014-06-28T11:33:07+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/06/28/hsdb-string</id>
-    <content type="html"><![CDATA[<p>&#8195;&#8195;最近通过<code>@RednaxelaFX</code>的一篇文章得知了HSDB，并好好研究了一下用法，对学习jvm的人来说绝对是一个利器，可以摆脱GDB，直接图形化看内存结构布局，具体的用法我就不多说了，这篇<a href="http://rednaxelafx.iteye.com/blog/1847971">文章</a>介绍得很详细了，这次写文章主要是想通过这一利器来分析下String的值在java里的内存情况，不同场景下的String的值到底是在内存里的哪块区域，这里强调的是值，并不是对象，因为对象我们都知道是存在heap里的，我们看java.lang.String的源码会看到有一个value数组，这里才是真正的值，本文顺带也是hsdb用法的一个介绍，如此利器希望给大家带来不一样的乐趣。</p>
-
-<!--more-->
-
-
-<p>&#8195;&#8195;还是先看demo</p>
-
-<pre class="prettyPrint">
-public class StringTest {
-    private String val1="a";
-    private static String val2=StringTest.class.getName()+"b";
-
-    public static void main(String args[]){
-        StringTest st=new StringTest();
-        String a="a";
-        String d="a";
-        String b=a+"b";
-        String c="a"+"b";
-        String e="ab";
-        System.out.println(a+b+c+d+e);
-    }
-}
-</pre>
-
-
-<p>&#8195;&#8195;本文想从上面的例子得出哪些结论呢？</p>
-
-<pre><code>1. 实例变量val1和局部变量a,d是否指向同一个内存地址
-2. 局部变量b,c,e是否指向同一个内存地址
-3. 局部变量b的值是在哪里分配的,stack?heap?perm?
-4. 字符常量”a”,”ab”分配在哪里？
-5. 静态变量val2的值又是分配在哪里？
-</code></pre>
-
-<p>&#8195;&#8195;先看看我们通过eclipse调试能确定的结果，断点打在最后一行</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/eclipse_value.jpg"></p>
-
-<p>&#8195;&#8195;得到初步结论：</p>
-
-<pre><code>1. 实例变量val1和局部变量a,d里的value值都是指向同一个id为25的值
-2. 局部变量c和e指向了同一个id为28的值
-3. 局部变量b和c，e不是指向同一个地方，有一个面值相同的值在另外一个内存区域
-</code></pre>
-
-<p>&#8195;&#8195;接下来我们通过hsdb来验证下上面的结论，以及解答剩下的疑惑</p>
-
-<p>&#8195;&#8195;操作步骤如下：</p>
-
-<pre><code>1. 设置断点在`System.out.println(a+b+c+d+e);`这一行，vm参数设置`-XX:+UseSerialGC -Xmx10m`
-2. 通过jps命令获取对应的pid
-3. 然后通过如下命令打开hsdb：`java -cp $JAVA_HOME/lib/sa-jdi.jar sun.jvm.hotspot.HSDB,(如果是windows请替换$JAVA_HOME为%JAVA_HOME%)`
-4. 点击File-&gt;Attach to...输入pid
-    此时你会看到如下界面：
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_1.jpg"></p>
-
-<pre><code>这是一个线程列表，我们选择main这个线程，也就是我们的主线程
-
-5. 点击面板里第二个图标
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_2.jpg"></p>
-
-<pre><code>得到如下图
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_3.jpg"></p>
-
-<pre><code>这个图其实是我们main方法的栈帧，因为我们目前只有一层调用，还在main方法里，看到我们圈起来的那部分内容，看到好多String对象既有在PermGen里的，也有在NewGen里的，那么每一个具体是什么值呢，是对应我们代码里的那些局部变量吗，如果是的话，哪个对应哪个呢
-
-6. 点击大窗口里的windows-&gt;Console
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_4.jpg"></p>
-
-<pre><code>得到命令行控制台窗口，在窗口内敲回车，会看到如下界面
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_5.jpg"></p>
-
-<pre><code>7. 在命令行窗口里输入universe，先得到每个分区的内存范围，由于格式的问题，我就直接copy出来了
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_6.jpg"></p>
-
-<pre><code>8. 从上面的main方法栈帧里我们分别取查看那些String对象在内存里的位置（第二列地址就是对象的地址，第一列是栈帧里每部分的内存地址），先按照如下菜单调出查看内存结构的窗口
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_7.jpg"></p>
-
-<pre><code>弹出窗口之后类似下面的操作，在2处输入1的地址，1处圈起来的是紫色标注的String对象的内存地址，细心的读者可能发现了，1处的地址在上面的每个分区内存块的PSPermGen里，这说明这个值为ab的String对象是在perm区的，这个对象的char数组的地址，也就是下面的标注3处的
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_8.jpg"></p>
-
-<pre><code>其实我们看到的那几个String对象的顺序是对应我们声明的局部变量的逆序，也就是e，c，b，d，a，最后那个StringTest就是局部变量st，后面的ObjArray其实是我们main方法传进的字符数组，这个其实我们通过javap -verbose StringTest可以查到
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_9.jpg"></p>
-
-<pre><code>哪个solt对应哪个局部变量都有写的，要想看到这个必须在编译的时候要加上-g参数才行
-
-下面再查找下StringTest这个对象的内存值
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_10.jpg"></p>
-
-<pre><code>通过分别对比每个String对象和StringTest对象的内存地址和每个区的内存地址范围，我们能得出的结论是
-
-* 局部变量a,d,c,e是在perm区的
-* 局部变量b和st是在eden区的，但是st的val1的值又是在perm区的
-* 同时能验证上面一开始得出的三个结论
-* 我们也没看到有对象在栈上分配，只看到栈上持有对象的引用，因此当栈回收的时候只是将引用给回收了，具体的对象值还是在内存里
-
-9. 接下来是要找到静态变量val2，在命令行中输入`mem 0x00000000f5043360 2`，因为val2作为静态变量是和class关联的，因此要找到对象的class，如果了解java对象的内存结构的话我们知道每个oop都有一个head，这个head由两部分组成，一个是mark,另一个是_klass，因此通过mem对oop的内存地址取连续的两个字宽，第二个字宽就是我们要的klass
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_11.jpg"></p>
-
-<pre><code>这里估计是一个bug，不能全取，我们只能取后面的8位才行，也就是0xf5ccef60，然后按照第8步的方式输入上面的内存地址，在最后我们看到val2
-</code></pre>
-
-<p><img src="http://nijiaben.github.io/images/2014/06/hsdb_12.jpg"></p>
-
-<pre><code>对比内存分代我们得到这个地址是在eden区的，也就是在heap里分配的,另外如果你加一个赋值常量的静态变量，你会发现居然是在perm区的，这个就大家自己去验证吧
-</code></pre>
-
-<p>注：以上结论都是在centos系统jdk6上进行验证的，jdk7可能有所不一样.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM Attach机制实现]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/06/18/jvm-attach/"/>
-    <updated>2014-06-18T19:15:52+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/06/18/jvm-attach</id>
-    <content type="html"><![CDATA[<h2>Attach是什么</h2>
-
-<p>   &#8195;&#8195;在讲这个之前，我们先来点大家都知道的东西，当我们感觉线程一直卡在某个地方，想知道卡在哪里，首先想到的是进行线程dump，而常用的命令是jstack <pid>，我们就可以看到如下线程栈了</p>
-
-<!--more-->
-
-
-
-
-<pre class="prettyPrint">
-2014-06-18 12:56:14
-Full thread dump Java HotSpot(TM) 64-Bit Server VM (24.51-b03 mixed mode):
-
-"Attach Listener" daemon prio=5 tid=0x00007fb0c6800800 nid=0x440b waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Service Thread" daemon prio=5 tid=0x00007fb0c584d800 nid=0x5303 runnable [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"C2 CompilerThread1" daemon prio=5 tid=0x00007fb0c482e000 nid=0x5103 waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"C2 CompilerThread0" daemon prio=5 tid=0x00007fb0c482c800 nid=0x4f03 waiting on condition [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Signal Dispatcher" daemon prio=5 tid=0x00007fb0c4815800 nid=0x4d03 runnable [0x0000000000000000]
-   java.lang.Thread.State: RUNNABLE
-
-"Finalizer" daemon prio=5 tid=0x00007fb0c4813800 nid=0x3903 in Object.wait() [0x00000001187d2000]
-   java.lang.Thread.State: WAITING (on object monitor)
-    at java.lang.Object.wait(Native Method)
-    - waiting on <0x00000007aaa85568> (a java.lang.ref.ReferenceQueue$Lock)
-    at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
-    - locked <0x00000007aaa85568> (a java.lang.ref.ReferenceQueue$Lock)
-    at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:151)
-    at java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:189)
-
-"Reference Handler" daemon prio=5 tid=0x00007fb0c4800000 nid=0x3703 in Object.wait() [0x00000001186cf000]
-   java.lang.Thread.State: WAITING (on object monitor)
-    at java.lang.Object.wait(Native Method)
-    - waiting on <0x00000007aaa850f0> (a java.lang.ref.Reference$Lock)
-    at java.lang.Object.wait(Object.java:503)
-    at java.lang.ref.Reference$ReferenceHandler.run(Reference.java:133)
-    - locked <0x00000007aaa850f0> (a java.lang.ref.Reference$Lock)
-
-"main" prio=5 tid=0x00007fb0c5800800 nid=0x1903 waiting on condition [0x0000000107962000]
-   java.lang.Thread.State: TIMED_WAITING (sleeping)
-    at java.lang.Thread.sleep(Native Method)
-    at Test.main(Test.java:5)
-
-"VM Thread" prio=5 tid=0x00007fb0c583d800 nid=0x3503 runnable
-
-"GC task thread#0 (ParallelGC)" prio=5 tid=0x00007fb0c401e000 nid=0x2503 runnable
-
-"GC task thread#1 (ParallelGC)" prio=5 tid=0x00007fb0c401e800 nid=0x2703 runnable
-
-"GC task thread#2 (ParallelGC)" prio=5 tid=0x00007fb0c401f800 nid=0x2903 runnable
-
-"GC task thread#3 (ParallelGC)" prio=5 tid=0x00007fb0c4020000 nid=0x2b03 runnable
-
-"GC task thread#4 (ParallelGC)" prio=5 tid=0x00007fb0c4020800 nid=0x2d03 runnable
-
-"GC task thread#5 (ParallelGC)" prio=5 tid=0x00007fb0c4021000 nid=0x2f03 runnable
-
-"GC task thread#6 (ParallelGC)" prio=5 tid=0x00007fb0c4022000 nid=0x3103 runnable
-
-"GC task thread#7 (ParallelGC)" prio=5 tid=0x00007fb0c4022800 nid=0x3303 runnable
-
-"VM Periodic Task Thread" prio=5 tid=0x00007fb0c5845000 nid=0x5503 waiting on condition
-
-</pre>
-
-
-<p>   &#8195;&#8195;大家是否注意过上面圈起来的两个线程，”Attach Listener”和“Signal Dispatcher”，这两个线程是我们这次要讲的Attach机制的关键，先偷偷告诉各位，其实Attach Listener这个线程在jvm起来的时候可能并没有的，后面会细说。</p>
-
-<p>   &#8195;&#8195;那Attach机制是什么？说简单点就是jvm提供一种jvm进程间通信的能力，能让一个进程传命令给另外一个进程，并让它执行内部的一些操作，比如说我们为了让另外一个jvm进程把线程dump出来，那么我们跑了一个jstack的进程，然后传了个pid的参数，告诉它要哪个进程进行线程dump，既然是两个进程，那肯定涉及到进程间通信，以及传输协议的定义，比如要执行什么操作，传了什么参数等</p>
-
-<h2>Attach能做些什么</h2>
-
-<p>   &#8195;&#8195;总结起来说，比如内存dump，线程dump，类信息统计(比如加载的类及大小以及实例个数等)，动态加载agent(使用过btrace的应该不陌生)，动态设置vm flag(但是并不是所有的flag都可以设置的，因为有些flag是在jvm启动过程中使用的，是一次性的)，打印vm flag，获取系统属性等，这些对应的源码(AttachListener.cpp)如下</p>
-
-<pre class="prettyPrint">
-static AttachOperationFunctionInfo funcs[] = {
-  { "agentProperties",  get_agent_properties },
-  { "datadump",         data_dump },
-  { "dumpheap",         dump_heap },
-  { "load",             JvmtiExport::load_agent_library },
-  { "properties",       get_system_properties },
-  { "threaddump",       thread_dump },
-  { "inspectheap",      heap_inspection },
-  { "setflag",          set_flag },
-  { "printflag",        print_flag },
-  { "jcmd",             jcmd },
-  { NULL,               NULL }
-};
-</pre>
-
-
-<p>&#8195;&#8195;后面是命令对应的处理函数。</p>
-
-<h2>Attach在jvm里如何实现的</h2>
-
-<h3>Attach Listener线程的创建</h3>
-
-<p> &#8195;&#8195;前面也提到了，jvm在启动过程中可能并没有启动Attach Listener这个线程，可以通过jvm参数来启动，代码  （Threads::create_vm）如下：</p>
-
-<pre class="prettyPrint"> 
-  if (!DisableAttachMechanism) {
-    if (StartAttachListener || AttachListener::init_at_startup()) {
-      AttachListener::init();
-    }
-  }
-bool AttachListener::init_at_startup() {
-  if (ReduceSignalUsage) {
-    return true;
-  } else {
-    return false;
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;其中DisableAttachMechanism，StartAttachListener ，ReduceSignalUsage均默认是false(globals.hpp)</p>
-
-<pre class="prettyPrint">
-product(bool, DisableAttachMechanism, false,                              \
-         "Disable mechanism that allows tools to Attach to this VM”)   
-product(bool, StartAttachListener, false,                                 \
-          "Always start Attach Listener at VM startup")  
-product(bool, ReduceSignalUsage, false,                                   \
-          "Reduce the use of OS signals in Java and/or the VM”)  
-</pre>
-
-
-<p>&#8195;&#8195;因此AttachListener::init()并不会被执行，而Attach Listener线程正是在此方法里创建的</p>
-
-<pre class="prettyPrint">
-// Starts the Attach Listener thread
-void AttachListener::init() {
-  EXCEPTION_MARK;
-  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-  instanceKlassHandle klass (THREAD, k);
-  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
-
-  const char thread_name[] = "Attach Listener";
-  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-
-  // Initialize thread_oop to put it into the system threadGroup
-  Handle thread_group (THREAD, Universe::system_thread_group());
-  JavaValue result(T_VOID);
-  JavaCalls::call_special(&result, thread_oop,
-                       klass,
-                       vmSymbols::object_initializer_name(),
-                       vmSymbols::threadgroup_string_void_signature(),
-                       thread_group,
-                       string,
-                       CHECK);
-
-  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-  JavaCalls::call_special(&result,
-                        thread_group,
-                        group,
-                        vmSymbols::add_method_name(),
-                        vmSymbols::thread_void_signature(),
-                        thread_oop,             // ARG 1
-                        CHECK);
-
-  { MutexLocker mu(Threads_lock);
-    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-
-    // Check that thread and osthread were created
-    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
-      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-                                    "unable to create new native thread");
-    }
-
-    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-    java_lang_Thread::set_daemon(thread_oop());
-
-    listener_thread->set_threadObj(thread_oop());
-    Threads::add(listener_thread);
-    Thread::start(listener_thread);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;既然在启动的时候不会创建这个线程，那么我们在上面看到的那个线程是怎么创建的呢，这个就要关注另外一个线程“Signal Dispatcher”了，顾名思义是处理信号的，这个线程是在jvm启动的时候就会创建的，具体代码就不说了。</p>
-
-<p>&#8195;&#8195;下面以jstack的实现来说明触发Attach这一机制进行的过程，jstack命令的实现其实是一个叫做JStack.java的类，查看jstack代码后会走到下面的方法里</p>
-
-<pre class="prettyPrint">
-private static void runThreadDump(String pid, String args[]) throws Exception {
-        VirtualMachine vm = null;
-        try {
-            vm = VirtualMachine.Attach(pid);
-        } catch (Exception x) {
-            String msg = x.getMessage();
-            if (msg != null) {
-                System.err.println(pid + ": " + msg);
-            } else {
-                x.printStackTrace();
-            }
-            if ((x instanceof AttachNotSupportedException) &&
-                (loadSAClass() != null)) {
-                System.err.println("The -F option can be used when the target " +
-                    "process is not responding");
-            }
-            System.exit(1);
-        }
-
-        // Cast to HotSpotVirtualMachine as this is implementation specific
-        // method.
-        InputStream in = ((HotSpotVirtualMachine)vm).remoteDataDump((Object[])args);
-
-        // read to EOF and just print output
-        byte b[] = new byte[256];
-        int n;
-        do {
-            n = in.read(b);
-            if (n > 0) {
-                String s = new String(b, 0, n, "UTF-8");
-                System.out.print(s);
-            }
-        } while (n > 0);
-        in.close();
-        vm.detach();
-    }
-</pre>
-
-
-<p>&#8195;&#8195;请注意VirtualMachine.Attach(pid);这行代码，触发Attach pid的关键，如果是在linux下会走到下面的构造函数</p>
-
-<pre class="prettyPrint">
-LinuxVirtualMachine(AttachProvider provider, String vmid)
-        throws AttachNotSupportedException, IOException
-    {
-        super(provider, vmid);
-
-        // This provider only understands pids
-        int pid;
-        try {
-            pid = Integer.parseInt(vmid);
-        } catch (NumberFormatException x) {
-            throw new AttachNotSupportedException("Invalid process identifier");
-        }
-
-        // Find the socket file. If not found then we attempt to start the
-        // Attach mechanism in the target VM by sending it a QUIT signal.
-        // Then we attempt to find the socket file again.
-        path = findSocketFile(pid);
-        if (path == null) {
-            File f = createAttachFile(pid);
-            try {
-                // On LinuxThreads each thread is a process and we don't have the
-                // pid of the VMThread which has SIGQUIT unblocked. To workaround
-                // this we get the pid of the "manager thread" that is created
-                // by the first call to pthread_create. This is parent of all
-                // threads (except the initial thread).
-                if (isLinuxThreads) {
-                    int mpid;
-                    try {
-                        mpid = getLinuxThreadsManager(pid);
-                    } catch (IOException x) {
-                        throw new AttachNotSupportedException(x.getMessage());
-                    }
-                    assert(mpid >= 1);
-                    sendQuitToChildrenOf(mpid);
-                } else {
-                    sendQuitTo(pid);
-                }
-
-                // give the target VM time to start the Attach mechanism
-                int i = 0;
-                long delay = 200;
-                int retries = (int)(AttachTimeout() / delay);
-                do {
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException x) { }
-                    path = findSocketFile(pid);
-                    i++;
-                } while (i <= retries && path == null);
-                if (path == null) {
-                    throw new AttachNotSupportedException(
-                        "Unable to open socket file: target process not responding " +
-                        "or HotSpot VM not loaded");
-                }
-            } finally {
-                f.delete();
-            }
-        }
-
-        // Check that the file owner/permission to avoid Attaching to
-        // bogus process
-        checkPermissions(path);
-
-        // Check that we can connect to the process
-        // - this ensures we throw the permission denied error now rather than
-        // later when we attempt to enqueue a command.
-        int s = socket();
-        try {
-            connect(s, path);
-        } finally {
-            close(s);
-        }
-    }
-</pre>
-
-
-<p>&#8195;&#8195;这里要解释下代码了，首先看到调用了createAttachFile方法在目标进程的cwd目录下创建了一个文件/proc/<pid>/cwd/.Attach_pid<pid>，这个在后面的信号处理过程中会取出来做判断(为了安全)，另外我们知道在linux下线程是用进程实现的，在jvm启动过程中会创建很多线程，比如我们上面的信号线程，也就是会看到很多的pid(应该是LWP)，那么如何找到这个信号处理线程呢，从上面实现来看是找到我们传进去的pid的父进程，然后给它的所有子进程都发送一个SIGQUIT信号，而jvm里除了信号线程，其他线程都设置了对此信号的屏蔽，因此收不到该信号，于是该信号就传给了“Signal Dispatcher”，在传完之后作轮询等待看目标进程是否创建了某个文件，AttachTimeout默认超时时间是5000ms，可通过设置系统变量sun.tools.Attach.AttachTimeout来指定，下面是Signal Dispatcher线程的entry实现</p>
-
-<pre class="prettyPrint">
-static void signal_thread_entry(JavaThread* thread, TRAPS) {
-  os::set_priority(thread, NearMaxPriority);
-  while (true) {
-    int sig;
-    {
-      // FIXME : Currently we have not decieded what should be the status
-      //         for this java thread blocked here. Once we decide about
-      //         that we should fix this.
-      sig = os::signal_wait();
-    }
-    if (sig == os::sigexitnum_pd()) {
-       // Terminate the signal thread
-       return;
-    }
-
-    switch (sig) {
-      case SIGBREAK: {
-        // Check if the signal is a trigger to start the Attach Listener - in that
-        // case don't print stack traces.
-        if (!DisableAttachMechanism && AttachListener::is_init_trigger()) {
-          continue;
-        }
-        // Print stack traces
-        // Any SIGBREAK operations added here should make sure to flush
-        // the output stream (e.g. tty->flush()) after output.  See 4803766.
-        // Each module also prints an extra carriage return after its output.
-        VM_PrintThreads op;
-        VMThread::execute(&op);
-        VM_PrintJNI jni_op;
-        VMThread::execute(&jni_op);
-        VM_FindDeadlocks op1(tty);
-        VMThread::execute(&op1);
-        Universe::print_heap_at_SIGBREAK();
-        if (PrintClassHistogram) {
-          VM_GC_HeapInspection op1(gclog_or_tty, true /* force full GC before heap inspection */,
-                                   true /* need_prologue */);
-          VMThread::execute(&op1);
-        }
-        if (JvmtiExport::should_post_data_dump()) {
-          JvmtiExport::post_data_dump();
-        }
-        break;
-      }
-      ….
-      }
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;当信号是SIGBREAK(在jvm里做了#define，其实就是SIGQUIT)的时候，就会触发
-AttachListener::is_init_trigger()的执行，</p>
-
-<pre class="prettyPrint">
-bool AttachListener::is_init_trigger() {
-  if (init_at_startup() || is_initialized()) {
-    return false;               // initialized at startup or already initialized
-  }
-  char fn[PATH_MAX+1];
-  sprintf(fn, ".Attach_pid%d", os::current_process_id());
-  int ret;
-  struct stat64 st;
-  RESTARTABLE(::stat64(fn, &st), ret);
-  if (ret == -1) {
-    snprintf(fn, sizeof(fn), "%s/.Attach_pid%d",
-             os::get_temp_directory(), os::current_process_id());
-    RESTARTABLE(::stat64(fn, &st), ret);
-  }
-  if (ret == 0) {
-    // simple check to avoid starting the Attach mechanism when
-    // a bogus user creates the file
-    if (st.st_uid == geteuid()) {
-      init();
-      return true;
-    }
-  }
-  return false;
-}
-</pre>
-
-
-<p>&#8195;&#8195;一开始会判断当前进程目录下是否有个.Attach_pid<pid>文件（前面提到了），如果没有就会在/tmp下创建一个/tmp/.Attach_pid<pid>，当那个文件的uid和自己的uid是一致的情况下（为了安全）再调用init方法</p>
-
-<pre class="prettyPrint">
-// Starts the Attach Listener thread
-void AttachListener::init() {
-  EXCEPTION_MARK;
-  klassOop k = SystemDictionary::resolve_or_fail(vmSymbols::java_lang_Thread(), true, CHECK);
-  instanceKlassHandle klass (THREAD, k);
-  instanceHandle thread_oop = klass->allocate_instance_handle(CHECK);
-
-  const char thread_name[] = "Attach Listener";
-  Handle string = java_lang_String::create_from_str(thread_name, CHECK);
-
-  // Initialize thread_oop to put it into the system threadGroup
-  Handle thread_group (THREAD, Universe::system_thread_group());
-  JavaValue result(T_VOID);
-  JavaCalls::call_special(&result, thread_oop,
-                       klass,
-                       vmSymbols::object_initializer_name(),
-                       vmSymbols::threadgroup_string_void_signature(),
-                       thread_group,
-                       string,
-                       CHECK);
-
-  KlassHandle group(THREAD, SystemDictionary::ThreadGroup_klass());
-  JavaCalls::call_special(&result,
-                        thread_group,
-                        group,
-                        vmSymbols::add_method_name(),
-                        vmSymbols::thread_void_signature(),
-                        thread_oop,             // ARG 1
-                        CHECK);
-
-  { MutexLocker mu(Threads_lock);
-    JavaThread* listener_thread = new JavaThread(&Attach_listener_thread_entry);
-
-    // Check that thread and osthread were created
-    if (listener_thread == NULL || listener_thread->osthread() == NULL) {
-      vm_exit_during_initialization("java.lang.OutOfMemoryError",
-                                    "unable to create new native thread");
-    }
-
-    java_lang_Thread::set_thread(thread_oop(), listener_thread);
-    java_lang_Thread::set_daemon(thread_oop());
-
-    listener_thread->set_threadObj(thread_oop());
-    Threads::add(listener_thread);
-    Thread::start(listener_thread);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;此时水落石出了，看到创建了一个线程，并且取名为Attach Listener。再看看其子类LinuxAttachListener的init方法</p>
-
-<pre class="prettyPrint">
-int LinuxAttachListener::init() {
-  char path[UNIX_PATH_MAX];          // socket file
-  char initial_path[UNIX_PATH_MAX];  // socket file during setup
-  int listener;                      // listener socket (file descriptor)
-
-  // register function to cleanup
-  ::atexit(listener_cleanup);
-
-  int n = snprintf(path, UNIX_PATH_MAX, "%s/.java_pid%d",
-                   os::get_temp_directory(), os::current_process_id());
-  if (n < (int)UNIX_PATH_MAX) {
-    n = snprintf(initial_path, UNIX_PATH_MAX, "%s.tmp", path);
-  }
-  if (n >= (int)UNIX_PATH_MAX) {
-    return -1;
-  }
-
-  // create the listener socket
-  listener = ::socket(PF_UNIX, SOCK_STREAM, 0);
-  if (listener == -1) {
-    return -1;
-  }
-
-  // bind socket
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  strcpy(addr.sun_path, initial_path);
-  ::unlink(initial_path);
-  int res = ::bind(listener, (struct sockaddr*)&addr, sizeof(addr));
-  if (res == -1) {
-    RESTARTABLE(::close(listener), res);
-    return -1;
-  }
-
-  // put in listen mode, set permissions, and rename into place
-  res = ::listen(listener, 5);
-  if (res == 0) {
-      RESTARTABLE(::chmod(initial_path, S_IREAD|S_IWRITE), res);
-      if (res == 0) {
-          res = ::rename(initial_path, path);
-      }
-  }
-  if (res == -1) {
-    RESTARTABLE(::close(listener), res);
-    ::unlink(initial_path);
-    return -1;
-  }
-  set_path(path);
-  set_listener(listener);
-
-  return 0;
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到其创建了一个监听套接字，并创建了一个文件/tmp/.java_pid<pid>，这个文件就是客户端之前一直在轮询等待的文件，随着这个文件的生成，意味着Attach的过程圆满结束了。</p>
-
-<h3>Attach listener接收请求</h3>
-
-<p>&#8195;&#8195;看看它的entry实现Attach_listener_thread_entry</p>
-
-<pre class="prettyPrint">
-static void Attach_listener_thread_entry(JavaThread* thread, TRAPS) {
-  os::set_priority(thread, NearMaxPriority);
-
-  thread->record_stack_base_and_size();
-
-  if (AttachListener::pd_init() != 0) {
-    return;
-  }
-  AttachListener::set_initialized();
-
-  for (;;) {
-    AttachOperation* op = AttachListener::dequeue();
-    if (op == NULL) {
-      return;   // dequeue failed or shutdown
-    }
-
-    ResourceMark rm;
-    bufferedStream st;
-    jint res = JNI_OK;
-
-    // handle special detachall operation
-    if (strcmp(op->name(), AttachOperation::detachall_operation_name()) == 0) {
-      AttachListener::detachall();
-    } else {
-      // find the function to dispatch too
-      AttachOperationFunctionInfo* info = NULL;
-      for (int i=0; funcs[i].name != NULL; i++) {
-        const char* name = funcs[i].name;
-        assert(strlen(name) <= AttachOperation::name_length_max, "operation <= name_length_max");
-        if (strcmp(op->name(), name) == 0) {
-          info = &(funcs[i]);
-          break;
-        }
-      }
-
-      // check for platform dependent Attach operation
-      if (info == NULL) {
-        info = AttachListener::pd_find_operation(op->name());
-      }
-
-      if (info != NULL) {
-        // dispatch to the function that implements this operation
-        res = (info->func)(op, &st);
-      } else {
-        st.print("Operation %s not recognized!", op->name());
-        res = JNI_ERR;
-      }
-    }
-
-    // operation complete - send result and output to client
-    op->complete(res, &st);
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;从代码来看就是从队列里不断取AttachOperation，然后找到请求命令对应的方法进行执行，比如我们一开始说的jstack命令，找到 { &ldquo;threaddump&rdquo;,       thread_dump }的映射关系，然后执行thread_dump方法</p>
-
-<p>&#8195;&#8195;再来看看其要调用的AttachListener::dequeue()，</p>
-
-<pre class="prettyPrint">
-AttachOperation* AttachListener::dequeue() {
-  JavaThread* thread = JavaThread::current();
-  ThreadBlockInVM tbivm(thread);
-
-  thread->set_suspend_equivalent();
-  // cleared by handle_special_suspend_equivalent_condition() or
-  // java_suspend_self() via check_and_wait_while_suspended()
-
-  AttachOperation* op = LinuxAttachListener::dequeue();
-
-  // were we externally suspended while we were waiting?
-  thread->check_and_wait_while_suspended();
-
-  return op;
-}
-</pre>
-
-
-<p>&#8195;&#8195;最终调用的是LinuxAttachListener::dequeue()，</p>
-
-<pre class="prettyPrint">
-LinuxAttachOperation* LinuxAttachListener::dequeue() {
-  for (;;) {
-    int s;
-
-    // wait for client to connect
-    struct sockaddr addr;
-    socklen_t len = sizeof(addr);
-    RESTARTABLE(::accept(listener(), &addr, &len), s);
-    if (s == -1) {
-      return NULL;      // log a warning?
-    }
-
-    // get the credentials of the peer and check the effective uid/guid
-    // - check with jeff on this.
-    struct ucred cred_info;
-    socklen_t optlen = sizeof(cred_info);
-    if (::getsockopt(s, SOL_SOCKET, SO_PEERCRED, (void*)&cred_info, &optlen) == -1) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    }
-    uid_t euid = geteuid();
-    gid_t egid = getegid();
-
-    if (cred_info.uid != euid || cred_info.gid != egid) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    }
-
-    // peer credential look okay so we read the request
-    LinuxAttachOperation* op = read_request(s);
-    if (op == NULL) {
-      int res;
-      RESTARTABLE(::close(s), res);
-      continue;
-    } else {
-      return op;
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;我们看到如果没有请求的话，会一直accept在那里，当来了请求，然后就会创建一个套接字，并读取数据，构建出LinuxAttachOperation返回并执行。</p>
-
-<p>&#8195;&#8195;整个过程就这样了，从Attach线程创建到接收请求，处理请求。</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[从tcp原理角度理解Broken pipe和Connection reset by peer的区别]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/05/20/tcp-broken-pipe/"/>
-    <updated>2014-05-20T19:31:28+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/05/20/tcp-broken-pipe</id>
-    <content type="html"><![CDATA[<p>&#8195;&#8195;以前我们经常会碰到<code>Broken pipe</code>或者<code>Connection reset by peer</code>之类的异常，但是tcp实现里什么情况下会抛出这些异常呢，以前我给对方的回答都是模棱两可的，自己说实话都没把握，因为自己也没有验证过，对它们的认识都是从网上看来的，正确与否也不知道，昨天独明突然又问到这个问题，前段时间正好对tcp这块研究了一段时间，有了点理论知识之后再从实践角度对此问题进行一下分析，下面对我这次的调研过程进行下描述与大家分享，希望大家以后对此类问题都能很自信地应答。</p>
-
-<h2>三次握手和四次挥手过程</h2>
-
-<p>&#8195;&#8195;在讲具体的原因之前，我们有必要补充下tcp这块的一些基础知识，我们都知道tcp通信有三次握手和四次挥手，网上介绍的文章也一大堆，图我也懒得画了，直接网上找一个图给大家</p>
-
-<!--more-->
-
-
-<p><img src="http://nijiaben.github.io/images/2014/07/tcp_hank.jpg"></p>
-
-<p>&#8195;&#8195;三次握手是最前面的三条线表示的过程，四次挥手是最后面的四条线表示的过程，里面涉及到几个关键词，SYN，ACK，FIN，MSS，其中SYN是主要用在三次握手过程中的，FIN用在四次挥手过程中，ACK在三次握手和四次挥手过程中的作用就是对收到的SYN和FIN做一个确认，SYN，FIN等存在于TCP头里(tcp报文图也给大家弄了个图，不用再去找啦)，0/1表示有无此标记，在tcp实现里后面还会跟一个依次递增的数字，比如上面的J，K等，确认就是递增这些数字(真正的数据报文的ack除外)，MSS是表示每一个tcp报文里数据字段的最大长度，不包括tcp头的大小噢
-相信大家看到这两个图会对这些概念有了一个清晰的认识了</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/tcp_header.jpg"></p>
-
-<h2>tcpdump抓包工具</h2>
-
-<p>&#8195;&#8195;介绍了基础原理之后，再介绍下抓包工具，tcpdump，这工具对你了解tcp的整个过程会非常有帮助，在你无法调试tcp实现的情况下这个工具自然也是必不可少的，具体用法网上有很多介绍，直接从man page上也可以看到详细的介绍，我也不多说啦，下面的截图就是tcpdump根据tcp通信过程获取到的</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/tcpdump_1.jpg"></p>
-
-<p>&#8195;&#8195;这要稍微提下tcpdump的结果和上面的几个过程的对应关系
-前面三条其实就是我们上面所说的三次握手，四次握手过程上面没有完全表现出来，只完成了一半的挥手过程（5，8两条表示的）
-里面有几个标识S，F，ack，P，其实还有个R，如果有这些标识那么在tcp头里的SYN，FIN，ACK，PSH，RET分别为1，其中PSH表示要求tcp立即将数据传递给上层，不要做别的什么处理，RET这个表示重置连接，也是和我们今天讨论的问题有很大关系的FLAG，下面会详细介绍</p>
-
-<h2>reset报文发送场景</h2>
-
-<p>&#8195;&#8195;RST的标志位，这个标识为在如下几种情况下会被设置，以下是我了解的情况，可能还有更多的场景，没有验证</p>
-
-<ul>
-<li>当尝试和未开放的服务器端口建立tcp连接时，服务器tcp将会直接向客户端发送reset报文</li>
-<li>双方之前已经正常建立了通信通道，也可能进行过了交互，当某一方在交互的过程中发生了异常，如崩溃等，异常的一方会向对端发送reset报文，通知对方将连接关闭</li>
-<li>当收到TCP报文，但是发现该报文不是已建立的TCP连接列表可处理的，则其直接向对端发送reset报文</li>
-<li>ack报文丢失，并且超出一定的重传次数或时间后，会主动向对端发送reset报文释放该TCP连接</li>
-</ul>
-
-
-<h2>Broken pipe以及Connection reset by peer</h2>
-
-<p>&#8195;&#8195;做了这么些铺垫之后下面进入正题，那么<code>Broken pipe</code>或者<code>Connection reset by peer</code>分别代表什么意思呢，下面从glibc的源码里有对此的介绍</p>
-
-<pre class="prettyPrint">
-#. TRANS Broken pipe; there is no process reading from the other end of a pipe.
-#. TRANS Every library function that returns this error code also generates a
-#. TRANS @code{SIGPIPE} signal; this signal terminates the program if not handled
-#. TRANS or blocked.  Thus, your program will never actually see @code{EPIPE}
-#. TRANS unless it has handled or blocked @code{SIGPIPE}.
-#: sysdeps/generic/siglist.h:39 sysdeps/gnu/errlist.c:359
-#: sysdeps/unix/siglist.c:39
-msgid "Broken pipe"
-msgstr "断开的管道"
-
-#. TRANS A network connection was closed for reasons outside the control of the
-#. TRANS local host, such as by the remote machine rebooting or an unrecoverable
-#. TRANS protocol violation.
-#: sysdeps/gnu/errlist.c:614
-msgid "Connection reset by peer"
-msgstr ""
-
-</pre>
-
-
-<p>&#8195;&#8195;其实我们java异常里看到的<code>Broken pipe</code>或者<code>Connection reset by peer</code>信息不是jdk或者jvm里定义的，我看到这些关键字往往会首先搜索下jdk或者hotspot源码找到位置进行上下文分析，但是这次没找到，后面才想到应该是linux或者glibc里定义的，果然在glibc离看到了如上的描述和定义</p>
-
-<p>&#8195;&#8195;对于<code>Broken pipe</code>在管道的另外一端没有进程再读的时候就会抛出此异常，<code>Connection reset by peer</code>的描述其实不是很正确，从我的实践来看只描述了一方面，其实在某一端正常close之后，也是可能会有此异常的。</p>
-
-<h2>异常模拟</h2>
-
-<p>&#8195;&#8195;从我的测试场景是这样的，
-共同的前提是客户端向服务端发了数据之后立马调用close关闭socket并进程退出，而服务端在收到客户端的数据之后sleep一会，保证对方的socket已经关闭，接着分别进行两种场景测试</p>
-
-<p>&#8195;&#8195;<code>场景：</code></p>
-
-<ol>
-<li><p>服务端往socket里写一次数据，返回继续做select</p></li>
-<li><p>服务端连续写两次数据，必须保证两次的buffer都是有数据的，也就是保证ByteBuffer的pos和limit要不是一个值</p></li>
-</ol>
-
-
-<p>&#8195;&#8195;<code>结果：</code></p>
-
-<ol>
-<li><p>会抛出Connection reset by peer </br>
-<img src="http://nijiaben.github.io/images/2014/07/tcp_error_1.jpg"></p></li>
-<li><p>会抛出Broken pipe</br>
-<img src="http://nijiaben.github.io/images/2014/07/tcp_error_2.jpg"></p></li>
-</ol>
-
-
-<p>&#8195;&#8195;<code>分析：</code></p>
-
-<ol>
-<li><p>当我们往一个对端已经close的通道写数据的时候，对方的tcp会收到这个报文，并且反馈一个reset报文，tcpdump的结果如下所示,当收到reset报文的时候，继续做select读数据的时候就会抛出<code>Connect reset by peer</code>的异常，从堆栈可以看得出
-<img src="http://nijiaben.github.io/images/2014/07/tcpdump_2.jpg"></p></li>
-<li><p>当第一次往一个对端已经close的通道写数据的时候会和上面的情况一样，会收到reset报文，当再次往这个socket写数据的时候，就会抛出<code>Broken pipe</code>了
-，根据tcp的约定，当收到reset包的时候，上层必须要做出处理，调用将socket文件描述符进行关闭，其实也意味着pipe会关闭，因此会抛出这个顾名思义的异常</p></li>
-</ol>
-
 ]]></content>
   </entry>
   

@@ -10,7 +10,7 @@
 
 	
 	<meta name="description" content="我們會儘快在短時間內，請我們唯一的開發者修好這個 bug。（才怪）
-以下最近的文章找找看有沒有幫助？ 2016 May 18 gc, jvm YGC前后新生代变大？ Apr 24 classloader, jdk8, jvm JVM源码分析之JDK8下的僵尸(无法回收)类加载器 Apr 19 &hellip;">
+以下最近的文章找找看有沒有幫助？ 2016 Oct 29 jvm, metaspace JVM源码分析之Metaspace解密 Aug 29 jvm, oom JVM源码分析之临门一脚的OutOfMemoryError完全解读 &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -49,18 +49,14 @@
 </div>
 
 <nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
     <li><a href="/">文章</a></li>
     <li><a href="/blog/archives">归档</a></li>
     <li><a href="/comments/latest.html">最新评论</a></li>
-    <li><a href="/about/index.html">关于你假笨</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
 </ul>
 
-
-<section class="aboutme">
-  <p>
-    技术宅改变世界
-  </p>
-</section>
 </nav>
 <nav id="sub-nav">
 	<div class="social">
@@ -82,6 +78,9 @@
     	
 			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
 		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
 	</div>
 </nav>
 </header>				
@@ -111,6 +110,90 @@
 
 <article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
 	<div class="meta">
+		<span class="date"><time datetime="2016-10-29T15:38:00+08:00" itemprop="datePublished">Oct 29</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/metaspace/'>metaspace</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/10/29/metaspace/">JVM源码分析之Metaspace解密</a></h1>
+</article>
+</article>
+
+<article>
+  
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-08-29T15:35:09+08:00" itemprop="datePublished">Aug 29</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/oom/'>oom</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/08/29/oom/">JVM源码分析之临门一脚的OutOfMemoryError完全解读</a></h1>
+</article>
+</article>
+
+<article>
+  
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-07-20T15:32:00+08:00" itemprop="datePublished">Jul 20</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/jstat/'>jstat</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/07/20/jstat/">JVM源码分析之Jstat工具原理完全解读</a></h1>
+</article>
+</article>
+
+<article>
+  
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<span class="date"><time datetime="2016-06-29T14:33:51+08:00" itemprop="datePublished">Jun 29</time></span>
+		<br>
+		<span class="tags">
+
+
+	<a class='category' href='/blog/categories/directbytebuffer/'>directbytebuffer</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</span>
+	    
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/06/29/ooc-offheap/">JVM源码分析之不可控的堆外内存</a></h1>
+</article>
+</article>
+
+<article>
+  
+
+
+<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
 		<span class="date"><time datetime="2016-05-18T18:59:44+08:00" itemprop="datePublished">May 18</time></span>
 		<br>
 		<span class="tags">
@@ -123,90 +206,6 @@
 	    
 	</div>
 	<h1 class="title" itemprop="name"><a href="/blog/2016/05/18/ygc-worse/">YGC前后新生代变大？</a></h1>
-</article>
-</article>
-
-<article>
-  
-
-
-<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<span class="date"><time datetime="2016-04-24T11:21:24+08:00" itemprop="datePublished">Apr 24</time></span>
-		<br>
-		<span class="tags">
-
-
-	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</span>
-	    
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/04/24/classloader-unload/">JVM源码分析之JDK8下的僵尸(无法回收)类加载器</a></h1>
-</article>
-</article>
-
-<article>
-  
-
-
-<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<span class="date"><time datetime="2016-04-19T01:24:25+08:00" itemprop="datePublished">Apr 19</time></span>
-		<br>
-		<span class="tags">
-
-
-	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/stackoverflow/'>stackoverflow</a>
-
-
-</span>
-	    
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/04/19/stack-over-flow/">JVM源码分析之栈溢出完全解读</a></h1>
-</article>
-</article>
-
-<article>
-  
-
-
-<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<span class="date"><time datetime="2016-04-03T12:50:39+08:00" itemprop="datePublished">Apr  3</time></span>
-		<br>
-		<span class="tags">
-
-
-	<a class='category' href='/blog/categories/jdk8/'>jdk8</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/typeinference/'>typeinference</a>
-
-
-</span>
-	    
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/04/03/type-inference/">JDK8在泛型类型推导上的变化</a></h1>
-</article>
-</article>
-
-<article>
-  
-
-
-<article itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<span class="date"><time datetime="2016-03-31T22:11:56+08:00" itemprop="datePublished">Mar 31</time></span>
-		<br>
-		<span class="tags">
-
-
-	<a class='category' href='/blog/categories/class/'>class</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</span>
-	    
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/">不可逆的类初始化过程</a></h1>
 </article>
 </article>
 

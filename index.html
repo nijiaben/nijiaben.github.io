@@ -9,8 +9,7 @@
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="gc, jvm YGC前后新生代变大？ 问题描述 我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的： 1
-2016-05-18T15:06:13.011+0800: [GC [ParNew (promotion failed): &hellip;">
+	<meta name="description" content="jvm, metaspace JVM源码分析之Metaspace解密 概述 metaspace，顾名思义，元数据空间，专门用来存元数据的，它是jdk8里特有的数据结构用来替代perm，这块空间很有自己的特点，前段时间公司这块的问题太多了，主要是因为升级了中间件所致，看到大家讨论来讨论去， &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -49,18 +48,14 @@
 </div>
 
 <nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
     <li><a href="/">文章</a></li>
     <li><a href="/blog/archives">归档</a></li>
     <li><a href="/comments/latest.html">最新评论</a></li>
-    <li><a href="/about/index.html">关于你假笨</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
 </ul>
 
-
-<section class="aboutme">
-  <p>
-    技术宅改变世界
-  </p>
-</section>
 </nav>
 <nav id="sub-nav">
 	<div class="social">
@@ -82,6 +77,9 @@
     	
 			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
 		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
 	</div>
 </nav>
 </header>				
@@ -94,6 +92,204 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner">
 <div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-10-29T15:38:00+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/metaspace/'>metaspace</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/10/29/metaspace/" itemprop="url">JVM源码分析之Metaspace解密</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>metaspace，顾名思义，元数据空间，专门用来存元数据的，它是jdk8里特有的数据结构用来替代perm，这块空间很有自己的特点，前段时间公司这块的问题太多了，主要是因为升级了中间件所致，看到大家讨论来讨论去，看得出很多人对metaspace还是模棱两可，不是很了解它，因此我觉得有必要写篇文章来介绍一下它，解开它神秘的面纱，当我们再次碰到它的相关问题的时候不会再感到束手无策。</p>
+
+<p>通过这篇文章，你将可以了解到</p>
+
+<ul>
+<li>为什么会有metaspace</li>
+<li>metaspace的组成</li>
+<li>metaspace的VM参数</li>
+<li>jstat里我们应该关注metaspace的哪些值</li>
+</ul>
+
+
+
+		
+		<a href="/blog/2016/10/29/metaspace/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-08-29T15:35:09+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/oom/'>oom</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/08/29/oom/" itemprop="url">JVM源码分析之临门一脚的OutOfMemoryError完全解读</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>OutOfMemoryError，说的是java.lang.OutOfMemoryError，是JDK里自带的异常，顾名思义，说的就是内存溢出，当我们的系统内存严重不足的时候就会抛出这个异常(PS:注意这是一个Error，不是一个Exception，所以当我们要catch异常的时候要注意哦)，这个异常说常见也常见，说不常见其实也见得不多，不过作为Java程序员至少应该都听过吧，如果你对jvm不是很熟，或者对OutOfMemoryError这个异常了解不是很深的话，这篇文章肯定还是可以给你带来一些惊喜的，通过这篇文章你至少可以了解到如下几点：</p>
+
+<ul>
+<li>OutOfMemoryError一定会被加载吗</li>
+<li>什么时候抛出OutOfMemoryError</li>
+<li>会创建无数OutOfMemoryError实例吗</li>
+<li>为什么大部分OutOfMemoryError异常是无堆栈的</li>
+<li>我们如何去分析这样的异常</li>
+</ul>
+
+
+
+		
+		<a href="/blog/2016/08/29/oom/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-07-20T15:32:00+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jstat/'>jstat</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/07/20/jstat/" itemprop="url">JVM源码分析之Jstat工具原理完全解读</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>jstat是hotspot自带的工具，和java一样也位于<code>JAVA_HOME/bin</code>下面，我们通过该工具可以实时了解当前进程的gc，compiler，class，memory等相关的情况，具体我们可以通过jstat -options来看我们到底支持哪些类型的数据，譬如JDK8下的结果是：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">-</span><span class="kd">class</span>
+</span><span class='line'><span class="err">-</span><span class="nc">compiler</span>
+</span><span class='line'><span class="o">-</span><span class="n">gc</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gccause</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcmetacapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnew</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcnewcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcold</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcoldcapacity</span>
+</span><span class='line'><span class="o">-</span><span class="n">gcutil</span>
+</span><span class='line'><span class="o">-</span><span class="n">printcompilation</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+		
+		<a href="/blog/2016/07/20/jstat/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-06-29T14:33:51+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/directbytebuffer/'>directbytebuffer</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/06/29/ooc-offheap/" itemprop="url">JVM源码分析之不可控的堆外内存</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>之前写过篇文章，关于堆外内存的，<a href="http://mp.weixin.qq.com/s?__biz=MzIzNjI1ODc2OA==&amp;mid=403168235&amp;idx=1&amp;sn=ecc804ba7231996d43c05138566d074a&amp;scene=19#wechat_redirect">JVM源码分析之堆外内存完全解读</a>，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下，然后统计所有DirectByteBuffer对象后面占用的内存达到了7G，远远超出阈值，这个问题很诡异，于是好好查了下原因，虽然最终发现是我们统计的问题，但是期间发现的其他一些问题还是值得分享一下的。</p>
+
+
+		
+		<a href="/blog/2016/06/29/ooc-offheap/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
     <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
@@ -331,160 +527,6 @@
 
 		
 		<a href="/blog/2016/03/31/cpu-thread/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2016-03-27T11:31:25+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/03/27/object-wait-notify/" itemprop="url">JVM源码分析之Object.wait/notify(All)完全解读</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<h2>概述</h2>
-
-<p>本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么，没怎么去找相关资料，所以只能谈谈自己的理解，所以大家看到文章之后可以谈谈自己的看法，对于实现部分我倒觉得说清楚问题不大，code is here，看明白了就知道怎么回事了。</p>
-
-
-		
-		<a href="/blog/2016/03/27/object-wait-notify/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2016-03-15T13:51:58+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/classloader/'>classloader</a>, <a class='category' href='/blog/categories/gc/'>gc</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/03/15/ygc-classloader/" itemprop="url">JVM源码分析之自定义类加载器如何拉长YGC</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<h2>概述</h2>
-
-<p>本文重点讲述毕玄大师在其公众号上发的一个GC问题<a href="http://hellojava.info/?p=438">一个jstack/jmap等不能用的case</a>（PS：话说毕大师超级喜欢在题目里用case这个词，我觉得题目还是能尽量做到顾名思义好，不然要找起相关文章来真的好难找），对于毕大师那篇文章，题目上没有提到GC的那个问题，不过进入到文章里可以看到，既然文章提到了jstack/jmap的问题，这里也简单回答下jstack/jmap无法使用的问题，其实最常见的场景是使用jstack/jmap的用户和目标进程不是同一个用户，哪怕你执行jstack/jmap的动作是root用户也无济于事，详情可以参考我的这篇文章，<a href="http://lovestblog.cn/blog/2014/06/18/jvm-attach/">JVM Attach机制实现</a>,主要是讲JVM Attach机制的，不过毕大师这里主要提到的是jmap -heap/histo这两个参数带来的问题，如果使用-heap/histo的参数，其实和大家使用-F参数是一样的，底层都是通过serviceability agent来实现的，并不是jvm attach的方式，通过sa连上去之后会挂起进程，在serviceability agent里存在bug可能导致detach的动作不会被执行，从而会让进程一直挂着，可以通过top命令验证进程是否处于T状态，如果是说明进程被挂起了，如果进程被挂起了，可以通过kill -CONT [pid]来恢复。</p>
-
-
-		
-		<a href="/blog/2016/03/15/ygc-classloader/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2015-10-21T18:54:01+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/deadlock/'>deadlock</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2015/10/21/deadlock/" itemprop="url">消失的死锁</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<h2>问题描述</h2>
-
-<p>如果java层面发生了死锁，当我们使用<code>jstack</code>命令的时候其实是可以将死锁的信息给dump出来的，在dump结果的最后会有类似<code>Found one Java-level deadlock:</code>的关键字，接着会把发生死锁的线程的堆栈及对应的同步锁给打印出来，这次碰到一个系统就发生类似的问题，不过这个dump文档里虽然提到了如下的死锁信息：</p>
-
-
-		
-		<a href="/blog/2015/10/21/deadlock/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2015-09-14T13:17:50+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/agent/'>agent</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2015/09/14/javaagent/" itemprop="url">JVM源码分析之javaagent原理完全解读</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<p><code>注:文章首发于InfoQ：</code><a href="http://www.infoq.com/cn/articles/javaagent-illustrated">JVM源码分析之javaagent原理完全解读</a></p>
-
-<h2>概述</h2>
-
-<p>本文重点讲述javaagent的具体实现，因为它面向的是我们java程序员，而且agent都是用java编写的，不需要太多的c/c++编程基础，不过这篇文章里也会讲到JVMTIAgent(c实现的)，因为javaagent的运行还是依赖于一个特殊的JVMTIAgent。</p>
-
-
-		
-		<a href="/blog/2015/09/14/javaagent/" class="more-link">Read on &rarr;</a>
 	</div>
 
 </article>

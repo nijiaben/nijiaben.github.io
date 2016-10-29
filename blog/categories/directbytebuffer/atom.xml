@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: directbytebuffer | 你假笨]]></title>
+  <link href="http://nijiaben.github.io/blog/categories/directbytebuffer/atom.xml" rel="self"/>
+  <link href="http://nijiaben.github.io/"/>
+  <updated>2016-10-29T15:40:38+08:00</updated>
+  <id>http://nijiaben.github.io/</id>
+  <author>
+    <name><![CDATA[你假笨]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之不可控的堆外内存]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/06/29/ooc-offheap/"/>
+    <updated>2016-06-29T14:33:51+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/06/29/ooc-offheap</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>之前写过篇文章，关于堆外内存的，<a href="http://mp.weixin.qq.com/s?__biz=MzIzNjI1ODc2OA==&amp;mid=403168235&amp;idx=1&amp;sn=ecc804ba7231996d43c05138566d074a&amp;scene=19#wechat_redirect">JVM源码分析之堆外内存完全解读</a>，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下，然后统计所有DirectByteBuffer对象后面占用的内存达到了7G，远远超出阈值，这个问题很诡异，于是好好查了下原因，虽然最终发现是我们统计的问题，但是期间发现的其他一些问题还是值得分享一下的。</p>
+
+<!--more-->
+
+
+<h2>不得不提的DirectByteBuffer构造函数</h2>
+
+<p>打开DirectByteBuffer这个类，我们会发现有5个构造函数</p>
+
+<pre><code class="java">DirectByteBuffer(int cap);
+
+DirectByteBuffer(long addr, int cap, Object ob);
+
+private DirectByteBuffer(long addr, int cap);
+
+protected DirectByteBuffer(int cap, long addr,FileDescriptor fd,Runnable unmapper);
+
+DirectByteBuffer(DirectBuffer db, int mark, int pos, int lim, int cap,int off)
+</code></pre>
+
+<p>我们从java层面创建DirectByteBuffer对象，一般都是通过ByteBuffer的allocateDirect方法</p>
+
+<pre><code>public static ByteBuffer allocateDirect(int capacity) {
+        return new DirectByteBuffer(capacity);
+}
+</code></pre>
+
+<p>也就是会使用上面提到的第一个构造函数，即</p>
+
+<pre><code>DirectByteBuffer(int cap) {                   // package-private
+
+        super(-1, 0, cap, cap);
+        boolean pa = VM.isDirectMemoryPageAligned();
+        int ps = Bits.pageSize();
+        long size = Math.max(1L, (long)cap + (pa ? ps : 0));
+        Bits.reserveMemory(size, cap);
+
+        long base = 0;
+        try {
+            base = unsafe.allocateMemory(size);
+        } catch (OutOfMemoryError x) {
+            Bits.unreserveMemory(size, cap);
+            throw x;
+        }
+        unsafe.setMemory(base, size, (byte) 0);
+        if (pa &amp;&amp; (base % ps != 0)) {
+            // Round up to page boundary
+            address = base + ps - (base &amp; (ps - 1));
+        } else {
+            address = base;
+        }
+        cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+        att = null;
+
+
+
+    }
+</code></pre>
+
+<p>而这个构造函数里的<code>Bits.reserveMemory(size, cap)</code>方法会做堆外内存的阈值check</p>
+
+<pre><code> static void reserveMemory(long size, int cap) {
+        synchronized (Bits.class) {
+            if (!memoryLimitSet &amp;&amp; VM.isBooted()) {
+                maxMemory = VM.maxDirectMemory();
+                memoryLimitSet = true;
+            }
+            // -XX:MaxDirectMemorySize limits the total capacity rather than the
+            // actual memory usage, which will differ when buffers are page
+            // aligned.
+            if (cap &lt;= maxMemory - totalCapacity) {
+                reservedMemory += size;
+                totalCapacity += cap;
+                count++;
+                return;
+            }
+        }
+
+        System.gc();
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException x) {
+            // Restore interrupt status
+            Thread.currentThread().interrupt();
+        }
+        synchronized (Bits.class) {
+            if (totalCapacity + cap &gt; maxMemory)
+                throw new OutOfMemoryError("Direct buffer memory");
+            reservedMemory += size;
+            totalCapacity += cap;
+            count++;
+        }
+
+    }
+</code></pre>
+
+<p>因此当我们已经分配的内存超过阈值的时候会触发一次gc动作，并重新做一次分配，如果还是超过阈值，那将会抛出OOM，因此分配动作会失败。</p>
+
+<p>所以从这一切看来，只要设置了<code>-XX:MaxDirectMemorySize=1G</code>是不会出现超过这个阈值的情况的，会看到不断的做GC。</p>
+
+<h2>构造函数再探</h2>
+
+<p>那其他的构造函数主要是用在什么情况下的呢？</p>
+
+<p>我们知道DirectByteBuffer回收靠的是里面有个cleaner的属性，但是我们发现有几个构造函数里cleaner这个属性却是null，那这种情况下他们怎么被回收呢？</p>
+
+<p>那下面请大家先看下DirectByteBuffer里的这两个函数：</p>
+
+<pre><code>  public ByteBuffer slice() {
+        int pos = this.position();
+        int lim = this.limit();
+        assert (pos &lt;= lim);
+        int rem = (pos &lt;= lim ? lim - pos : 0);
+        int off = (pos &lt;&lt; 0);
+        assert (off &gt;= 0);
+        return new DirectByteBuffer(this, -1, 0, rem, rem, off);
+    }
+
+    public ByteBuffer duplicate() {
+        return new DirectByteBuffer(this,
+                                              this.markValue(),
+                                              this.position(),
+                                              this.limit(),
+                                              this.capacity(),
+                                              0);
+    }
+</code></pre>
+
+<p>从名字和实现上基本都能猜出是干什么的了，slice其实是从一块已知的内存里取出剩下的一部分，用一个新的DirectByteBuffer对象指向它，而duplicate就是创建一个现有DirectByteBuffer的全新副本，各种指针都一样。</p>
+
+<p>因此从这个实现来看，后面关联的堆外内存其实是同一块，所以如果我们做统计的时候如果仅仅将所有DirectByteBuffer对象的capacity加起来，那可能会导致算出来的结果偏大不少，这其实也是我查的那个问题，本来设置了阈值1G，但是发现达到了7G的效果。所以这种情况下使用的构造函数，可以让cleaner为null，回收靠原来的那个DirectByteBuffer对象被回收。</p>
+
+<h2>被遗忘的检查</h2>
+
+<p>但是还有种情况，也是本文要讲的重点，在jvm里可以通过jni方法回调上面的DirectByteBuffer构造函数，这个构造函数是</p>
+
+<pre><code>    private DirectByteBuffer(long addr, int cap) {
+        super(-1, 0, cap, cap);
+        address = addr;
+        cleaner = null;
+        att = null;
+    }
+</code></pre>
+
+<p>而调用这个构造函数的jni方法是<code>jni_NewDirectByteBuffer</code></p>
+
+<pre><code>extern "C" jobject JNICALL jni_NewDirectByteBuffer(JNIEnv *env, void* address, jlong capacity)
+{
+  // thread_from_jni_environment() will block if VM is gone.
+  JavaThread* thread = JavaThread::thread_from_jni_environment(env);
+
+  JNIWrapper("jni_NewDirectByteBuffer");
+#ifndef USDT2
+  DTRACE_PROBE3(hotspot_jni, NewDirectByteBuffer__entry, env, address, capacity);
+#else /* USDT2 */
+ HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_ENTRY(
+                                       env, address, capacity);
+#endif /* USDT2 */
+
+  if (!directBufferSupportInitializeEnded) {
+    if (!initializeDirectBufferSupport(env, thread)) {
+#ifndef USDT2
+      DTRACE_PROBE1(hotspot_jni, NewDirectByteBuffer__return, NULL);
+#else /* USDT2 */
+      HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN(
+                                             NULL);
+#endif /* USDT2 */
+      return NULL;
+    }
+  }
+
+  // Being paranoid about accidental sign extension on address
+  jlong addr = (jlong) ((uintptr_t) address);
+  // NOTE that package-private DirectByteBuffer constructor currently
+  // takes int capacity
+  jint  cap  = (jint)  capacity;
+  jobject ret = env-&gt;NewObject(directByteBufferClass, directByteBufferConstructor, addr, cap);
+#ifndef USDT2
+  DTRACE_PROBE1(hotspot_jni, NewDirectByteBuffer__return, ret);
+#else /* USDT2 */
+  HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN(
+                                         ret);
+#endif /* USDT2 */
+  return ret;
+}
+</code></pre>
+
+<p>想象这么种情况，我们写了一个native方法，里面分配了一块内存，同时通过上面这个方法和一个DirectByteBuffer对象关联起来，那从java层面来看这个DirectByteBuffer确实是一个有效的占有不少native内存的对象，但是这个对象后面关联的内存完全绕过了MaxDirectMemorySize的check，所以也可能给你造成这种现象，明明设置了MaxDirectMemorySize，但是发现DirectByteBuffer关联的堆外内存其实是大于它的。</p>
+
+<h2>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h2>
+
+<p><img src="/images/gzh.jpg" width="200" height="200"></p>
+]]></content>
+  </entry>
+  
+</feed>
