@@ -1,0 +1,504 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之String.intern()导致的YGC不断变长 - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之String.intern()导致的YGC不断变长 概述 之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志 1
+[GC (Allocation Failure) [ &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/11/06/string-intern/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
+</ul>
+
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之String.intern()导致的YGC不断变长</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
+
+<p>之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>只知道耗了多长时间，但是具体耗在了哪个阶段，是基本看不出来的，所以要么就是靠经验来定位，要么就是对代码相当熟悉，脑袋里过一遍整个过程，看哪个阶段最可能，今天要讲的这个大家可以当做今后排查这类问题的一个经验来使，这个当然不是唯一导致YGC过长的一个原因，但却是最近我帮忙定位碰到的发生相对来说比较多的一个场景</p>
+
+<!--more-->
+
+
+<p>具体的定位是通过在JVM代码里进行了日志埋点确定的，这个问题其实最早的时候，是帮助毕玄毕大师定位到这块的问题，他也在公众号里对这个问题写了相关的一篇文章<a href="" title="http://mp.weixin.qq.com/s?__biz=MjM5MzYzMzkyMQ==&amp;mid=2649826309&amp;idx=1&amp;sn=13518f7f693d78fd19f8dc5d21c7eb4b&amp;scene=0#wechat_redirect">YGC越来越慢，为什么</a>，大家可以关注下毕大师的公众号<code>HelloJava</code>，经常会发一些在公司碰到的诡异问题的排查，相信会让你涨姿势的，当然如果你还没有关注我的公众号<code>你假笨</code>，欢迎关注下，后续会时不时写点或许正巧你感兴趣的JVM系列文章。</p>
+
+<h2>Demo</h2>
+
+<p>先上一个demo，来描述下问题的情况，代码很简单，就是不断创建UUID，其实就是一个字符串，并将这个字符串调用下intern方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import java.util.UUID;
+</span><span class='line'>
+</span><span class='line'>public class StringTableTest {
+</span><span class='line'>  public static void main(String args[]) {
+</span><span class='line'>      for (int i = 0; i &lt; 10000000; i++) {
+</span><span class='line'>          uuid();
+</span><span class='line'>      }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  public static void uuid() {
+</span><span class='line'>      UUID.randomUUID().toString().intern();
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们使用的JVM参数如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-XX:+UseConcMarkSweepGC -XX:+PrintGCDetails -Xmx2G -Xms2G -Xmn100M</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里特意将新生代设置比较小，老生代设置比较大，让代码在执行过程中更容易突出问题来，大量做ygc，期间不做CMS GC，于是我们得到的输出结果类似下面的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[GC (Allocation Failure) [ParNew: 81920K-&gt;9887K(92160K), 0.0096027 secs] 81920K-&gt;9887K(2086912K), 0.0096428 secs] [Times: user=0.06 sys=0.01, real=0.01 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0190535 secs] 103182K-&gt;32655K(2086912K), 0.0190965 secs] [Times: user=0.12 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0198259 secs] 114575K-&gt;44124K(2086912K), 0.0198558 secs] [Times: user=0.13 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0213643 secs] 126044K-&gt;55592K(2086912K), 0.0213930 secs] [Times: user=0.14 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0234291 secs] 137512K-&gt;67061K(2086912K), 0.0234625 secs] [Times: user=0.16 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0243691 secs] 148981K-&gt;78548K(2086912K), 0.0244041 secs] [Times: user=0.15 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0235310 secs] 160468K-&gt;89998K(2086912K), 0.0235587 secs] [Times: user=0.17 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0255960 secs] 171918K-&gt;101466K(2086912K), 0.0256264 secs] [Times: user=0.18 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0287876 secs] 183386K-&gt;113770K(2086912K), 0.0288188 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0298405 secs] 195690K-&gt;125267K(2086912K), 0.0298823 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0310182 secs] 207187K-&gt;136742K(2086912K), 0.0311156 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0321647 secs] 218662K-&gt;148210K(2086912K), 0.0321938 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0338090 secs] 230130K-&gt;159686K(2086912K), 0.0338446 secs] [Times: user=0.24 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0326612 secs] 241606K-&gt;171159K(2086912K), 0.0326912 secs] [Times: user=0.23 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0350578 secs] 253079K-&gt;182627K(2086912K), 0.0351077 secs] [Times: user=0.26 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0346946 secs] 264547K-&gt;194096K(2086912K), 0.0347274 secs] [Times: user=0.25 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0384091 secs] 276016K-&gt;205567K(2086912K), 0.0384401 secs] [Times: user=0.27 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0394017 secs] 287487K-&gt;217035K(2086912K), 0.0394312 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0411447 secs] 298955K-&gt;228504K(2086912K), 0.0411748 secs] [Times: user=0.30 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0393449 secs] 310424K-&gt;239972K(2086912K), 0.0393743 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0444541 secs] 321892K-&gt;251441K(2086912K), 0.0444887 secs] [Times: user=0.32 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0449196 secs] 333361K-&gt;262910K(2086912K), 0.0449557 secs] [Times: user=0.33 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0497517 secs] 344830K-&gt;274382K(2086912K), 0.0497946 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0475741 secs] 356302K-&gt;285851K(2086912K), 0.0476130 secs] [Times: user=0.35 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0461098 secs] 367771K-&gt;297320K(2086912K), 0.0461421 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0508071 secs] 379240K-&gt;308788K(2086912K), 0.0508428 secs] [Times: user=0.38 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0494472 secs] 390708K-&gt;320257K(2086912K), 0.0494938 secs] [Times: user=0.36 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0531527 secs] 402177K-&gt;331725K(2086912K), 0.0531845 secs] [Times: user=0.39 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0543701 secs] 413645K-&gt;343194K(2086912K), 0.0544025 secs] [Times: user=0.41 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0528003 secs] 425114K-&gt;354663K(2086912K), 0.0528283 secs] [Times: user=0.39 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0565080 secs] 436583K-&gt;366131K(2086912K), 0.0565394 secs] [Times: user=0.42 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0597181 secs] 448051K-&gt;377600K(2086912K), 0.0597653 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0606671 secs] 459520K-&gt;389068K(2086912K), 0.0607423 secs] [Times: user=0.46 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0590389 secs] 470988K-&gt;400539K(2086912K), 0.0590679 secs] [Times: user=0.43 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0600462 secs] 482459K-&gt;412008K(2086912K), 0.0600757 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0608772 secs] 493928K-&gt;423476K(2086912K), 0.0609170 secs] [Times: user=0.45 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0622107 secs] 505396K-&gt;434945K(2086912K), 0.0622391 secs] [Times: user=0.46 sys=0.00, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0626555 secs] 516865K-&gt;446413K(2086912K), 0.0626872 secs] [Times: user=0.47 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0647713 secs] 528333K-&gt;457882K(2086912K), 0.0648013 secs] [Times: user=0.47 sys=0.00, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0747113 secs] 539802K-&gt;469353K(2086912K), 0.0747446 secs] [Times: user=0.51 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0727498 secs] 551273K-&gt;480832K(2086912K), 0.0727899 secs] [Times: user=0.52 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0734084 secs] 562752K-&gt;492300K(2086912K), 0.0734402 secs] [Times: user=0.54 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0766368 secs] 574220K-&gt;503769K(2086912K), 0.0766673 secs] [Times: user=0.55 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0778940 secs] 585689K-&gt;515237K(2086912K), 0.0779250 secs] [Times: user=0.56 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0815513 secs] 597157K-&gt;526712K(2086912K), 0.0815824 secs] [Times: user=0.57 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0812080 secs] 608632K-&gt;538181K(2086912K), 0.0812406 secs] [Times: user=0.58 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0818790 secs] 620101K-&gt;549651K(2086912K), 0.0819155 secs] [Times: user=0.60 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0840677 secs] 631571K-&gt;561122K(2086912K), 0.0841000 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0842462 secs] 643042K-&gt;572593K(2086912K), 0.0842785 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0875011 secs] 654513K-&gt;584076K(2086912K), 0.0875416 secs] [Times: user=0.62 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0887645 secs] 665996K-&gt;595532K(2086912K), 0.0887956 secs] [Times: user=0.64 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0921844 secs] 677452K-&gt;607001K(2086912K), 0.0922153 secs] [Times: user=0.65 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0930053 secs] 688921K-&gt;618471K(2086912K), 0.0930380 secs] [Times: user=0.67 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0955379 secs] 700391K-&gt;629942K(2086912K), 0.0955873 secs] [Times: user=0.69 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0919127 secs] 711862K-&gt;641411K(2086912K), 0.0919528 secs] [Times: user=0.68 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0942291 secs] 723331K-&gt;652879K(2086912K), 0.0942611 secs] [Times: user=0.70 sys=0.00, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0951904 secs] 734799K-&gt;664348K(2086912K), 0.0952265 secs] [Times: user=0.71 sys=0.00, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0963585 secs] 746268K-&gt;675816K(2086912K), 0.0963909 secs] [Times: user=0.72 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0969504 secs] 757736K-&gt;687285K(2086912K), 0.0969843 secs] [Times: user=0.72 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0999066 secs] 769205K-&gt;698753K(2086912K), 0.0999376 secs] [Times: user=0.75 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0998371 secs] 780673K-&gt;710222K(2086912K), 0.0998835 secs] [Times: user=0.75 sys=0.00, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.1024616 secs] 792142K-&gt;721691K(2086912K), 0.1024927 secs] [Times: user=0.77 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.1015041 secs] 803611K-&gt;733159K(2086912K), 0.1015378 secs] [Times: user=0.76 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1058214 secs] 815079K-&gt;744628K(2086912K), 0.1058532 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1061273 secs] 826548K-&gt;756096K(2086912K), 0.1061620 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] </span></code></pre></td></tr></table></div></figure>
+
+
+<p>有没有发现YGC不断发生，并且发生的时间不断在增长，从10ms慢慢增长到了100ms，甚至还会继续涨下去</p>
+
+<h2>String.intern方法</h2>
+
+<p>从上面的demo我们能挖掘到的可能就是intern这个方法了，那我们先来了解下intern方法的实现，这是String提供的一个方法，jvm提供这个方法的目的是希望对于某个同名字符串使用非常多的场景，在jvm里只保留一份，比如我们不断new String(&ldquo;a&rdquo;)，其实在java heap里会有多个String的对象，并且值都是a，如果我们只希望内存里只保留一个a，或者希望我接下来用到的地方都返回同一个a，那就可以用String.intern这个方法了，用法如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>String a = "a".intern();
+</span><span class='line'>...
+</span><span class='line'>String b = a.intern();
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这样b和a都是指向内存里的同一个String对象，那JVM里到底怎么做到的呢？</p>
+
+<p>我们看到intern这个方法其实是一个native方法，具体对应到JVM里的逻辑是</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>
+</span><span class='line'>oop StringTable::intern(oop string, TRAPS)
+</span><span class='line'>{
+</span><span class='line'>  if (string == NULL) return NULL;
+</span><span class='line'>  ResourceMark rm(THREAD);
+</span><span class='line'>  int length;
+</span><span class='line'>  Handle h_string (THREAD, string);
+</span><span class='line'>  jchar* chars = java_lang_String::as_unicode_string(string, length);
+</span><span class='line'>  oop result = intern(h_string, chars, length, CHECK_NULL);
+</span><span class='line'>  return result;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>oop StringTable::intern(Handle string_or_null, jchar* name,
+</span><span class='line'>                        int len, TRAPS) {
+</span><span class='line'>  unsigned int hashValue = hash_string(name, len);
+</span><span class='line'>  int index = the_table()-&gt;hash_to_index(hashValue);
+</span><span class='line'>  oop found_string = the_table()-&gt;lookup(index, name, len, hashValue);
+</span><span class='line'>
+</span><span class='line'>  // Found
+</span><span class='line'>  if (found_string != NULL) return found_string;
+</span><span class='line'>
+</span><span class='line'>  debug_only(StableMemoryChecker smc(name, len * sizeof(name[0])));
+</span><span class='line'>  assert(!Universe::heap()-&gt;is_in_reserved(name) || GC_locker::is_active(),
+</span><span class='line'>         "proposed name of symbol must be stable");
+</span><span class='line'>
+</span><span class='line'>  Handle string;
+</span><span class='line'>  // try to reuse the string if possible
+</span><span class='line'>  if (!string_or_null.is_null() && (!JavaObjectsInPerm || string_or_null()-&gt;is_perm())) {
+</span><span class='line'>    string = string_or_null;
+</span><span class='line'>  } else {
+</span><span class='line'>    string = java_lang_String::create_tenured_from_unicode(name, len, CHECK_NULL);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // Grab the StringTable_lock before getting the_table() because it could
+</span><span class='line'>  // change at safepoint.
+</span><span class='line'>  MutexLocker ml(StringTable_lock, THREAD);
+</span><span class='line'>
+</span><span class='line'>  // Otherwise, add to symbol to table
+</span><span class='line'>  return the_table()-&gt;basic_add(index, string, name, len,
+</span><span class='line'>                                hashValue, CHECK_NULL);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也就是说是其实在JVM里存在一个叫做StringTable的数据结构，这个数据结构是一个Hashtable，在我们调用String.intern的时候其实就是先去这个StringTable里查找是否存在一个同名的项，如果存在就直接返回对应的对象，否则就往这个table里插入一项，指向这个String对象，那么再下次通过intern再来访问同名的String对象的时候，就会返回上次插入的这一项指向的String对象</p>
+
+<p>至此大家应该知道其原理了，另外我这里还想说个题外话，记得几年前tomcat里爆发的一个HashMap导致的hash碰撞的问题，这里其实也是一个Hashtable，所以也还是存在类似的风险，不过JVM里提供一个参数专门来控制这个table的size，<code>-XX:StringTableSize</code>，这个参数的默认值如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>product(uintx, StringTableSize, NOT_LP64(1009) LP64_ONLY(60013),          \
+</span><span class='line'>          "Number of buckets in the interned String table")                 \</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外JVM还会根据hash碰撞的情况来决定是否做rehash，比如你从这个StringTable里查找某个字符串是否存在，如果对其对应的桶挨个遍历，超过了100个还是没有找到对应的同名的项，那就会设置一个flag，让下次进入到safepoint的时候做一次rehash动作，尽量减少碰撞的发生，但是当恶化到一定程度的时候，其实也没啥办法啦，因为你的数据量实在太大，桶子数就那么多，那每个桶再怎么均匀也会带着一个很长的链表，所以此时我们通过修改上面的StringTableSize将桶数变大，可能会一定程度上缓解，但是如果是java代码的问题导致泄露，那就只能定位到具体的代码进行改造了。</p>
+
+<h2>StringTable为什么会影响YGC</h2>
+
+<p>YGC的过程我不打算再这篇文章里细说，因为我希望尽量保持每篇文章的内容不过于臃肿，有机会可以单独写篇文章来介绍，我这里将列出ygc过程里StringTable这块的具体代码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_StringTable_oops_do)) {
+</span><span class='line'>    if (so & SO_Strings || (!collecting_perm_gen && !JavaObjectsInPerm)) {
+</span><span class='line'>      StringTable::oops_do(roots);
+</span><span class='line'>    }
+</span><span class='line'>    if (JavaObjectsInPerm) {
+</span><span class='line'>      // Verify the string table contents are in the perm gen
+</span><span class='line'>      NOT_PRODUCT(StringTable::oops_do(&assert_is_perm_closure));
+</span><span class='line'>    }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因为YGC过程不涉及到对perm做回收，因此<code>collecting_perm_gen</code>是false，而<code>JavaObjectsInPerm</code>默认情况下也是false，表示String.intern返回的字符串是不是在perm里分配，如果是false，表示是在heap里分配的，因此StringTable指向的字符串是在heap里分配的，所以ygc过程需要对StringTable做扫描，以保证处于新生代的String代码不会被回收掉</p>
+
+<p>至此大家应该明白了为什么YGC过程会对StringTable扫描</p>
+
+<p>有了这一层意思之后，YGC的时间长短和扫描StringTable有关也可以理解了，设想一下如果StringTable非常庞大，那是不是意味着YGC过程扫描的时间也会变长呢</p>
+
+<h2>YGC过程扫描StringTable对CPU影响大吗</h2>
+
+<p>这个问题其实是我写这文章的时候突然问自己的一个问题，于是稍微想了下来跟大家解释下，因为大家也可能会问这么个问题</p>
+
+<p>要回答这个问题我首先得问你们的机器到底有多少个核，如果核数很多的话，其实影响不是很大，因为这个扫描的过程是单个GC线程来做的，所以最多消耗一个核，因此看起来对于核数很多的情况，基本不算什么</p>
+
+<h2>StringTable什么时候清理</h2>
+
+<p>YGC过程不会对StringTable做清理，这也就是我们demo里的情况会让Stringtable越来越大，因为到目前为止还只看到YGC过程，但是在Full GC或者CMS GC过程会对StringTable做清理，具体验证很简单，执行下<code>jmap -histo:live &lt;pid&gt;</code>，你将会发现YGC的时候又降下去了</p>
+
+<h2>本文写作时间</h2>
+
+<p>利用午饭前的一点时间写下 2016/11/06 12:00~12:40</p>
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

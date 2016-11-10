@@ -4,7 +4,7 @@
   <title><![CDATA[你假笨]]></title>
   <link href="http://nijiaben.github.io/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-10-29T15:40:38+08:00</updated>
+  <updated>2016-11-10T09:42:31+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,841 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之String.intern()导致的YGC不断变长]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/11/06/string-intern/"/>
+    <updated>2016-11-06T09:37:18+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/11/06/string-intern</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>只知道耗了多长时间，但是具体耗在了哪个阶段，是基本看不出来的，所以要么就是靠经验来定位，要么就是对代码相当熟悉，脑袋里过一遍整个过程，看哪个阶段最可能，今天要讲的这个大家可以当做今后排查这类问题的一个经验来使，这个当然不是唯一导致YGC过长的一个原因，但却是最近我帮忙定位碰到的发生相对来说比较多的一个场景</p>
+
+<!--more-->
+
+
+<p>具体的定位是通过在JVM代码里进行了日志埋点确定的，这个问题其实最早的时候，是帮助毕玄毕大师定位到这块的问题，他也在公众号里对这个问题写了相关的一篇文章<a href="" title="http://mp.weixin.qq.com/s?__biz=MjM5MzYzMzkyMQ==&amp;mid=2649826309&amp;idx=1&amp;sn=13518f7f693d78fd19f8dc5d21c7eb4b&amp;scene=0#wechat_redirect">YGC越来越慢，为什么</a>，大家可以关注下毕大师的公众号<code>HelloJava</code>，经常会发一些在公司碰到的诡异问题的排查，相信会让你涨姿势的，当然如果你还没有关注我的公众号<code>你假笨</code>，欢迎关注下，后续会时不时写点或许正巧你感兴趣的JVM系列文章。</p>
+
+<h2>Demo</h2>
+
+<p>先上一个demo，来描述下问题的情况，代码很简单，就是不断创建UUID，其实就是一个字符串，并将这个字符串调用下intern方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import java.util.UUID;
+</span><span class='line'>
+</span><span class='line'>public class StringTableTest {
+</span><span class='line'>  public static void main(String args[]) {
+</span><span class='line'>      for (int i = 0; i &lt; 10000000; i++) {
+</span><span class='line'>          uuid();
+</span><span class='line'>      }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  public static void uuid() {
+</span><span class='line'>      UUID.randomUUID().toString().intern();
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们使用的JVM参数如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-XX:+UseConcMarkSweepGC -XX:+PrintGCDetails -Xmx2G -Xms2G -Xmn100M</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里特意将新生代设置比较小，老生代设置比较大，让代码在执行过程中更容易突出问题来，大量做ygc，期间不做CMS GC，于是我们得到的输出结果类似下面的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[GC (Allocation Failure) [ParNew: 81920K-&gt;9887K(92160K), 0.0096027 secs] 81920K-&gt;9887K(2086912K), 0.0096428 secs] [Times: user=0.06 sys=0.01, real=0.01 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0190535 secs] 103182K-&gt;32655K(2086912K), 0.0190965 secs] [Times: user=0.12 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0198259 secs] 114575K-&gt;44124K(2086912K), 0.0198558 secs] [Times: user=0.13 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0213643 secs] 126044K-&gt;55592K(2086912K), 0.0213930 secs] [Times: user=0.14 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0234291 secs] 137512K-&gt;67061K(2086912K), 0.0234625 secs] [Times: user=0.16 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0243691 secs] 148981K-&gt;78548K(2086912K), 0.0244041 secs] [Times: user=0.15 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0235310 secs] 160468K-&gt;89998K(2086912K), 0.0235587 secs] [Times: user=0.17 sys=0.01, real=0.02 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0255960 secs] 171918K-&gt;101466K(2086912K), 0.0256264 secs] [Times: user=0.18 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0287876 secs] 183386K-&gt;113770K(2086912K), 0.0288188 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0298405 secs] 195690K-&gt;125267K(2086912K), 0.0298823 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0310182 secs] 207187K-&gt;136742K(2086912K), 0.0311156 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0321647 secs] 218662K-&gt;148210K(2086912K), 0.0321938 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0338090 secs] 230130K-&gt;159686K(2086912K), 0.0338446 secs] [Times: user=0.24 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0326612 secs] 241606K-&gt;171159K(2086912K), 0.0326912 secs] [Times: user=0.23 sys=0.01, real=0.03 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0350578 secs] 253079K-&gt;182627K(2086912K), 0.0351077 secs] [Times: user=0.26 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0346946 secs] 264547K-&gt;194096K(2086912K), 0.0347274 secs] [Times: user=0.25 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0384091 secs] 276016K-&gt;205567K(2086912K), 0.0384401 secs] [Times: user=0.27 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0394017 secs] 287487K-&gt;217035K(2086912K), 0.0394312 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0411447 secs] 298955K-&gt;228504K(2086912K), 0.0411748 secs] [Times: user=0.30 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0393449 secs] 310424K-&gt;239972K(2086912K), 0.0393743 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0444541 secs] 321892K-&gt;251441K(2086912K), 0.0444887 secs] [Times: user=0.32 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0449196 secs] 333361K-&gt;262910K(2086912K), 0.0449557 secs] [Times: user=0.33 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0497517 secs] 344830K-&gt;274382K(2086912K), 0.0497946 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0475741 secs] 356302K-&gt;285851K(2086912K), 0.0476130 secs] [Times: user=0.35 sys=0.01, real=0.04 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0461098 secs] 367771K-&gt;297320K(2086912K), 0.0461421 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0508071 secs] 379240K-&gt;308788K(2086912K), 0.0508428 secs] [Times: user=0.38 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0494472 secs] 390708K-&gt;320257K(2086912K), 0.0494938 secs] [Times: user=0.36 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0531527 secs] 402177K-&gt;331725K(2086912K), 0.0531845 secs] [Times: user=0.39 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0543701 secs] 413645K-&gt;343194K(2086912K), 0.0544025 secs] [Times: user=0.41 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0528003 secs] 425114K-&gt;354663K(2086912K), 0.0528283 secs] [Times: user=0.39 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0565080 secs] 436583K-&gt;366131K(2086912K), 0.0565394 secs] [Times: user=0.42 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0597181 secs] 448051K-&gt;377600K(2086912K), 0.0597653 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0606671 secs] 459520K-&gt;389068K(2086912K), 0.0607423 secs] [Times: user=0.46 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0590389 secs] 470988K-&gt;400539K(2086912K), 0.0590679 secs] [Times: user=0.43 sys=0.01, real=0.05 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0600462 secs] 482459K-&gt;412008K(2086912K), 0.0600757 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0608772 secs] 493928K-&gt;423476K(2086912K), 0.0609170 secs] [Times: user=0.45 sys=0.01, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0622107 secs] 505396K-&gt;434945K(2086912K), 0.0622391 secs] [Times: user=0.46 sys=0.00, real=0.06 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0626555 secs] 516865K-&gt;446413K(2086912K), 0.0626872 secs] [Times: user=0.47 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0647713 secs] 528333K-&gt;457882K(2086912K), 0.0648013 secs] [Times: user=0.47 sys=0.00, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0747113 secs] 539802K-&gt;469353K(2086912K), 0.0747446 secs] [Times: user=0.51 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0727498 secs] 551273K-&gt;480832K(2086912K), 0.0727899 secs] [Times: user=0.52 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0734084 secs] 562752K-&gt;492300K(2086912K), 0.0734402 secs] [Times: user=0.54 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0766368 secs] 574220K-&gt;503769K(2086912K), 0.0766673 secs] [Times: user=0.55 sys=0.01, real=0.07 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0778940 secs] 585689K-&gt;515237K(2086912K), 0.0779250 secs] [Times: user=0.56 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0815513 secs] 597157K-&gt;526712K(2086912K), 0.0815824 secs] [Times: user=0.57 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0812080 secs] 608632K-&gt;538181K(2086912K), 0.0812406 secs] [Times: user=0.58 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0818790 secs] 620101K-&gt;549651K(2086912K), 0.0819155 secs] [Times: user=0.60 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0840677 secs] 631571K-&gt;561122K(2086912K), 0.0841000 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0842462 secs] 643042K-&gt;572593K(2086912K), 0.0842785 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0875011 secs] 654513K-&gt;584076K(2086912K), 0.0875416 secs] [Times: user=0.62 sys=0.01, real=0.08 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0887645 secs] 665996K-&gt;595532K(2086912K), 0.0887956 secs] [Times: user=0.64 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0921844 secs] 677452K-&gt;607001K(2086912K), 0.0922153 secs] [Times: user=0.65 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0930053 secs] 688921K-&gt;618471K(2086912K), 0.0930380 secs] [Times: user=0.67 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0955379 secs] 700391K-&gt;629942K(2086912K), 0.0955873 secs] [Times: user=0.69 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0919127 secs] 711862K-&gt;641411K(2086912K), 0.0919528 secs] [Times: user=0.68 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0942291 secs] 723331K-&gt;652879K(2086912K), 0.0942611 secs] [Times: user=0.70 sys=0.00, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0951904 secs] 734799K-&gt;664348K(2086912K), 0.0952265 secs] [Times: user=0.71 sys=0.00, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0963585 secs] 746268K-&gt;675816K(2086912K), 0.0963909 secs] [Times: user=0.72 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0969504 secs] 757736K-&gt;687285K(2086912K), 0.0969843 secs] [Times: user=0.72 sys=0.01, real=0.09 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0999066 secs] 769205K-&gt;698753K(2086912K), 0.0999376 secs] [Times: user=0.75 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0998371 secs] 780673K-&gt;710222K(2086912K), 0.0998835 secs] [Times: user=0.75 sys=0.00, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.1024616 secs] 792142K-&gt;721691K(2086912K), 0.1024927 secs] [Times: user=0.77 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.1015041 secs] 803611K-&gt;733159K(2086912K), 0.1015378 secs] [Times: user=0.76 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1058214 secs] 815079K-&gt;744628K(2086912K), 0.1058532 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] 
+</span><span class='line'>[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1061273 secs] 826548K-&gt;756096K(2086912K), 0.1061620 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] </span></code></pre></td></tr></table></div></figure>
+
+
+<p>有没有发现YGC不断发生，并且发生的时间不断在增长，从10ms慢慢增长到了100ms，甚至还会继续涨下去</p>
+
+<h2>String.intern方法</h2>
+
+<p>从上面的demo我们能挖掘到的可能就是intern这个方法了，那我们先来了解下intern方法的实现，这是String提供的一个方法，jvm提供这个方法的目的是希望对于某个同名字符串使用非常多的场景，在jvm里只保留一份，比如我们不断new String(&ldquo;a&rdquo;)，其实在java heap里会有多个String的对象，并且值都是a，如果我们只希望内存里只保留一个a，或者希望我接下来用到的地方都返回同一个a，那就可以用String.intern这个方法了，用法如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>String a = "a".intern();
+</span><span class='line'>...
+</span><span class='line'>String b = a.intern();
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这样b和a都是指向内存里的同一个String对象，那JVM里到底怎么做到的呢？</p>
+
+<p>我们看到intern这个方法其实是一个native方法，具体对应到JVM里的逻辑是</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>
+</span><span class='line'>oop StringTable::intern(oop string, TRAPS)
+</span><span class='line'>{
+</span><span class='line'>  if (string == NULL) return NULL;
+</span><span class='line'>  ResourceMark rm(THREAD);
+</span><span class='line'>  int length;
+</span><span class='line'>  Handle h_string (THREAD, string);
+</span><span class='line'>  jchar* chars = java_lang_String::as_unicode_string(string, length);
+</span><span class='line'>  oop result = intern(h_string, chars, length, CHECK_NULL);
+</span><span class='line'>  return result;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>oop StringTable::intern(Handle string_or_null, jchar* name,
+</span><span class='line'>                        int len, TRAPS) {
+</span><span class='line'>  unsigned int hashValue = hash_string(name, len);
+</span><span class='line'>  int index = the_table()-&gt;hash_to_index(hashValue);
+</span><span class='line'>  oop found_string = the_table()-&gt;lookup(index, name, len, hashValue);
+</span><span class='line'>
+</span><span class='line'>  // Found
+</span><span class='line'>  if (found_string != NULL) return found_string;
+</span><span class='line'>
+</span><span class='line'>  debug_only(StableMemoryChecker smc(name, len * sizeof(name[0])));
+</span><span class='line'>  assert(!Universe::heap()-&gt;is_in_reserved(name) || GC_locker::is_active(),
+</span><span class='line'>         "proposed name of symbol must be stable");
+</span><span class='line'>
+</span><span class='line'>  Handle string;
+</span><span class='line'>  // try to reuse the string if possible
+</span><span class='line'>  if (!string_or_null.is_null() && (!JavaObjectsInPerm || string_or_null()-&gt;is_perm())) {
+</span><span class='line'>    string = string_or_null;
+</span><span class='line'>  } else {
+</span><span class='line'>    string = java_lang_String::create_tenured_from_unicode(name, len, CHECK_NULL);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // Grab the StringTable_lock before getting the_table() because it could
+</span><span class='line'>  // change at safepoint.
+</span><span class='line'>  MutexLocker ml(StringTable_lock, THREAD);
+</span><span class='line'>
+</span><span class='line'>  // Otherwise, add to symbol to table
+</span><span class='line'>  return the_table()-&gt;basic_add(index, string, name, len,
+</span><span class='line'>                                hashValue, CHECK_NULL);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也就是说是其实在JVM里存在一个叫做StringTable的数据结构，这个数据结构是一个Hashtable，在我们调用String.intern的时候其实就是先去这个StringTable里查找是否存在一个同名的项，如果存在就直接返回对应的对象，否则就往这个table里插入一项，指向这个String对象，那么再下次通过intern再来访问同名的String对象的时候，就会返回上次插入的这一项指向的String对象</p>
+
+<p>至此大家应该知道其原理了，另外我这里还想说个题外话，记得几年前tomcat里爆发的一个HashMap导致的hash碰撞的问题，这里其实也是一个Hashtable，所以也还是存在类似的风险，不过JVM里提供一个参数专门来控制这个table的size，<code>-XX:StringTableSize</code>，这个参数的默认值如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>product(uintx, StringTableSize, NOT_LP64(1009) LP64_ONLY(60013),          \
+</span><span class='line'>          "Number of buckets in the interned String table")                 \</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外JVM还会根据hash碰撞的情况来决定是否做rehash，比如你从这个StringTable里查找某个字符串是否存在，如果对其对应的桶挨个遍历，超过了100个还是没有找到对应的同名的项，那就会设置一个flag，让下次进入到safepoint的时候做一次rehash动作，尽量减少碰撞的发生，但是当恶化到一定程度的时候，其实也没啥办法啦，因为你的数据量实在太大，桶子数就那么多，那每个桶再怎么均匀也会带着一个很长的链表，所以此时我们通过修改上面的StringTableSize将桶数变大，可能会一定程度上缓解，但是如果是java代码的问题导致泄露，那就只能定位到具体的代码进行改造了。</p>
+
+<h2>StringTable为什么会影响YGC</h2>
+
+<p>YGC的过程我不打算再这篇文章里细说，因为我希望尽量保持每篇文章的内容不过于臃肿，有机会可以单独写篇文章来介绍，我这里将列出ygc过程里StringTable这块的具体代码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_StringTable_oops_do)) {
+</span><span class='line'>    if (so & SO_Strings || (!collecting_perm_gen && !JavaObjectsInPerm)) {
+</span><span class='line'>      StringTable::oops_do(roots);
+</span><span class='line'>    }
+</span><span class='line'>    if (JavaObjectsInPerm) {
+</span><span class='line'>      // Verify the string table contents are in the perm gen
+</span><span class='line'>      NOT_PRODUCT(StringTable::oops_do(&assert_is_perm_closure));
+</span><span class='line'>    }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因为YGC过程不涉及到对perm做回收，因此<code>collecting_perm_gen</code>是false，而<code>JavaObjectsInPerm</code>默认情况下也是false，表示String.intern返回的字符串是不是在perm里分配，如果是false，表示是在heap里分配的，因此StringTable指向的字符串是在heap里分配的，所以ygc过程需要对StringTable做扫描，以保证处于新生代的String代码不会被回收掉</p>
+
+<p>至此大家应该明白了为什么YGC过程会对StringTable扫描</p>
+
+<p>有了这一层意思之后，YGC的时间长短和扫描StringTable有关也可以理解了，设想一下如果StringTable非常庞大，那是不是意味着YGC过程扫描的时间也会变长呢</p>
+
+<h2>YGC过程扫描StringTable对CPU影响大吗</h2>
+
+<p>这个问题其实是我写这文章的时候突然问自己的一个问题，于是稍微想了下来跟大家解释下，因为大家也可能会问这么个问题</p>
+
+<p>要回答这个问题我首先得问你们的机器到底有多少个核，如果核数很多的话，其实影响不是很大，因为这个扫描的过程是单个GC线程来做的，所以最多消耗一个核，因此看起来对于核数很多的情况，基本不算什么</p>
+
+<h2>StringTable什么时候清理</h2>
+
+<p>YGC过程不会对StringTable做清理，这也就是我们demo里的情况会让Stringtable越来越大，因为到目前为止还只看到YGC过程，但是在Full GC或者CMS GC过程会对StringTable做清理，具体验证很简单，执行下<code>jmap -histo:live &lt;pid&gt;</code>，你将会发现YGC的时候又降下去了</p>
+
+<h2>本文写作时间</h2>
+
+<p>利用午饭前的一点时间写下 2016/11/06 12:00~12:40</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之不保证顺序的Class.getMethods]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/11/02/class-getmethods/"/>
+    <updated>2016-11-02T09:39:29+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/11/02/class-getmethods</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>本文要说的内容是今天公司有个线上系统踩了一个坑，并且貌似还造成了一定的影响，后来系统相关的人定位到了是<code>java.lang.Class.getMethods</code>返回的顺序可能不同机器不一样，有问题的机器和没问题的机器这个返回的方法列表是不一样的，后面他们就来找到我求证是否jdk里有这潜规则</p>
+
+<p>本来这个问题简单一句话就可以说明白，所以在晚上推送的消息里也将这个事实告诉了大家，大家知道就好，以后不要再掉到坑里去了，但是这个要细说起来其实也值得一说，于是在消息就附加了征求大家意见的内容，看大家是否有兴趣或者是否踩到过此坑，没想到有这么多人响应，表示对这个话题很感兴趣，并且总结了大家问得最多的两个问题是</p>
+
+<ul>
+<li>为什么有代码需要依赖这个顺序</li>
+<li>jvm里为什么不保证顺序</li>
+</ul>
+
+
+<p>那这篇文章主要就针对这两个问题展开说一下，另外以后针对此类可写可不写的文章先征求下大家的意见再来写可能效果会更好点，一来可以回答大家的一些疑问（当然有些问题我也可能回答不上来，不过我尽量去通读代码回答好大家），二来希望对我公众号里的文章继续保持<code>不求最多，只求最精</code>的态度。</p>
+
+<p>为了不辜负大家的热情，我连夜赶写了这篇文章，如果大家觉得我写的这些文章对大家有帮助，希望您能将文章分享出去，同时将我的公众号<code>你假笨</code>推荐给您身边更多的技术人，能帮助到更多的人去了解更多的细节，在下在此先谢过。</p>
+
+<!--more-->
+
+
+<h2>依赖顺序的场景</h2>
+
+<p>如果大家看过或者实现过序列化反序列化的代码，这个问题就不难回答了，今天碰到的这个问题其实是发生在大家可能最常用的<code>fastjson</code>库里的，所以如果大家在使用这个库，请务必检查下你的代码，以免踩到此坑</p>
+
+<h3>对象序列化</h3>
+
+<p>大家都知道当我们序列化好一个对象之后，要反序列回来，那问题就来了，就拿这个json序列化来说吧，我们要将对象序列化成json串，那意味着我们要先取出这个对象的属性，然后写成键值对的形式，那取值就意味着我们要遵循java bean的规范通过getter方法来取，那其实getter方法有两种，一种是boolean类型的，一种是其他类型的，如果是boolean类型的，那我们通常是<code>isXXX()</code>这样的方法，如果是其他类型的，一般是<code>getXXX()</code>这样的方法。那假如说我们的类里针对某个属性a，同时存在两个方法<code>isA()</code>和<code>getA()</code>，那究竟我们会调用哪个来取值？这个就取决于具体的序列化框架实现了，比如导致我们这篇文章诞生的<code>fastjson</code>，就是利用我们这篇文章的主角<code>java.lang.Class.getMethods</code>返回的数组，然后挨个遍历，先找到哪个就是哪个，如果我们的这个数组正好因为jvm本身实现没有保证顺序，那么可能先找到<code>isA()</code>，也可能先找到<code>getA()</code>，如果两个方法都是返回a这个属性其实问题也不大，假如正好是这两个方法返回不同的内容呢？</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private A a;
+</span><span class='line'>
+</span><span class='line'>public A getA(){
+</span><span class='line'>  return a;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public boolean isA(){
+</span><span class='line'>  return false;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void setA(A a){
+</span><span class='line'>  this.a=a;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>如果是上面的内容，那可能就会悲剧了，如果选了<code>isA()</code>，那其实是返回一个boolean类型的，将这个boolean写入到json串里，如果是选了<code>getA()</code>，那就是将A这个类型的对象写到json串里</p>
+
+<h3>对象反序列化</h3>
+
+<p>在完成了序列化过程之后，需要将这个字符串进行反序列化了，于是就会去找json串里对应字段的setter方法，比如上面的<code>setA(A a)</code>，假如我们之前选了<code>isA()</code>序列化好内容，那我们此时的值是一个boolean值false，那就无法通过<code>setA</code>来赋值还原对象了。</p>
+
+<h3>解决方案</h3>
+
+<p>相信大家看完我上面的描述，知道这个问题所在了，要避免类似的问题，方案其实也挺多，比如对方法进行先排序，又比如说优先使用<code>isXXX()</code>方法，不过这种需要和开发者达成共识，和setter要对应得起来</p>
+
+<h2>jvm里为什么不保证顺序</h2>
+
+<p>JDK层面的代码我就暂时不说了，大家都能看到代码，从<code>java.lang.Class.getMethods</code>一层层走下去，相信大家细心点还是能抓住整个脉络的，我这里主要想说大家可能比较难看到的一些实现，比如JVM里的具体实现</p>
+
+<p>正常情况下大家跟代码能跟到调用了<code>java.lang.Class.getDeclaredMethods0</code>这个native方法，其具体实现如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>JVM_ENTRY(jobjectArray, JVM_GetClassDeclaredMethods(JNIEnv *env, jclass ofClass, jboolean publicOnly))
+</span><span class='line'>{
+</span><span class='line'>  JVMWrapper("JVM_GetClassDeclaredMethods");
+</span><span class='line'>  return get_class_declared_methods_helper(env, ofClass, publicOnly,
+</span><span class='line'>                                           /*want_constructor*/ false,
+</span><span class='line'>                                           SystemDictionary::reflect_Method_klass(), THREAD);
+</span><span class='line'>}
+</span><span class='line'>JVM_END</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其主要调用了<code>get_class_declared_methods_helper</code>方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>static jobjectArray get_class_declared_methods_helper(
+</span><span class='line'>                                  JNIEnv *env,
+</span><span class='line'>                                  jclass ofClass, jboolean publicOnly,
+</span><span class='line'>                                  bool want_constructor,
+</span><span class='line'>                                  Klass* klass, TRAPS) {
+</span><span class='line'>
+</span><span class='line'>  JvmtiVMObjectAllocEventCollector oam;
+</span><span class='line'>
+</span><span class='line'>  // Exclude primitive types and array types
+</span><span class='line'>  if (java_lang_Class::is_primitive(JNIHandles::resolve_non_null(ofClass))
+</span><span class='line'>      || java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass))-&gt;oop_is_array()) {
+</span><span class='line'>    // Return empty array
+</span><span class='line'>    oop res = oopFactory::new_objArray(klass, 0, CHECK_NULL);
+</span><span class='line'>    return (jobjectArray) JNIHandles::make_local(env, res);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  instanceKlassHandle k(THREAD, java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass)));
+</span><span class='line'>
+</span><span class='line'>  // Ensure class is linked
+</span><span class='line'>  k-&gt;link_class(CHECK_NULL);
+</span><span class='line'>
+</span><span class='line'>  Array&lt;Method*&gt;* methods = k-&gt;methods();
+</span><span class='line'>  int methods_length = methods-&gt;length();
+</span><span class='line'>
+</span><span class='line'>  // Save original method_idnum in case of redefinition, which can change
+</span><span class='line'>  // the idnum of obsolete methods.  The new method will have the same idnum
+</span><span class='line'>  // but if we refresh the methods array, the counts will be wrong.
+</span><span class='line'>  ResourceMark rm(THREAD);
+</span><span class='line'>  GrowableArray&lt;int&gt;* idnums = new GrowableArray&lt;int&gt;(methods_length);
+</span><span class='line'>  int num_methods = 0;
+</span><span class='line'>
+</span><span class='line'>  for (int i = 0; i &lt; methods_length; i++) {
+</span><span class='line'>    methodHandle method(THREAD, methods-&gt;at(i));
+</span><span class='line'>    if (select_method(method, want_constructor)) {
+</span><span class='line'>      if (!publicOnly || method-&gt;is_public()) {
+</span><span class='line'>        idnums-&gt;push(method-&gt;method_idnum());
+</span><span class='line'>        ++num_methods;
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // Allocate result
+</span><span class='line'>  objArrayOop r = oopFactory::new_objArray(klass, num_methods, CHECK_NULL);
+</span><span class='line'>  objArrayHandle result (THREAD, r);
+</span><span class='line'>
+</span><span class='line'>  // Now just put the methods that we selected above, but go by their idnum
+</span><span class='line'>  // in case of redefinition.  The methods can be redefined at any safepoint,
+</span><span class='line'>  // so above when allocating the oop array and below when creating reflect
+</span><span class='line'>  // objects.
+</span><span class='line'>  for (int i = 0; i &lt; num_methods; i++) {
+</span><span class='line'>    methodHandle method(THREAD, k-&gt;method_with_idnum(idnums-&gt;at(i)));
+</span><span class='line'>    if (method.is_null()) {
+</span><span class='line'>      // Method may have been deleted and seems this API can handle null
+</span><span class='line'>      // Otherwise should probably put a method that throws NSME
+</span><span class='line'>      result-&gt;obj_at_put(i, NULL);
+</span><span class='line'>    } else {
+</span><span class='line'>      oop m;
+</span><span class='line'>      if (want_constructor) {
+</span><span class='line'>        m = Reflection::new_constructor(method, CHECK_NULL);
+</span><span class='line'>      } else {
+</span><span class='line'>        m = Reflection::new_method(method, UseNewReflection, false, CHECK_NULL);
+</span><span class='line'>      }
+</span><span class='line'>      result-&gt;obj_at_put(i, m);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  return (jobjectArray) JNIHandles::make_local(env, result());
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的<code>k-&gt;method_with_idnum(idnums-&gt;at(i))</code>,我们基本知道方法主要是从klass里来的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Method* InstanceKlass::method_with_idnum(int idnum) {
+</span><span class='line'>  Method* m = NULL;
+</span><span class='line'>  if (idnum &lt; methods()-&gt;length()) {
+</span><span class='line'>    m = methods()-&gt;at(idnum);
+</span><span class='line'>  }
+</span><span class='line'>  if (m == NULL || m-&gt;method_idnum() != idnum) {
+</span><span class='line'>    for (int index = 0; index &lt; methods()-&gt;length(); ++index) {
+</span><span class='line'>      m = methods()-&gt;at(index);
+</span><span class='line'>      if (m-&gt;method_idnum() == idnum) {
+</span><span class='line'>        return m;
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>    // None found, return null for the caller to handle.
+</span><span class='line'>    return NULL;
+</span><span class='line'>  }
+</span><span class='line'>  return m;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此InstanceKlass里的methods是关键，而这个methods的创建是在类解析的时候发生的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>instanceKlassHandle ClassFileParser::parseClassFile(Symbol* name,
+</span><span class='line'>                                                    ClassLoaderData* loader_data,
+</span><span class='line'>                                                    Handle protection_domain,
+</span><span class='line'>                                                    KlassHandle host_klass,
+</span><span class='line'>                                                    GrowableArray&lt;Handle&gt;* cp_patches,
+</span><span class='line'>                                                    TempNewSymbol& parsed_name,
+</span><span class='line'>                                                    bool verify,
+</span><span class='line'>                                                    TRAPS) {
+</span><span class='line'>                                                    
+</span><span class='line'>                                                    
+</span><span class='line'>...
+</span><span class='line'> Array&lt;Method*&gt;* methods = parse_methods(access_flags.is_interface(),
+</span><span class='line'>                                            &promoted_flags,
+</span><span class='line'>                                            &has_final_method,
+</span><span class='line'>                                            &declares_default_methods,
+</span><span class='line'>
+</span><span class='line'>...                                            CHECK_(nullHandle));
+</span><span class='line'>// sort methods
+</span><span class='line'>intArray* method_ordering = sort_methods(methods); 
+</span><span class='line'>...
+</span><span class='line'>this_klass-&gt;set_methods(_methods);
+</span><span class='line'>...
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>上面的<code>parse_methods</code>就是从class文件里挨个解析出method，并存到_methods字段里，但是接下来做了一次<code>sort_methods</code>的动作，这个动作会对解析出来的方法做排序</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>intArray* ClassFileParser::sort_methods(Array&lt;Method*&gt;* methods) {
+</span><span class='line'>  int length = methods-&gt;length();
+</span><span class='line'>  // If JVMTI original method ordering or sharing is enabled we have to
+</span><span class='line'>  // remember the original class file ordering.
+</span><span class='line'>  // We temporarily use the vtable_index field in the Method* to store the
+</span><span class='line'>  // class file index, so we can read in after calling qsort.
+</span><span class='line'>  // Put the method ordering in the shared archive.
+</span><span class='line'>  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+</span><span class='line'>    for (int index = 0; index &lt; length; index++) {
+</span><span class='line'>      Method* m = methods-&gt;at(index);
+</span><span class='line'>      assert(!m-&gt;valid_vtable_index(), "vtable index should not be set");
+</span><span class='line'>      m-&gt;set_vtable_index(index);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>  // Sort method array by ascending method name (for faster lookups & vtable construction)
+</span><span class='line'>  // Note that the ordering is not alphabetical, see Symbol::fast_compare
+</span><span class='line'>  Method::sort_methods(methods);
+</span><span class='line'>
+</span><span class='line'>  intArray* method_ordering = NULL;
+</span><span class='line'>  // If JVMTI original method ordering or sharing is enabled construct int
+</span><span class='line'>  // array remembering the original ordering
+</span><span class='line'>  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+</span><span class='line'>    method_ordering = new intArray(length);
+</span><span class='line'>    for (int index = 0; index &lt; length; index++) {
+</span><span class='line'>      Method* m = methods-&gt;at(index);
+</span><span class='line'>      int old_index = m-&gt;vtable_index();
+</span><span class='line'>      assert(old_index &gt;= 0 && old_index &lt; length, "invalid method index");
+</span><span class='line'>      method_ordering-&gt;at_put(index, old_index);
+</span><span class='line'>      m-&gt;set_vtable_index(Method::invalid_vtable_index);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>  return method_ordering;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>// This is only done during class loading, so it is OK to assume method_idnum matches the methods() array
+</span><span class='line'>// default_methods also uses this without the ordering for fast find_method
+</span><span class='line'>void Method::sort_methods(Array&lt;Method*&gt;* methods, bool idempotent, bool set_idnums) {
+</span><span class='line'>  int length = methods-&gt;length();
+</span><span class='line'>  if (length &gt; 1) {
+</span><span class='line'>    {
+</span><span class='line'>      No_Safepoint_Verifier nsv;
+</span><span class='line'>      QuickSort::sort&lt;Method*&gt;(methods-&gt;data(), length, method_comparator, idempotent);
+</span><span class='line'>    }
+</span><span class='line'>    // Reset method ordering
+</span><span class='line'>    if (set_idnums) {
+</span><span class='line'>      for (int i = 0; i &lt; length; i++) {
+</span><span class='line'>        Method* m = methods-&gt;at(i);
+</span><span class='line'>        m-&gt;set_method_idnum(i);
+</span><span class='line'>        m-&gt;set_orig_method_idnum(i);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的<code>Method::sort_methods</code>可以看出其实具体的排序算法是<code>method_comparator</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Comparer for sorting an object array containing
+</span><span class='line'>// Method*s.
+</span><span class='line'>static int method_comparator(Method* a, Method* b) {
+</span><span class='line'>  return a-&gt;name()-&gt;fast_compare(b-&gt;name());
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>比较的是两个方法的名字，但是这个名字不是一个字符串，而是一个Symbol对象，每个类或者方法名字都会对应一个Symbol对象，在这个名字第一次使用的时候构建，并且不是在java heap里分配的，比如jdk7里就是在c heap里通过malloc来分配的，jdk8里会在metaspace里分配</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Note: this comparison is used for vtable sorting only; it doesn't matter
+</span><span class='line'>// what order it defines, as long as it is a total, time-invariant order
+</span><span class='line'>// Since Symbol*s are in C_HEAP, their relative order in memory never changes,
+</span><span class='line'>// so use address comparison for speed
+</span><span class='line'>int Symbol::fast_compare(Symbol* other) const {
+</span><span class='line'> return (((uintptr_t)this &lt; (uintptr_t)other) ? -1
+</span><span class='line'>   : ((uintptr_t)this == (uintptr_t) other) ? 0 : 1);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的fast_compare方法知道，其实对比的是地址的大小，因为Symbol对象是通过malloc来分配的，因此新分配的Symbol对象的地址就不一定比后分配的Symbol对象地址小，也不一定大，因为期间存在内存free的动作，那地址是不会一直线性变化的，之所以不按照字母排序，主要还是为了速度考虑，根据地址排序是最快的。</p>
+
+<p>综上所述，一个类里的方法经过排序之后，顺序可能会不一样，取决于方法名对应的Symbol对象的地址的先后顺序</p>
+
+<h3>JVM为什么要对方法排序</h3>
+
+<p>其实这个问题很简单，就是为了快速找到方法呢，当我们要找某个名字的方法的时候，根据对应的Symbol对象，能根据对象的地址使用二分排序的算法快速定位到具体的方法。</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM源码分析之Metaspace解密]]></title>
@@ -7368,813 +8203,6 @@
 <h2>堆外内存常配合使用System GC</h2>
 
 <p>这里说的堆外内存主要针对java.nio.DirectByteBuffer，这些对象的创建过程会通过Unsafe接口直接通过os::malloc来分配内存，然后将内存的起始地址和大小存到java.nio.DirectByteBuffer对象里，这样就可以直接操作这些内存。这些内存只有在DirectByteBuffer回收掉之后才有机会被回收，因此如果这些对象大部分都移到了old，但是一直没有触发CMS GC或者Full GC，那么悲剧将会发生，因为你的物理内存被他们耗尽了，因此为了避免这种悲剧的发生，通过-XX:MaxDirectMemorySize来指定最大的堆外内存大小，当使用达到了阈值的时候将调用System.gc来做一次full gc，以此来回收掉没有被使用的堆外内存，具体堆外内存是如何回收的，其原理机制又是怎样的，还是后面写篇详细的文章吧</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM Bug:多个线程持有一把锁?]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug/"/>
-    <updated>2014-07-24T14:10:26+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/07/24/jvm-thread-dump-bug</id>
-    <content type="html"><![CDATA[<p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
-
-<h2>JVM线程dump Bug描述</h2>
-
-<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
-
-<!--more-->
-
-
-<p><img src="http://nijiaben.github.io/images/2014/07/thread_dump_bug.jpg"></p>
-
-<h2>JStack命令的整个过程</h2>
-
-<p>&#8195;&#8195;上面提到了线程dump，那么就不得不提执行线程dump的工具&mdash;jstack，这个工具是Java自带的工具，和Java处于同一个目录下，主要是用来dump线程的，或许大家也有使用kill -3的命令来dump线程，但这两者最明显的一个区别是，前者的dump内容是由jstack这个进程来输出的，目标JVM进程将dump内容发给jstack进程(注意这是没有加-m参数的场景，指定-m参数就有点不一样了，它使用的是serviceability agent的api来实现的，底层通过ptrace的方式来获取目标进程的内容，执行过程可能会比正常模式更长点)，这意味着可以做文件重定向，将线程dump内容输出到指定文件里；而后者是由目标进程输出的，只会产生在目标进程的标准输出文件里，如果正巧标准输出里本身就有内容的话，看起来会比较乱，比如想通过一些分析工具去分析的话，要是该工具没有做过滤操作，很可能无法分析。因此一般情况我们尽量使用jstack，另外jstack还有很多实用的参数，比如<code>jstack pid &gt;thread_dump.log</code>，该命令会将指定pid的进程的线程dump到当前目录的thread_dump.log文件里。</p>
-
-<p>&#8195;&#8195;jstack是使用Java实现的，它通过给目标JVM进程发送一个threaddump的命令，目标JVM的监听线程（<code>attachListener</code>）会实时监听传过来的命令(其实attachListener线程并不是一启动就创建的，它是lazy创建启动的)，当attachListener收到threaddump命令时会调用thread_dump的方法来处理dump操作(方法在attachListener.cpp里)。</p>
-
-<pre class="prettyPrint">
-static jint thread_dump(AttachOperation* op, outputStream* out) {
-  bool print_concurrent_locks = false;
-  if (op->arg(0) != NULL && strcmp(op->arg(0), "-l") == 0) {
-    print_concurrent_locks = true;
-  }
-
-  // thread stacks
-  VM_PrintThreads op1(out, print_concurrent_locks);
-  VMThread::execute(&op1);
-
-  // JNI global handles
-  VM_PrintJNI op2(out);
-  VMThread::execute(&op2);
-
-  // Deadlock detection
-  VM_FindDeadlocks op3(out);
-  VMThread::execute(&op3);
-
-  return JNI_OK;
-}
-</pre>
-
-
-<p>&#8195;&#8195;从上面的方法可以看到，jstack命令执行了三个操作：</p>
-
-<ul>
-<li><code>VM_PrintThreads</code>：打印线程栈</li>
-<li><code>VM_PrintJNI</code>：打印JNI</li>
-<li><code>VM_FindDeadlocks</code>：打印死锁</li>
-</ul>
-
-
-<p>&#8195;&#8195;三个操作都是交给VMThread线程去执行的，VMThread线程在整个JAVA进程有且只会有一个。可以想象一下VMThread线程的简单执行过程：不断地轮询某个任务列表并在有任务时依次执行任务。任务执行时，它会根据具体的任务决定是否会暂停整个应用，也就是stop the world，这是不是让我们联想到了我们熟悉的GC过程？是的，我们的ygc以及cmsgc的两个暂停应用的阶段(init_mark和remark)都是由这个线程来执行的，并且都要求暂停整个应用。其实上面的三个操作都是要求暂停整个应用的，也就是说jstack触发的线程dump过程也是会暂停应用的，只是这个过程一般很快就结束，不会有明显的感觉。另外内存dump的jmap命令，也是会暂停整个应用的，如果使用了-F的参数，其底层也是使用serviceability agent的api来dump的，但是dump内存的速度会明显慢很多。</p>
-
-<h2>VMThread执行任务的过程</h2>
-
-<p>&#8195;&#8195;VMThread执行的任务称为vm_opration，在JVM中存在两种vm_opration，一种是需要在安全点内执行的(所谓安全点，就是系统处于一个安全的状态，除了VMThread这个线程可以正常运行之外，其他的线程都必须暂停执行，在这种情况下就可以放心执行当前的一系列vm_opration了)，另外一种是不需要在安全点内执行的。而这次我们讨论的线程dump是需要在安全点内执行的。</p>
-
-<p>&#8195;&#8195;以下是VMThread轮询的逻辑:</p>
-
-<pre class="prettyPrint">
-void VMThread::loop() {
-  assert(_cur_vm_operation == NULL, "no current one should be executing");
-
-  while(true) {
-    ...
-    //已经获取了一个vm_operation
-    if (_cur_vm_operation->evaluate_at_safepoint()) {
-        //如果该vm_operation需要在安全点内执行
-        _vm_queue->set_drain_list(safepoint_ops); 
-        SafepointSynchronize::begin();//进入安全点
-        evaluate_operation(_cur_vm_operation);
-        do {
-          _cur_vm_operation = safepoint_ops;
-          if (_cur_vm_operation != NULL) {
-            do {
-              VM_Operation* next = _cur_vm_operation->next();
-              _vm_queue->set_drain_list(next);
-              evaluate_operation(_cur_vm_operation);
-              _cur_vm_operation = next;
-              if (PrintSafepointStatistics) {
-                SafepointSynchronize::inc_vmop_coalesced_count();
-              }
-            } while (_cur_vm_operation != NULL);
-          }
-          if (_vm_queue->peek_at_safepoint_priority()) {
-            MutexLockerEx mu_queue(VMOperationQueue_lock,
-                                     Mutex::_no_safepoint_check_flag);
-            safepoint_ops = _vm_queue->drain_at_safepoint_priority();
-          } else {
-            safepoint_ops = NULL;
-          }
-        } while(safepoint_ops != NULL);
-        _vm_queue->set_drain_list(NULL);
-        SafepointSynchronize::end();//退出安全点
-      } else {  // not a safepoint operation
-        if (TraceLongCompiles) {
-          elapsedTimer t;
-          t.start();
-          evaluate_operation(_cur_vm_operation);
-          t.stop();
-          double secs = t.seconds();
-          if (secs * 1e3 > LongCompileThreshold) {
-            tty->print_cr("vm %s: %3.7f secs]", _cur_vm_operation->name(), secs);
-          }
-        } else {
-            evaluate_operation(_cur_vm_operation);
-        }
-        _cur_vm_operation = NULL;
-      }
-    }
-    ...
-  }
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;在这里重点解释下在安全点内执行的vm_opration的过程，VMThread通过不断循环从_vm_queue中获取一个或者几个需要在安全点内执行的vm_opertion，然后在准备执行这些vm_opration之前先通过调用<code>SafepointSynchronize::begin()</code>进入到安全点状态，在执行完这些vm_opration之后，调用<code>SafepointSynchronize::end()</code>，退出安全点模式，恢复之前暂停的所有线程让他们继续运行。对于安全点这块的逻辑挺复杂的，仅仅需要记住在进入安全点模式的时候会持有Threads_lock这把线程互斥锁，对线程的操作都需要获取到这把锁才能继续执行，并且还会设置安全点的状态，如果正在进入安全点过程中设置_state为_synchronizing，当所有线程都完全进入了安全点之后设置_state为_synchronized状态，退出的时候设置为_not_synchronized状态。</p>
-
-<pre class="prettyPrint">
-void SafepointSynchronize::begin() {
-  ...
-  Threads_lock->lock();
-  ...
-  _state            = _synchronizing;
-  ...
-   _state = _synchronized;
-...
-}
-
-void SafepointSynchronize::end() {
-    assert(Threads_lock->owned_by_self(), "must hold Threads_lock");
-    ...
-    _state = _not_synchronized;
-    ...
-    Threads_lock->unlock();
-}
-</pre>
-
-
-<h2>线程Dump中的VM_PrintThreads过程</h2>
-
-<p>&#8195;&#8195;回到开头提到的JVM线程Dump时的Bug，从我们打印的结果来看也基本猜到了这个过程：遍历每个Java线程，然后再遍历每一帧，打印该帧的一些信息(包括类，方法名，行数等)，在打印完每一帧之后然后打印这帧已经关联了的锁信息，下面代码就是打印每个线程的过程:</p>
-
-<pre class="prettyPrint">
-void JavaThread::print_stack_on(outputStream* st) {
-  if (!has_last_Java_frame()) return;
-  ResourceMark rm;
-  HandleMark   hm;
-
-  RegisterMap reg_map(this);
-  vframe* start_vf = last_java_vframe(®_map);
-  int count = 0;
-  for (vframe* f = start_vf; f; f = f->sender() ) {
-    if (f->is_java_frame()) {
-      javaVFrame* jvf = javaVFrame::cast(f);
-      java_lang_Throwable::print_stack_element(st, jvf->method(), jvf->bci());
-      if (JavaMonitorsInStackTrace) {
-        jvf->print_lock_info_on(st, count);
-      }
-    } else {
-      // Ignore non-Java frames
-    }
-    count++;
-    if (MaxJavaStackTraceDepth == count) return;
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;和我们这次问题相关的逻辑，也就是打印<code>"-locked"</code>的信息是正好是在<code>jvf-&gt;print_lock_info_on(st, count)</code>这行里面，请看具体实现:</p>
-
-<pre class="prettyPrint">
-void javaVFrame::print_lock_info_on(outputStream* st, int frame_count) {
-  ResourceMark rm;
-  if (frame_count == 0) {
-    if (method()->name() == vmSymbols::wait_name() &&
-        instanceKlass::cast(method()->method_holder())->name() == vmSymbols::java_lang_Object()) {
-      StackValueCollection* locs = locals();
-      if (!locs->is_empty()) {
-        StackValue* sv = locs->at(0);
-        if (sv->type() == T_OBJECT) {
-          Handle o = locs->at(0)->get_obj();
-          print_locked_object_class_name(st, o, "waiting on");
-        }
-      }
-    } else if (thread()->current_park_blocker() != NULL) {
-      oop obj = thread()->current_park_blocker();
-      Klass* k = Klass::cast(obj->klass());
-      st->print_cr("\t- %s <" INTPTR_FORMAT "> (a %s)", "parking to wait for ", (address)obj, k->external_name());
-    }
-  }
-
-  GrowableArray<MonitorInfo*>* mons = monitors();
-  if (!mons->is_empty()) {
-    bool found_first_monitor = false;
-    for (int index = (mons->length()-1); index >= 0; index--) {
-      MonitorInfo* monitor = mons->at(index);
-      if (monitor->eliminated() && is_compiled_frame()) {
-        if (monitor->owner_is_scalar_replaced()) {
-          Klass* k = Klass::cast(monitor->owner_klass());
-          st->print("\t- eliminated <owner is scalar replaced> (a %s)", k->external_name());
-        } else {
-          oop obj = monitor->owner();
-          if (obj != NULL) {
-            print_locked_object_class_name(st, obj, "eliminated");
-          }
-        }
-        continue;
-      }
-      if (monitor->owner() != NULL) {
-        const char *lock_state = "locked";
-        if (!found_first_monitor && frame_count == 0) {
-          markOop mark = monitor->owner()->mark();
-          if (mark->has_monitor() &&
-              mark->monitor() == thread()->current_pending_monitor()) {
-            lock_state = "waiting to lock";
-          }
-        }
-        found_first_monitor = true;
-        print_locked_object_class_name(st, monitor->owner(), lock_state);
-      }
-    }
-  }
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到上面的方法，再对比线程dump的结果，我们会发现很多熟悉的东西，比如<code>waiting on</code>，<code>parking to wait for</code>，<code>locked</code>，<code>waiting to lock</code>，而且也清楚了它们分别是在什么情况下会打印的。</p>
-
-<p>&#8195;&#8195;那为什么我们的例子中BLOCKED状态的线程本应该打印<code>waiting to lock</code>,但是为什么却打印了<code>locked</code>呢，那说明<code>if (mark-&gt;has_monitor() &amp;&amp; mark-&gt;monitor() == thread()-&gt;current_pending_monitor())</code> 这个条件肯定不成立，那这个在什么情况下不成立呢？在验证此问题前，有必要先了解下markOop是什么东西，它是用来干什么的？</p>
-
-<h2>markOop是什么</h2>
-
-<p>&#8195;&#8195;markOop描述了一个对象(也包括了Class)的状态信息，Java语法层面的每个对象或者Class在JVM的结构表示中都会包含一个markOop作为Header，当然还有一些其他的JVM数据结构也用它做Header。markOop由32位或者64位构成，具体位数根据运行环境而定。</p>
-
-<p>&#8195;&#8195;下面的结构图包含markOop每一位所代表的含义，markOop的值根据所描述的对象的类型(比如是锁对象还是正常的对象)以及作用的不同而不同。就算在同一个对象里，它的值也是可能会不断变化的，比如锁对象，在一开始创建的时候其实并不知道是锁对象，会当成一个正常对象来创建(在对象的类型并没有设置偏向锁的情况下，其markOop值可能是0x1)，但是随着我们执行到synchronized的代码逻辑时，就知道其实它是一个锁对象了，它的值就不再是0x1了，而是一个新的值，该值是对应栈帧结构里的监控对象列表里的某一个内存地址。</p>
-
-<pre class="prettyPrint">
-//  32 bits:
-//  --------
-//             hash:25 ------------>| age:4    biased_lock:1 lock:2 (normal object)
-//             JavaThread*:23 epoch:2 age:4    biased_lock:1 lock:2 (biased object)
-//             size:32 ------------------------------------------>| (CMS free block)
-//             PromotedObject*:29 ---------->| promo_bits:3 ----->| (CMS promoted object)
-//
-//  64 bits:
-//  --------
-//  unused:25 hash:31 -->| unused:1   age:4    biased_lock:1 lock:2 (normal object)
-//  JavaThread*:54 epoch:2 unused:1   age:4    biased_lock:1 lock:2 (biased object)
-//  PromotedObject*:61 --------------------->| promo_bits:3 ----->| (CMS promoted object)
-//  size:64 ----------------------------------------------------->| (CMS free block)
-//
-//  unused:25 hash:31 -->| cms_free:1 age:4    biased_lock:1 lock:2 (COOPs && normal object)
-//  JavaThread*:54 epoch:2 cms_free:1 age:4    biased_lock:1 lock:2 (COOPs && biased object)
-//  narrowOop:32 unused:24 cms_free:1 unused:4 promo_bits:3 ----->| (COOPs && CMS promoted object)
-//  unused:21 size:35 -->| cms_free:1 unused:7 ------------------>| (COOPs && CMS free block)
-</pre>
-
-
-<p>&#8195;&#8195;就最后的3位而言，其不同的值代表不同的含义：</p>
-
-<pre class="prettyPrint">
- enum { locked_value             = 0,//00
-         unlocked_value           = 1,//01
-         monitor_value            = 2,//10
-         marked_value             = 3,//11      
-         biased_lock_pattern      = 5 //101
-  };
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;上面的判断条件<code>“mark-&gt;has_monitor()”</code>其实就是判断最后的2位是不是10，如果是，则说明这个对象是一个监控对象，可以通过<code>mark-&gt;monitor()</code>方法获取到对应的结构体：</p>
-
-<pre class="prettyPrint">
-bool has_monitor() const {
-    return ((value() & monitor_value) != 0);
-  }
-  ObjectMonitor* monitor() const {
-    assert(has_monitor(), "check");
-    // Use xor instead of &~ to provide one extra tag-bit check.
-    return (ObjectMonitor*) (value() ^ monitor_value);
-  }
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;将一个普通对象转换为一个monitor对象的过程(就是替换markOop的值)请参考为<code>ObjectSynchronizer::inflate</code>方法，能进入到该方法说明该锁为重量级锁，也就是说这把锁其实是被多个线程竞争的。</p>
-
-<p>&#8195;&#8195;了解了markOop之后，还要了解下上面那个条件里的<code>thread()-&gt;current_pending_monitor()</code>，也就是这个值是什么时候设置进去的呢?</p>
-
-<h2>线程设置等待的监控对象的时机</h2>
-
-<p>&#8195;&#8195;设置的逻辑在<code>ObjectMonitor::enter</code>里，关键代码如下：</p>
-
-<pre class="prettyPrint">
-...
-{
-    JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-    DTRACE_MONITOR_PROBE(contended__enter, this, object(), jt);
-    if (JvmtiExport::should_post_monitor_contended_enter()) {
-      JvmtiExport::post_monitor_contended_enter(jt, this);
-    }
-    OSThreadContendState osts(Self->osthread());
-    ThreadBlockInVM tbivm(jt);
-    Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-    for (;;) {
-      jt->set_suspend_equivalent();
-      EnterI (THREAD) ;
-      if (!ExitSuspendEquivalent(jt)) break ;
-          _recursions = 0 ;
-      _succ = NULL ;
-      exit (false, Self) ;
-
-      jt->java_suspend_self();
-    }
-    Self->set_current_pending_monitor(NULL);
-  }
- ... 
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;设置当前线程等待的monitorObject是在有中文注释的那一行设置的，那么出现Bug的原因是不是正好在设置之前进行了线程dump呢？</p>
-
-<h2>水落石出</h2>
-
-<p>&#8195;&#8195;在JVM中只会有一个处于RUNNBALE状态的线程，也就是说另外一个打印<code>"-locked"</code>信息的线程是处于BLOCKED状态的。上面的第一行代码：</p>
-
-<pre class="prettyPrint">
-JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-</pre>
-
-
-<p>&#8195;&#8195;找到其实现位置：</p>
-
-<pre class="prettyPrint">
- JavaThreadBlockedOnMonitorEnterState(JavaThread *java_thread, ObjectMonitor *obj_m) :
-    JavaThreadStatusChanger(java_thread) {
-    assert((java_thread != NULL), "Java thread should not be null here");
-    _active = false;
-    if (is_alive() && ServiceUtil::visible_oop((oop)obj_m->object()) && obj_m->contentions() > 0) {
-      _stat = java_thread->get_thread_stat();
-      _active = contended_enter_begin(java_thread);//关键处
-    }
-  }
-
- static bool contended_enter_begin(JavaThread *java_thread) {
-    set_thread_status(java_thread, java_lang_Thread::BLOCKED_ON_MONITOR_ENTER);//关键处
-    ThreadStatistics* stat = java_thread->get_thread_stat();
-    stat->contended_enter();
-    bool active = ThreadService::is_thread_monitoring_contention();
-    if (active) {
-      stat->contended_enter_begin();
-    }
-    return active;
-  } 
-</pre>
-
-
-<p></p>
-
-<p>&#8195;&#8195;上面的contended_enter_begin方法会设置java线程的状态为<code>java_lang_Thread::BLOCKED_ON_MONITOR_ENTER</code>，而线程dump时根据这个状态打印的结果如下：</p>
-
-<pre class="prettyPrint">
-const char* java_lang_Thread::thread_status_name(oop java_thread) {
-  assert(JDK_Version::is_gte_jdk15x_version() && _thread_status_offset != 0, "Must have thread status");
-  ThreadStatus status = (java_lang_Thread::ThreadStatus)java_thread->int_field(_thread_status_offset);
-  switch (status) {
-    case NEW                      : return "NEW";
-    case RUNNABLE                 : return "RUNNABLE";
-    case SLEEPING                 : return "TIMED_WAITING (sleeping)";
-    case IN_OBJECT_WAIT           : return "WAITING (on object monitor)";
-    case IN_OBJECT_WAIT_TIMED     : return "TIMED_WAITING (on object monitor)";
-    case PARKED                   : return "WAITING (parking)";
-    case PARKED_TIMED             : return "TIMED_WAITING (parking)";
-    case BLOCKED_ON_MONITOR_ENTER : return "BLOCKED (on object monitor)";
-    case TERMINATED               : return "TERMINATED";
-    default                       : return "UNKNOWN";
-  };
-}
-</pre>
-
-
-<p>&#8195;&#8195;正好对应我们dump日志中的信息<code>"BLOCKED (on object monitor)"</code>也就是说这行代码被正常执行了，那问题就可能出在<code>JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this)</code>和<code>Self-&gt;set_current_pending_monitor(this)</code>这两行代码之间的逻辑里了：</p>
-
-<pre class="prettyPrint">
-    JavaThreadBlockedOnMonitorEnterState jtbmes(jt, this);
-    DTRACE_MONITOR_PROBE(contended__enter, this, object(), jt);
-    if (JvmtiExport::should_post_monitor_contended_enter()) {
-      JvmtiExport::post_monitor_contended_enter(jt, this);
-    }
-    OSThreadContendState osts(Self->osthread());
-    ThreadBlockInVM tbivm(jt);
-    Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-</pre>
-
-
-<p>&#8195;&#8195;于是检查每一行的实现，前面几行都基本可以排除了，因为它们都是很简单的操作，下面来分析下<code>ThreadBlockInVM tbivm(jt)</code>这一行的实现：</p>
-
-<pre class="prettyPrint">
-ThreadBlockInVM(JavaThread *thread)
-  : ThreadStateTransition(thread) {
-    thread->frame_anchor()->make_walkable(thread);
-    trans_and_fence(_thread_in_vm, _thread_blocked);
-  }
-
- void trans_and_fence(JavaThreadState from, JavaThreadState to) { 
-    transition_and_fence(_thread, from, to); 
- }
-
- static inline void transition_and_fence(JavaThread *thread, JavaThreadState from, JavaThreadState to) {
-    assert(thread->thread_state() == from, "coming from wrong thread state");
-    assert((from & 1) == 0 && (to & 1) == 0, "odd numbers are transitions states");
-    thread->set_thread_state((JavaThreadState)(from + 1));
-    if (os::is_MP()) {
-      if (UseMembar) {
-        OrderAccess::fence();
-      } else {
-        InterfaceSupport::serialize_memory(thread);
-      }
-    }
-
-    if (SafepointSynchronize::do_call_back()) {
-      SafepointSynchronize::block(thread);
-    }
-    thread->set_thread_state(to);
-    CHECK_UNHANDLED_OOPS_ONLY(thread->clear_unhandled_oops();)
-  }
- ...
- } 
- </pre>
-
-
-<p>&#8195;&#8195;也许我们看到可能造成问题的代码了：</p>
-
-<pre class="prettyPrint">
-if (SafepointSynchronize::do_call_back()) {
-      SafepointSynchronize::block(thread);
-}
-</pre>
-
-
-<p>  <br/>
-&#8195;&#8195;想象一下，当这个线程正好执行到这个条件判断，然后进去了，从方法名上来说是不是意味着这个线程会block住，并且不往后走了呢？这样一来设置当前线程的pending_monitor对象的操作就不会被执行了，从而在打印这个线程栈的时候就会打印"-locked"信息了，那么纠结是否正如我们想的那样呢？</p>
-
-<p>首先来看条件<code>SafepointSynchronize::do_call_back()</code>是否一定会成立：</p>
-
-<pre class="prettyPrint">
-inline static bool do_call_back() {
-    return (_state != _not_synchronized);
-}
-</pre>
-
-
-<p>&#8195;&#8195;上面的VMThread执行任务的过程中说到了这个状态，当vmThread执行完了<code>SafepointSynchronize::begin()</code>之后，这个状态是设置为_synchronized的。如果正在执行，那么状态是_synchronizing，因此，当我们触发了jvm的线程dump之后，VMThread执行该操作，而且还在执行线程dump过程前，但是还只是_synchronizing的状态，那么do_call_back()将会返回true，那么将执行接下来的SafepointSynchronize::block(thread)方法：</p>
-
-<pre class="prettyPrint">
-void SafepointSynchronize::block(JavaThread *thread) {
-  assert(thread != NULL, "thread must be set");
-  assert(thread->is_Java_thread(), "not a Java thread");
-
-  ttyLocker::break_tty_lock_for_safepoint(os::current_thread_id());
-
-  if (thread->is_terminated()) {
-     thread->block_if_vm_exited();
-     return;
-  }
-
-  JavaThreadState state = thread->thread_state();
-  thread->frame_anchor()->make_walkable(thread);
-
-  switch(state) {
-    case _thread_in_vm_trans:
-    case _thread_in_Java:        // From compiled code
-      thread->set_thread_state(_thread_in_vm);
-
-      if (is_synchronizing()) {
-         Atomic::inc (&TryingToBlock) ;
-      }
-      Safepoint_lock->lock_without_safepoint_check();
-      if (is_synchronizing()) {
-        assert(_waiting_to_block > 0, "sanity check");
-        _waiting_to_block--;
-        thread->safepoint_state()->set_has_called_back(true);
-
-        DEBUG_ONLY(thread->set_visited_for_critical_count(true));
-        if (thread->in_critical()) {
-          increment_jni_active_count();
-        }
-        if (_waiting_to_block == 0) {
-          Safepoint_lock->notify_all();
-        }
-      }
-      thread->set_thread_state(_thread_blocked);
-      Safepoint_lock->unlock();
-      Threads_lock->lock_without_safepoint_check();//关键代码
-      thread->set_thread_state(state);
-      Threads_lock->unlock();
-      break;
-   ...
-  }
-  if (state != _thread_blocked_trans &&
-      state != _thread_in_vm_trans &&
-      thread->has_special_runtime_exit_condition()) {
-    thread->handle_special_runtime_exit_condition(
-      !thread->is_at_poll_safepoint() && (state != _thread_in_native_trans));
-  }
-}
-
-void Monitor::lock_without_safepoint_check (Thread * Self) {
-  assert (_owner != Self, "invariant") ;
-  ILock (Self) ;
-  assert (_owner == NULL, "invariant");
-  set_owner (Self);
-}
-
-void Monitor::lock_without_safepoint_check () {
-  lock_without_safepoint_check (Thread::current()) ;
-}
-</pre>
-
-
-<p>&#8195;&#8195;看到上面的实现可以确定，Java线程执行时会调用<code>Threads_lock-&gt;lock_without_safepoint_check()</code>，而Threads_lock因为被VMThread持有，将一直卡死在<code>ILock (Self)</code>这个逻辑里，从而没有设置current_monitor属性，由此验证了我们的想法。</p>
-
-<h2>Bug修复</h2>
-
-<p>&#8195;&#8195;在了解了原因之后，我们可以简单的修复这个Bug。将下面两行代码调换下位置即可：</p>
-
-<pre class="prettyPrint">
- ThreadBlockInVM tbivm(jt);
- Self->set_current_pending_monitor(this);//设置当前monitor对象为当前线程等待的monitor对象
-</pre>
-
-
-<p>
-&#8195;&#8195;该Bug不会对生产环境产生影响，本文主要是和大家分享分析问题的过程，希望大家碰到疑惑都能有一查到底的劲儿，带着问题，不断提出自己的猜想，然后不断验证自己的猜想，最终解决问题。</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[从日志上理解JAVA调试机制]]></title>
-    <link href="http://nijiaben.github.io/blog/2014/07/19/java-debug-log/"/>
-    <updated>2014-07-19T09:58:49+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2014/07/19/java-debug-log</id>
-    <content type="html"><![CDATA[<p>&#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。</p>
-
-<!--more-->
-
-
-<p>&#8195;&#8195;大家都是一点IDE里面的调试按钮，就轻松建立了调试环境，IDE其实是帮你做了些你可能不知道的事，请看如下图</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/debug.jpg"></p>
-
-<p>&#8195;&#8195;你将会看到如下内容</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/eclipse_command.jpg"></p>
-
-<p>&#8195;&#8195;其实这就是eclipse为你构建的命令行，从中筛选出如下命令行语句</p>
-
-<pre class="prettyPrint">
--agentlib:jdwp=transport=dt_socket,suspend=y,address=localhost:51823 
-</pre>
-
-
-<p>&#8195;&#8195;这就是关键了，熟悉agent的人应该都知道这是加载了一个叫做jdwp的agent，也就是说vm会去找一个叫做<code>libjdwp.so/libjdwp.dylib</code>的动态库，于是通过nm看看里面究竟有些什么方法？</p>
-
-<pre class="prettyPrint">
-nijiaben@nijiaben : ~/Developer/open_source/openjdk/jdk7u/build/macosx-x86_64-debug/lib
-[0] % nm libjdwp.dylib
-00000000000152b0 T _Agent_OnLoad
-0000000000016520 T _Agent_OnUnload
-00000000000531c0 D _ArrayReference_Cmds
-00000000000531e0 D _ArrayType_Cmds
-0000000000053230 D _ClassLoaderReference_Cmds
-0000000000053240 D _ClassObjectReference_Cmds
-0000000000053200 D _ClassType_Cmds
-0000000000053260 D _EventRequest_Cmds
-0000000000053f88 S _Field_Cmds
-0000000000053280 D _Method_Cmds
-0000000000053668 b _NullString
-00000000000532c0 D _ObjectReference_Cmds
-0000000000053320 D _ReferenceType_Cmds
-00000000000533c0 D _StackFrame_Cmds
-00000000000533f0 D _StringReference_Cmds
-0000000000053400 D _ThreadGroupReference_Cmds
-0000000000053420 D _ThreadReference_Cmds
-00000000000534c0 D _VirtualMachine_Cmds
-</pre>
-
-
-<p>&#8195;&#8195;赫然看到了Agent的几个方法，<em>Agent_OnLoad和</em>Agent_OnUnLoad，于是更加肯定这个动态库就是一个agent实例了。
-有了它自然想看看这个Agent加载的时候干了些什么事。先不急于看里面的实现，一个好的模块或者应用，往往通过详细的日志就可以知道它的大致情况，其实jdwp也是有详细的日志可看的，在上面的-agentlib:jdwp后面再加上一个参数logflags=0xfff，即-agentlib:jdwp=transport=dt_socket,suspend=y,logflags=0xfff，然后再次执行java命令，你将会在你的当前目录下生成一个类似jdwp.log.297的文件，297其实是进程的ID，那当我们仅仅是启动，还没有做任何操作的时候jdwp都干了些什么？</p>
-
-<pre class="prettyPrint">
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugInit.c":296;;PID=297;THR=t@60821504|:Onload: transport=dt_socket,address=8000,server=y,suspend=n,logflags=0xfff|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":300;;PID=297;THR=t@60821504|:GetPotentialCapabilities()|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":359;;PID=297;THR=t@60821504|:AddCapabilities()|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":128;;PID=297;THR=t@60821504|:SetEventNotificationMode()|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":128;;PID=297;THR=t@60821504|:SetEventNotificationMode()|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=JVMTI:"debugInit.c":390;;PID=297;THR=t@60821504|:SetEventCallbacks()|#]
-[#|29.05.2013 21:20:18.161 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugInit.c":398;;PID=297;THR=t@60821504|:OnLoad: DONE|#]
-</pre>
-
-
-<p>&#8195;&#8195;由于篇幅的问题，就只把部分日志列出来解释下，从上面我们可以获得的执行的时间，执行的环境类型，执行的哪个文件的哪一行，进程ID，线程地址，然后就是真正的日志信息等。
-首先看看LOC，是location_type的简称，那么它包括多少种呢，我想从下面的宏定义上可以看出来</p>
-
-<pre class="prettyPrint">
-#define    JDWP_LOG_JVM         0x00000001
-#define    JDWP_LOG_JNI         0x00000002
-#define    JDWP_LOG_JVMTI       0x00000004
-#define    JDWP_LOG_MISC        0x00000008
-#define    JDWP_LOG_STEP        0x00000010
-#define    JDWP_LOG_LOC         0x00000020
-#define    JDWP_LOG_CB          0x00000040
-#define    JDWP_LOG_ERROR       0x00000080
-#define    JDWP_LOG_ALL         0xffffffff
-</pre>
-
-
-<p>&#8195;&#8195;agent的实现离不开jvmti，jdwp也同样如此，那么它究竟想利用jvmti里的哪些能力呢，从下面的代码基本可以看出来了</p>
-
-<pre class="prettyPrint">
-   /* Fill in ones that we must have */
-    (void)memset(&needed_capabilities,0,sizeof(needed_capabilities));
-    needed_capabilities.can_access_local_variables              = 1;
-    needed_capabilities.can_generate_single_step_events         = 1;
-    needed_capabilities.can_generate_exception_events           = 1;
-    needed_capabilities.can_generate_frame_pop_events           = 1;
-    needed_capabilities.can_generate_breakpoint_events          = 1;
-    needed_capabilities.can_suspend                             = 1;
-    needed_capabilities.can_generate_method_entry_events        = 1;
-    needed_capabilities.can_generate_method_exit_events         = 1;
-    needed_capabilities.can_generate_garbage_collection_events  = 1;
-    needed_capabilities.can_maintain_original_method_order      = 1;
-    needed_capabilities.can_generate_monitor_events             = 1;
-    needed_capabilities.can_tag_objects                         = 1;
-
-    /* And what potential ones that would be nice to have */
-    needed_capabilities.can_force_early_return
-                = potential_capabilities.can_force_early_return;
-    needed_capabilities.can_generate_field_modification_events
-                = potential_capabilities.can_generate_field_modification_events;
-    needed_capabilities.can_generate_field_access_events
-                = potential_capabilities.can_generate_field_access_events;
-    needed_capabilities.can_get_bytecodes
-                = potential_capabilities.can_get_bytecodes;
-    needed_capabilities.can_get_synthetic_attribute
-                = potential_capabilities.can_get_synthetic_attribute;
-    needed_capabilities.can_get_owned_monitor_info
-                = potential_capabilities.can_get_owned_monitor_info;
-    needed_capabilities.can_get_current_contended_monitor
-                = potential_capabilities.can_get_current_contended_monitor;
-    needed_capabilities.can_get_monitor_info
-                = potential_capabilities.can_get_monitor_info;
-    needed_capabilities.can_pop_frame
-                = potential_capabilities.can_pop_frame;
-    needed_capabilities.can_redefine_classes
-                = potential_capabilities.can_redefine_classes;
-    needed_capabilities.can_redefine_any_class
-                = potential_capabilities.can_redefine_any_class;
-    needed_capabilities.can_get_owned_monitor_stack_depth_info
-        = potential_capabilities.can_get_owned_monitor_stack_depth_info;
-    needed_capabilities.can_get_constant_pool
-                = potential_capabilities.can_get_constant_pool;
-    {
-        needed_capabilities.can_get_source_debug_extension      = 1;
-        needed_capabilities.can_get_source_file_name            = 1;
-        needed_capabilities.can_get_line_numbers                = 1;
-        needed_capabilities.can_signal_thread
-                = potential_capabilities.can_signal_thread;
-    }
-</pre>
-
-
-<p>  <br/>
-&#8195;&#8195;这就对为什么我们可以通过调试体系可以看到本地变量的值，可以一步一步push/pop frame等能力不足为奇了。
-因为agent是在vm初始化过程中加载的，vm的环境其实很多还没准备好，所以jvmti提供了一种能力&mdash;事件通知，在某个特定事件发生的时候，agent可以通过注册一些回调事件来做一些特殊的工作，比如在vm初始化完成之后，在类文件加载之后，在类被加载之后等等都可以做一些相关的事情，jdwp主要注册了几个回调事件，重点是vm初始化的回调函数，此时才是真正的完成jdwp的初始化动作，这也是为什么我们的调试体系不能对所有的java代码进行跟踪的原因了，比如说AppClassLoader的创建过程，这个其实都是在vm初始化过程中创建的，但是这个时候jdwp还没有初始化呢，自然也无法完成我们的debug过程了。</p>
-
-<pre class="prettyPrint">
-    gdata->callbacks.VMInit             = &cbEarlyVMInit;
-    gdata->callbacks.VMDeath            = &cbEarlyVMDeath;
-    gdata->callbacks.Exception  = &cbEarlyException;
-</pre>
-
-
-<p>&#8195;&#8195;在cbEarlyVMInit中干的事就不细说了，可以通过jdwp的日志大概知道干了些啥，但是有点还是要说下，假设要大家去设计实现这个功能，大家应该都会想到它的通信场景，类似命令模式，客户端不断发命令到服务端，服务端收到命令之后然后将请求结果反馈回来，比如说我们把鼠标放到某个变量上面，我们会看到弹出个小提示板，会把这个对象的值树状列出来，其实jdwp也就是这么实现的，那我们就可能想知道jdwp到底提供了哪些命令</p>
-
-<pre class="prettyPrint">
-l1Array[JDWP_COMMAND_SET(VirtualMachine)] = (void *)VirtualMachine_Cmds;
-    l1Array[JDWP_COMMAND_SET(ReferenceType)] = (void *)ReferenceType_Cmds;
-    l1Array[JDWP_COMMAND_SET(ClassType)] = (void *)ClassType_Cmds;
-    l1Array[JDWP_COMMAND_SET(ArrayType)] = (void *)ArrayType_Cmds;
-
-    l1Array[JDWP_COMMAND_SET(Field)] = (void *)Field_Cmds;
-    l1Array[JDWP_COMMAND_SET(Method)] = (void *)Method_Cmds;
-    l1Array[JDWP_COMMAND_SET(ObjectReference)] = (void *)ObjectReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(StringReference)] = (void *)StringReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(ThreadReference)] = (void *)ThreadReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(ThreadGroupReference)] = (void *)ThreadGroupReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(ClassLoaderReference)] = (void *)ClassLoaderReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(ArrayReference)] = (void *)ArrayReference_Cmds;
-    l1Array[JDWP_COMMAND_SET(EventRequest)] = (void *)EventRequest_Cmds;
-    l1Array[JDWP_COMMAND_SET(StackFrame)] = (void *)StackFrame_Cmds;
-    l1Array[JDWP_COMMAND_SET(ClassObjectReference)] = (void *)ClassObjectReference_Cmds;
-</pre>
-
-
-<p>&#8195;&#8195;从上面我们基本看到列出的都是分类，比如我们想看字段的，执行方法的，甚至vm的，那每个分类势必包含一些关键的命令，比如</p>
-
-<pre class="prettyPrint">
-void *VirtualMachine_Cmds[] = { (void *)21
-    ,(void *)version
-    ,(void *)classesForSignature
-    ,(void *)allClasses
-    ,(void *)getAllThreads
-    ,(void *)topLevelThreadGroups
-    ,(void *)dispose
-    ,(void *)idSizes
-    ,(void *)suspend
-    ,(void *)resume
-    ,(void *)doExit
-    ,(void *)createString
-    ,(void *)capabilities
-    ,(void *)classPaths
-    ,(void *)disposeObjects
-    ,(void *)holdEvents
-    ,(void *)releaseEvents
-    ,(void *)capabilitiesNew
-    ,(void *)redefineClasses
-    ,(void *)setDefaultStratum
-    ,(void *)allClassesWithGeneric
-    ,(void *)instanceCounts
-};
-</pre>
-
-
-<p>&#8195;&#8195;这就列出了我们想看vm相关信息或者操作的一些命令，其实这些都是一些function</p>
-
-<pre class="prettyPrint">
-[#|29.05.2013 21:21:22.439 CST|FINEST|J2SE1.5|jdwp|LOC=MISC:"debugLoop.c":153;;PID=297;THR=t@290471936|:Command set 1, command 10|#]
-</pre>
-
-
-<p>&#8195;&#8195;假如我们操作之后有上面这么一条日志，我们看到取的指令集合是1，想执行这个集合中的第10条命令，指令集合为1，说明取的是上面的llArray[1]，也就是上面的VirtualMachine指令集合，10表示我们找的是 VirtualMachine中的doExit这条指令，也就是说客户端希望你服务端执行这条指令，</p>
-
-<pre class="prettyPrint">
-static jboolean
-doExit(PacketInputStream *in, PacketOutputStream *out)
-{
-    jint exitCode;
-
-    exitCode = inStream_readInt(in);
-    if (gdata->vmDead) {
-        /* quietly ignore */
-        return JNI_FALSE;
-    }
-
-    /* We send the reply from here because we are about to exit. */
-    if (inStream_error(in)) {
-        outStream_setError(out, inStream_error(in));
-    }
-    outStream_sendReply(out);
-
-    forceExit(exitCode);
-
-    /* Shouldn't get here */
-    JDI_ASSERT(JNI_FALSE);
-
-    /* Shut up the compiler */
-    return JNI_FALSE;
-
-}
-/* All process exit() calls come from here */
-void
-forceExit(int exit_code)
-{
-    /* make sure the transport is closed down before we exit() */
-    transport_close();
-    exit(exit_code);
-}
-</pre>
-
-
-<p>&#8195;&#8195;大家也猜到了，这其实就是退出vm，其实这也是我今天想写这篇文章的一个原因，我们这边线下环境一个系统，运行一段时间之后就突然间进程消失了，没有任何的日志，排除了人为的kill，System.exit，没有crash日志，更没有coredump，实在是诡异，跟了两天，突然在远程调试的时候发现了如下选项</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/eclipse_debug_kill.jpg"></p>
-
-<p>&#8195;&#8195;所以我不得不猜想是它导致的，经过自己测试，当我点击</p>
-
-<p><img src="http://nijiaben.github.io/images/2014/07/eclipse_debug_kill_button.jpg"></p>
-
-<p>&#8195;&#8195;这个的时候，进程果然退出了，没有任何迹象，所以晚上花了点时间写了这篇文章记录下这诡异的问题</p>
-
-<p>&#8195;&#8195;这个暂时就介绍到这里，虽然还比较肤浅，有机会再从原理角度介绍jdwp的具体实现。</p>
 ]]></content>
   </entry>
   

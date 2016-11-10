@@ -4,7 +4,7 @@
   <title><![CDATA[Category: jvm | 你假笨]]></title>
   <link href="http://nijiaben.github.io/blog/categories/jvm/atom.xml" rel="self"/>
   <link href="http://nijiaben.github.io/"/>
-  <updated>2016-10-29T15:40:38+08:00</updated>
+  <updated>2016-11-10T09:42:31+08:00</updated>
   <id>http://nijiaben.github.io/</id>
   <author>
     <name><![CDATA[你假笨]]></name>
@@ -12,6 +12,506 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之String.intern()导致的YGC不断变长]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/11/06/string-intern/"/>
+    <updated>2016-11-06T09:37:18+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/11/06/string-intern</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志</p>
+
+<pre><code>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</code></pre>
+
+<p>只知道耗了多长时间，但是具体耗在了哪个阶段，是基本看不出来的，所以要么就是靠经验来定位，要么就是对代码相当熟悉，脑袋里过一遍整个过程，看哪个阶段最可能，今天要讲的这个大家可以当做今后排查这类问题的一个经验来使，这个当然不是唯一导致YGC过长的一个原因，但却是最近我帮忙定位碰到的发生相对来说比较多的一个场景</p>
+
+<!--more-->
+
+
+<p>具体的定位是通过在JVM代码里进行了日志埋点确定的，这个问题其实最早的时候，是帮助毕玄毕大师定位到这块的问题，他也在公众号里对这个问题写了相关的一篇文章<a href="" title="http://mp.weixin.qq.com/s?__biz=MjM5MzYzMzkyMQ==&amp;mid=2649826309&amp;idx=1&amp;sn=13518f7f693d78fd19f8dc5d21c7eb4b&amp;scene=0#wechat_redirect">YGC越来越慢，为什么</a>，大家可以关注下毕大师的公众号<code>HelloJava</code>，经常会发一些在公司碰到的诡异问题的排查，相信会让你涨姿势的，当然如果你还没有关注我的公众号<code>你假笨</code>，欢迎关注下，后续会时不时写点或许正巧你感兴趣的JVM系列文章。</p>
+
+<h2>Demo</h2>
+
+<p>先上一个demo，来描述下问题的情况，代码很简单，就是不断创建UUID，其实就是一个字符串，并将这个字符串调用下intern方法</p>
+
+<pre><code>import java.util.UUID;
+
+public class StringTableTest {
+    public static void main(String args[]) {
+        for (int i = 0; i &lt; 10000000; i++) {
+            uuid();
+        }
+    }
+
+    public static void uuid() {
+        UUID.randomUUID().toString().intern();
+    }
+}
+</code></pre>
+
+<p>我们使用的JVM参数如下：</p>
+
+<pre><code>-XX:+UseConcMarkSweepGC -XX:+PrintGCDetails -Xmx2G -Xms2G -Xmn100M
+</code></pre>
+
+<p>这里特意将新生代设置比较小，老生代设置比较大，让代码在执行过程中更容易突出问题来，大量做ygc，期间不做CMS GC，于是我们得到的输出结果类似下面的</p>
+
+<pre><code>[GC (Allocation Failure) [ParNew: 81920K-&gt;9887K(92160K), 0.0096027 secs] 81920K-&gt;9887K(2086912K), 0.0096428 secs] [Times: user=0.06 sys=0.01, real=0.01 secs] 
+[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0190535 secs] 103182K-&gt;32655K(2086912K), 0.0190965 secs] [Times: user=0.12 sys=0.01, real=0.02 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0198259 secs] 114575K-&gt;44124K(2086912K), 0.0198558 secs] [Times: user=0.13 sys=0.01, real=0.02 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0213643 secs] 126044K-&gt;55592K(2086912K), 0.0213930 secs] [Times: user=0.14 sys=0.01, real=0.02 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0234291 secs] 137512K-&gt;67061K(2086912K), 0.0234625 secs] [Times: user=0.16 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0243691 secs] 148981K-&gt;78548K(2086912K), 0.0244041 secs] [Times: user=0.15 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0235310 secs] 160468K-&gt;89998K(2086912K), 0.0235587 secs] [Times: user=0.17 sys=0.01, real=0.02 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0255960 secs] 171918K-&gt;101466K(2086912K), 0.0256264 secs] [Times: user=0.18 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0287876 secs] 183386K-&gt;113770K(2086912K), 0.0288188 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0298405 secs] 195690K-&gt;125267K(2086912K), 0.0298823 secs] [Times: user=0.20 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0310182 secs] 207187K-&gt;136742K(2086912K), 0.0311156 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0321647 secs] 218662K-&gt;148210K(2086912K), 0.0321938 secs] [Times: user=0.22 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0338090 secs] 230130K-&gt;159686K(2086912K), 0.0338446 secs] [Times: user=0.24 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0326612 secs] 241606K-&gt;171159K(2086912K), 0.0326912 secs] [Times: user=0.23 sys=0.01, real=0.03 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0350578 secs] 253079K-&gt;182627K(2086912K), 0.0351077 secs] [Times: user=0.26 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0346946 secs] 264547K-&gt;194096K(2086912K), 0.0347274 secs] [Times: user=0.25 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0384091 secs] 276016K-&gt;205567K(2086912K), 0.0384401 secs] [Times: user=0.27 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0394017 secs] 287487K-&gt;217035K(2086912K), 0.0394312 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0411447 secs] 298955K-&gt;228504K(2086912K), 0.0411748 secs] [Times: user=0.30 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0393449 secs] 310424K-&gt;239972K(2086912K), 0.0393743 secs] [Times: user=0.29 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0444541 secs] 321892K-&gt;251441K(2086912K), 0.0444887 secs] [Times: user=0.32 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0449196 secs] 333361K-&gt;262910K(2086912K), 0.0449557 secs] [Times: user=0.33 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0497517 secs] 344830K-&gt;274382K(2086912K), 0.0497946 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0475741 secs] 356302K-&gt;285851K(2086912K), 0.0476130 secs] [Times: user=0.35 sys=0.01, real=0.04 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0461098 secs] 367771K-&gt;297320K(2086912K), 0.0461421 secs] [Times: user=0.34 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0508071 secs] 379240K-&gt;308788K(2086912K), 0.0508428 secs] [Times: user=0.38 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0494472 secs] 390708K-&gt;320257K(2086912K), 0.0494938 secs] [Times: user=0.36 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0531527 secs] 402177K-&gt;331725K(2086912K), 0.0531845 secs] [Times: user=0.39 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0543701 secs] 413645K-&gt;343194K(2086912K), 0.0544025 secs] [Times: user=0.41 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0528003 secs] 425114K-&gt;354663K(2086912K), 0.0528283 secs] [Times: user=0.39 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0565080 secs] 436583K-&gt;366131K(2086912K), 0.0565394 secs] [Times: user=0.42 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0597181 secs] 448051K-&gt;377600K(2086912K), 0.0597653 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0606671 secs] 459520K-&gt;389068K(2086912K), 0.0607423 secs] [Times: user=0.46 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0590389 secs] 470988K-&gt;400539K(2086912K), 0.0590679 secs] [Times: user=0.43 sys=0.01, real=0.05 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0600462 secs] 482459K-&gt;412008K(2086912K), 0.0600757 secs] [Times: user=0.44 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0608772 secs] 493928K-&gt;423476K(2086912K), 0.0609170 secs] [Times: user=0.45 sys=0.01, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0622107 secs] 505396K-&gt;434945K(2086912K), 0.0622391 secs] [Times: user=0.46 sys=0.00, real=0.06 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0626555 secs] 516865K-&gt;446413K(2086912K), 0.0626872 secs] [Times: user=0.47 sys=0.01, real=0.07 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0647713 secs] 528333K-&gt;457882K(2086912K), 0.0648013 secs] [Times: user=0.47 sys=0.00, real=0.07 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0747113 secs] 539802K-&gt;469353K(2086912K), 0.0747446 secs] [Times: user=0.51 sys=0.01, real=0.07 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0727498 secs] 551273K-&gt;480832K(2086912K), 0.0727899 secs] [Times: user=0.52 sys=0.01, real=0.07 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0734084 secs] 562752K-&gt;492300K(2086912K), 0.0734402 secs] [Times: user=0.54 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0766368 secs] 574220K-&gt;503769K(2086912K), 0.0766673 secs] [Times: user=0.55 sys=0.01, real=0.07 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0778940 secs] 585689K-&gt;515237K(2086912K), 0.0779250 secs] [Times: user=0.56 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0815513 secs] 597157K-&gt;526712K(2086912K), 0.0815824 secs] [Times: user=0.57 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0812080 secs] 608632K-&gt;538181K(2086912K), 0.0812406 secs] [Times: user=0.58 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0818790 secs] 620101K-&gt;549651K(2086912K), 0.0819155 secs] [Times: user=0.60 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0840677 secs] 631571K-&gt;561122K(2086912K), 0.0841000 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0842462 secs] 643042K-&gt;572593K(2086912K), 0.0842785 secs] [Times: user=0.61 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0875011 secs] 654513K-&gt;584076K(2086912K), 0.0875416 secs] [Times: user=0.62 sys=0.01, real=0.08 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0887645 secs] 665996K-&gt;595532K(2086912K), 0.0887956 secs] [Times: user=0.64 sys=0.01, real=0.09 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10240K(92160K), 0.0921844 secs] 677452K-&gt;607001K(2086912K), 0.0922153 secs] [Times: user=0.65 sys=0.01, real=0.09 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10238K(92160K), 0.0930053 secs] 688921K-&gt;618471K(2086912K), 0.0930380 secs] [Times: user=0.67 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0955379 secs] 700391K-&gt;629942K(2086912K), 0.0955873 secs] [Times: user=0.69 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0919127 secs] 711862K-&gt;641411K(2086912K), 0.0919528 secs] [Times: user=0.68 sys=0.01, real=0.09 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0942291 secs] 723331K-&gt;652879K(2086912K), 0.0942611 secs] [Times: user=0.70 sys=0.00, real=0.09 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.0951904 secs] 734799K-&gt;664348K(2086912K), 0.0952265 secs] [Times: user=0.71 sys=0.00, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.0963585 secs] 746268K-&gt;675816K(2086912K), 0.0963909 secs] [Times: user=0.72 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0969504 secs] 757736K-&gt;687285K(2086912K), 0.0969843 secs] [Times: user=0.72 sys=0.01, real=0.09 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.0999066 secs] 769205K-&gt;698753K(2086912K), 0.0999376 secs] [Times: user=0.75 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10240K(92160K), 0.0998371 secs] 780673K-&gt;710222K(2086912K), 0.0998835 secs] [Times: user=0.75 sys=0.00, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92160K-&gt;10239K(92160K), 0.1024616 secs] 792142K-&gt;721691K(2086912K), 0.1024927 secs] [Times: user=0.77 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92159K-&gt;10238K(92160K), 0.1015041 secs] 803611K-&gt;733159K(2086912K), 0.1015378 secs] [Times: user=0.76 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1058214 secs] 815079K-&gt;744628K(2086912K), 0.1058532 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] 
+[GC (Allocation Failure) [ParNew: 92158K-&gt;10238K(92160K), 0.1061273 secs] 826548K-&gt;756096K(2086912K), 0.1061620 secs] [Times: user=0.80 sys=0.01, real=0.10 secs] 
+</code></pre>
+
+<p>有没有发现YGC不断发生，并且发生的时间不断在增长，从10ms慢慢增长到了100ms，甚至还会继续涨下去</p>
+
+<h2>String.intern方法</h2>
+
+<p>从上面的demo我们能挖掘到的可能就是intern这个方法了，那我们先来了解下intern方法的实现，这是String提供的一个方法，jvm提供这个方法的目的是希望对于某个同名字符串使用非常多的场景，在jvm里只保留一份，比如我们不断new String(&ldquo;a&rdquo;)，其实在java heap里会有多个String的对象，并且值都是a，如果我们只希望内存里只保留一个a，或者希望我接下来用到的地方都返回同一个a，那就可以用String.intern这个方法了，用法如下</p>
+
+<pre><code>String a = "a".intern();
+...
+String b = a.intern();
+</code></pre>
+
+<p>这样b和a都是指向内存里的同一个String对象，那JVM里到底怎么做到的呢？</p>
+
+<p>我们看到intern这个方法其实是一个native方法，具体对应到JVM里的逻辑是</p>
+
+<pre><code>
+oop StringTable::intern(oop string, TRAPS)
+{
+  if (string == NULL) return NULL;
+  ResourceMark rm(THREAD);
+  int length;
+  Handle h_string (THREAD, string);
+  jchar* chars = java_lang_String::as_unicode_string(string, length);
+  oop result = intern(h_string, chars, length, CHECK_NULL);
+  return result;
+}
+
+oop StringTable::intern(Handle string_or_null, jchar* name,
+                        int len, TRAPS) {
+  unsigned int hashValue = hash_string(name, len);
+  int index = the_table()-&gt;hash_to_index(hashValue);
+  oop found_string = the_table()-&gt;lookup(index, name, len, hashValue);
+
+  // Found
+  if (found_string != NULL) return found_string;
+
+  debug_only(StableMemoryChecker smc(name, len * sizeof(name[0])));
+  assert(!Universe::heap()-&gt;is_in_reserved(name) || GC_locker::is_active(),
+         "proposed name of symbol must be stable");
+
+  Handle string;
+  // try to reuse the string if possible
+  if (!string_or_null.is_null() &amp;&amp; (!JavaObjectsInPerm || string_or_null()-&gt;is_perm())) {
+    string = string_or_null;
+  } else {
+    string = java_lang_String::create_tenured_from_unicode(name, len, CHECK_NULL);
+  }
+
+  // Grab the StringTable_lock before getting the_table() because it could
+  // change at safepoint.
+  MutexLocker ml(StringTable_lock, THREAD);
+
+  // Otherwise, add to symbol to table
+  return the_table()-&gt;basic_add(index, string, name, len,
+                                hashValue, CHECK_NULL);
+}
+</code></pre>
+
+<p>也就是说是其实在JVM里存在一个叫做StringTable的数据结构，这个数据结构是一个Hashtable，在我们调用String.intern的时候其实就是先去这个StringTable里查找是否存在一个同名的项，如果存在就直接返回对应的对象，否则就往这个table里插入一项，指向这个String对象，那么再下次通过intern再来访问同名的String对象的时候，就会返回上次插入的这一项指向的String对象</p>
+
+<p>至此大家应该知道其原理了，另外我这里还想说个题外话，记得几年前tomcat里爆发的一个HashMap导致的hash碰撞的问题，这里其实也是一个Hashtable，所以也还是存在类似的风险，不过JVM里提供一个参数专门来控制这个table的size，<code>-XX:StringTableSize</code>，这个参数的默认值如下</p>
+
+<pre><code>product(uintx, StringTableSize, NOT_LP64(1009) LP64_ONLY(60013),          \
+          "Number of buckets in the interned String table")                 \
+</code></pre>
+
+<p>另外JVM还会根据hash碰撞的情况来决定是否做rehash，比如你从这个StringTable里查找某个字符串是否存在，如果对其对应的桶挨个遍历，超过了100个还是没有找到对应的同名的项，那就会设置一个flag，让下次进入到safepoint的时候做一次rehash动作，尽量减少碰撞的发生，但是当恶化到一定程度的时候，其实也没啥办法啦，因为你的数据量实在太大，桶子数就那么多，那每个桶再怎么均匀也会带着一个很长的链表，所以此时我们通过修改上面的StringTableSize将桶数变大，可能会一定程度上缓解，但是如果是java代码的问题导致泄露，那就只能定位到具体的代码进行改造了。</p>
+
+<h2>StringTable为什么会影响YGC</h2>
+
+<p>YGC的过程我不打算再这篇文章里细说，因为我希望尽量保持每篇文章的内容不过于臃肿，有机会可以单独写篇文章来介绍，我这里将列出ygc过程里StringTable这块的具体代码</p>
+
+<pre><code>  if (!_process_strong_tasks-&gt;is_task_claimed(SH_PS_StringTable_oops_do)) {
+    if (so &amp; SO_Strings || (!collecting_perm_gen &amp;&amp; !JavaObjectsInPerm)) {
+      StringTable::oops_do(roots);
+    }
+    if (JavaObjectsInPerm) {
+      // Verify the string table contents are in the perm gen
+      NOT_PRODUCT(StringTable::oops_do(&amp;assert_is_perm_closure));
+    }
+  }
+</code></pre>
+
+<p>因为YGC过程不涉及到对perm做回收，因此<code>collecting_perm_gen</code>是false，而<code>JavaObjectsInPerm</code>默认情况下也是false，表示String.intern返回的字符串是不是在perm里分配，如果是false，表示是在heap里分配的，因此StringTable指向的字符串是在heap里分配的，所以ygc过程需要对StringTable做扫描，以保证处于新生代的String代码不会被回收掉</p>
+
+<p>至此大家应该明白了为什么YGC过程会对StringTable扫描</p>
+
+<p>有了这一层意思之后，YGC的时间长短和扫描StringTable有关也可以理解了，设想一下如果StringTable非常庞大，那是不是意味着YGC过程扫描的时间也会变长呢</p>
+
+<h2>YGC过程扫描StringTable对CPU影响大吗</h2>
+
+<p>这个问题其实是我写这文章的时候突然问自己的一个问题，于是稍微想了下来跟大家解释下，因为大家也可能会问这么个问题</p>
+
+<p>要回答这个问题我首先得问你们的机器到底有多少个核，如果核数很多的话，其实影响不是很大，因为这个扫描的过程是单个GC线程来做的，所以最多消耗一个核，因此看起来对于核数很多的情况，基本不算什么</p>
+
+<h2>StringTable什么时候清理</h2>
+
+<p>YGC过程不会对StringTable做清理，这也就是我们demo里的情况会让Stringtable越来越大，因为到目前为止还只看到YGC过程，但是在Full GC或者CMS GC过程会对StringTable做清理，具体验证很简单，执行下<code>jmap -histo:live &lt;pid&gt;</code>，你将会发现YGC的时候又降下去了</p>
+
+<h2>本文写作时间</h2>
+
+<p>利用午饭前的一点时间写下 2016/11/06 12:00~12:40</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM源码分析之不保证顺序的Class.getMethods]]></title>
+    <link href="http://nijiaben.github.io/blog/2016/11/02/class-getmethods/"/>
+    <updated>2016-11-02T09:39:29+08:00</updated>
+    <id>http://nijiaben.github.io/blog/2016/11/02/class-getmethods</id>
+    <content type="html"><![CDATA[<h2>概述</h2>
+
+<p>本文要说的内容是今天公司有个线上系统踩了一个坑，并且貌似还造成了一定的影响，后来系统相关的人定位到了是<code>java.lang.Class.getMethods</code>返回的顺序可能不同机器不一样，有问题的机器和没问题的机器这个返回的方法列表是不一样的，后面他们就来找到我求证是否jdk里有这潜规则</p>
+
+<p>本来这个问题简单一句话就可以说明白，所以在晚上推送的消息里也将这个事实告诉了大家，大家知道就好，以后不要再掉到坑里去了，但是这个要细说起来其实也值得一说，于是在消息就附加了征求大家意见的内容，看大家是否有兴趣或者是否踩到过此坑，没想到有这么多人响应，表示对这个话题很感兴趣，并且总结了大家问得最多的两个问题是</p>
+
+<ul>
+<li>为什么有代码需要依赖这个顺序</li>
+<li>jvm里为什么不保证顺序</li>
+</ul>
+
+
+<p>那这篇文章主要就针对这两个问题展开说一下，另外以后针对此类可写可不写的文章先征求下大家的意见再来写可能效果会更好点，一来可以回答大家的一些疑问（当然有些问题我也可能回答不上来，不过我尽量去通读代码回答好大家），二来希望对我公众号里的文章继续保持<code>不求最多，只求最精</code>的态度。</p>
+
+<p>为了不辜负大家的热情，我连夜赶写了这篇文章，如果大家觉得我写的这些文章对大家有帮助，希望您能将文章分享出去，同时将我的公众号<code>你假笨</code>推荐给您身边更多的技术人，能帮助到更多的人去了解更多的细节，在下在此先谢过。</p>
+
+<!--more-->
+
+
+<h2>依赖顺序的场景</h2>
+
+<p>如果大家看过或者实现过序列化反序列化的代码，这个问题就不难回答了，今天碰到的这个问题其实是发生在大家可能最常用的<code>fastjson</code>库里的，所以如果大家在使用这个库，请务必检查下你的代码，以免踩到此坑</p>
+
+<h3>对象序列化</h3>
+
+<p>大家都知道当我们序列化好一个对象之后，要反序列回来，那问题就来了，就拿这个json序列化来说吧，我们要将对象序列化成json串，那意味着我们要先取出这个对象的属性，然后写成键值对的形式，那取值就意味着我们要遵循java bean的规范通过getter方法来取，那其实getter方法有两种，一种是boolean类型的，一种是其他类型的，如果是boolean类型的，那我们通常是<code>isXXX()</code>这样的方法，如果是其他类型的，一般是<code>getXXX()</code>这样的方法。那假如说我们的类里针对某个属性a，同时存在两个方法<code>isA()</code>和<code>getA()</code>，那究竟我们会调用哪个来取值？这个就取决于具体的序列化框架实现了，比如导致我们这篇文章诞生的<code>fastjson</code>，就是利用我们这篇文章的主角<code>java.lang.Class.getMethods</code>返回的数组，然后挨个遍历，先找到哪个就是哪个，如果我们的这个数组正好因为jvm本身实现没有保证顺序，那么可能先找到<code>isA()</code>，也可能先找到<code>getA()</code>，如果两个方法都是返回a这个属性其实问题也不大，假如正好是这两个方法返回不同的内容呢？</p>
+
+<pre><code>private A a;
+
+public A getA(){
+    return a;
+}
+
+public boolean isA(){
+    return false;
+}
+
+public void setA(A a){
+    this.a=a;
+}
+</code></pre>
+
+<p>如果是上面的内容，那可能就会悲剧了，如果选了<code>isA()</code>，那其实是返回一个boolean类型的，将这个boolean写入到json串里，如果是选了<code>getA()</code>，那就是将A这个类型的对象写到json串里</p>
+
+<h3>对象反序列化</h3>
+
+<p>在完成了序列化过程之后，需要将这个字符串进行反序列化了，于是就会去找json串里对应字段的setter方法，比如上面的<code>setA(A a)</code>，假如我们之前选了<code>isA()</code>序列化好内容，那我们此时的值是一个boolean值false，那就无法通过<code>setA</code>来赋值还原对象了。</p>
+
+<h3>解决方案</h3>
+
+<p>相信大家看完我上面的描述，知道这个问题所在了，要避免类似的问题，方案其实也挺多，比如对方法进行先排序，又比如说优先使用<code>isXXX()</code>方法，不过这种需要和开发者达成共识，和setter要对应得起来</p>
+
+<h2>jvm里为什么不保证顺序</h2>
+
+<p>JDK层面的代码我就暂时不说了，大家都能看到代码，从<code>java.lang.Class.getMethods</code>一层层走下去，相信大家细心点还是能抓住整个脉络的，我这里主要想说大家可能比较难看到的一些实现，比如JVM里的具体实现</p>
+
+<p>正常情况下大家跟代码能跟到调用了<code>java.lang.Class.getDeclaredMethods0</code>这个native方法，其具体实现如下</p>
+
+<pre><code>JVM_ENTRY(jobjectArray, JVM_GetClassDeclaredMethods(JNIEnv *env, jclass ofClass, jboolean publicOnly))
+{
+  JVMWrapper("JVM_GetClassDeclaredMethods");
+  return get_class_declared_methods_helper(env, ofClass, publicOnly,
+                                           /*want_constructor*/ false,
+                                           SystemDictionary::reflect_Method_klass(), THREAD);
+}
+JVM_END
+</code></pre>
+
+<p>其主要调用了<code>get_class_declared_methods_helper</code>方法</p>
+
+<pre><code>static jobjectArray get_class_declared_methods_helper(
+                                  JNIEnv *env,
+                                  jclass ofClass, jboolean publicOnly,
+                                  bool want_constructor,
+                                  Klass* klass, TRAPS) {
+
+  JvmtiVMObjectAllocEventCollector oam;
+
+  // Exclude primitive types and array types
+  if (java_lang_Class::is_primitive(JNIHandles::resolve_non_null(ofClass))
+      || java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass))-&gt;oop_is_array()) {
+    // Return empty array
+    oop res = oopFactory::new_objArray(klass, 0, CHECK_NULL);
+    return (jobjectArray) JNIHandles::make_local(env, res);
+  }
+
+  instanceKlassHandle k(THREAD, java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass)));
+
+  // Ensure class is linked
+  k-&gt;link_class(CHECK_NULL);
+
+  Array&lt;Method*&gt;* methods = k-&gt;methods();
+  int methods_length = methods-&gt;length();
+
+  // Save original method_idnum in case of redefinition, which can change
+  // the idnum of obsolete methods.  The new method will have the same idnum
+  // but if we refresh the methods array, the counts will be wrong.
+  ResourceMark rm(THREAD);
+  GrowableArray&lt;int&gt;* idnums = new GrowableArray&lt;int&gt;(methods_length);
+  int num_methods = 0;
+
+  for (int i = 0; i &lt; methods_length; i++) {
+    methodHandle method(THREAD, methods-&gt;at(i));
+    if (select_method(method, want_constructor)) {
+      if (!publicOnly || method-&gt;is_public()) {
+        idnums-&gt;push(method-&gt;method_idnum());
+        ++num_methods;
+      }
+    }
+  }
+
+  // Allocate result
+  objArrayOop r = oopFactory::new_objArray(klass, num_methods, CHECK_NULL);
+  objArrayHandle result (THREAD, r);
+
+  // Now just put the methods that we selected above, but go by their idnum
+  // in case of redefinition.  The methods can be redefined at any safepoint,
+  // so above when allocating the oop array and below when creating reflect
+  // objects.
+  for (int i = 0; i &lt; num_methods; i++) {
+    methodHandle method(THREAD, k-&gt;method_with_idnum(idnums-&gt;at(i)));
+    if (method.is_null()) {
+      // Method may have been deleted and seems this API can handle null
+      // Otherwise should probably put a method that throws NSME
+      result-&gt;obj_at_put(i, NULL);
+    } else {
+      oop m;
+      if (want_constructor) {
+        m = Reflection::new_constructor(method, CHECK_NULL);
+      } else {
+        m = Reflection::new_method(method, UseNewReflection, false, CHECK_NULL);
+      }
+      result-&gt;obj_at_put(i, m);
+    }
+  }
+
+  return (jobjectArray) JNIHandles::make_local(env, result());
+}
+</code></pre>
+
+<p>从上面的<code>k-&gt;method_with_idnum(idnums-&gt;at(i))</code>,我们基本知道方法主要是从klass里来的</p>
+
+<pre><code>Method* InstanceKlass::method_with_idnum(int idnum) {
+  Method* m = NULL;
+  if (idnum &lt; methods()-&gt;length()) {
+    m = methods()-&gt;at(idnum);
+  }
+  if (m == NULL || m-&gt;method_idnum() != idnum) {
+    for (int index = 0; index &lt; methods()-&gt;length(); ++index) {
+      m = methods()-&gt;at(index);
+      if (m-&gt;method_idnum() == idnum) {
+        return m;
+      }
+    }
+    // None found, return null for the caller to handle.
+    return NULL;
+  }
+  return m;
+}
+</code></pre>
+
+<p>因此InstanceKlass里的methods是关键，而这个methods的创建是在类解析的时候发生的</p>
+
+<pre><code>instanceKlassHandle ClassFileParser::parseClassFile(Symbol* name,
+                                                    ClassLoaderData* loader_data,
+                                                    Handle protection_domain,
+                                                    KlassHandle host_klass,
+                                                    GrowableArray&lt;Handle&gt;* cp_patches,
+                                                    TempNewSymbol&amp; parsed_name,
+                                                    bool verify,
+                                                    TRAPS) {
+
+
+...
+ Array&lt;Method*&gt;* methods = parse_methods(access_flags.is_interface(),
+                                            &amp;promoted_flags,
+                                            &amp;has_final_method,
+                                            &amp;declares_default_methods,
+
+...                                            CHECK_(nullHandle));
+// sort methods
+intArray* method_ordering = sort_methods(methods); 
+...
+this_klass-&gt;set_methods(_methods);
+...
+}
+</code></pre>
+
+<p>上面的<code>parse_methods</code>就是从class文件里挨个解析出method，并存到_methods字段里，但是接下来做了一次<code>sort_methods</code>的动作，这个动作会对解析出来的方法做排序</p>
+
+<pre><code>intArray* ClassFileParser::sort_methods(Array&lt;Method*&gt;* methods) {
+  int length = methods-&gt;length();
+  // If JVMTI original method ordering or sharing is enabled we have to
+  // remember the original class file ordering.
+  // We temporarily use the vtable_index field in the Method* to store the
+  // class file index, so we can read in after calling qsort.
+  // Put the method ordering in the shared archive.
+  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+    for (int index = 0; index &lt; length; index++) {
+      Method* m = methods-&gt;at(index);
+      assert(!m-&gt;valid_vtable_index(), "vtable index should not be set");
+      m-&gt;set_vtable_index(index);
+    }
+  }
+  // Sort method array by ascending method name (for faster lookups &amp; vtable construction)
+  // Note that the ordering is not alphabetical, see Symbol::fast_compare
+  Method::sort_methods(methods);
+
+  intArray* method_ordering = NULL;
+  // If JVMTI original method ordering or sharing is enabled construct int
+  // array remembering the original ordering
+  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+    method_ordering = new intArray(length);
+    for (int index = 0; index &lt; length; index++) {
+      Method* m = methods-&gt;at(index);
+      int old_index = m-&gt;vtable_index();
+      assert(old_index &gt;= 0 &amp;&amp; old_index &lt; length, "invalid method index");
+      method_ordering-&gt;at_put(index, old_index);
+      m-&gt;set_vtable_index(Method::invalid_vtable_index);
+    }
+  }
+  return method_ordering;
+}
+
+
+// This is only done during class loading, so it is OK to assume method_idnum matches the methods() array
+// default_methods also uses this without the ordering for fast find_method
+void Method::sort_methods(Array&lt;Method*&gt;* methods, bool idempotent, bool set_idnums) {
+  int length = methods-&gt;length();
+  if (length &gt; 1) {
+    {
+      No_Safepoint_Verifier nsv;
+      QuickSort::sort&lt;Method*&gt;(methods-&gt;data(), length, method_comparator, idempotent);
+    }
+    // Reset method ordering
+    if (set_idnums) {
+      for (int i = 0; i &lt; length; i++) {
+        Method* m = methods-&gt;at(i);
+        m-&gt;set_method_idnum(i);
+        m-&gt;set_orig_method_idnum(i);
+      }
+    }
+  }
+}
+</code></pre>
+
+<p>从上面的<code>Method::sort_methods</code>可以看出其实具体的排序算法是<code>method_comparator</code></p>
+
+<pre><code>// Comparer for sorting an object array containing
+// Method*s.
+static int method_comparator(Method* a, Method* b) {
+  return a-&gt;name()-&gt;fast_compare(b-&gt;name());
+}
+</code></pre>
+
+<p>比较的是两个方法的名字，但是这个名字不是一个字符串，而是一个Symbol对象，每个类或者方法名字都会对应一个Symbol对象，在这个名字第一次使用的时候构建，并且不是在java heap里分配的，比如jdk7里就是在c heap里通过malloc来分配的，jdk8里会在metaspace里分配</p>
+
+<pre><code>// Note: this comparison is used for vtable sorting only; it doesn't matter
+// what order it defines, as long as it is a total, time-invariant order
+// Since Symbol*s are in C_HEAP, their relative order in memory never changes,
+// so use address comparison for speed
+int Symbol::fast_compare(Symbol* other) const {
+ return (((uintptr_t)this &lt; (uintptr_t)other) ? -1
+   : ((uintptr_t)this == (uintptr_t) other) ? 0 : 1);
+}
+</code></pre>
+
+<p>从上面的fast_compare方法知道，其实对比的是地址的大小，因为Symbol对象是通过malloc来分配的，因此新分配的Symbol对象的地址就不一定比后分配的Symbol对象地址小，也不一定大，因为期间存在内存free的动作，那地址是不会一直线性变化的，之所以不按照字母排序，主要还是为了速度考虑，根据地址排序是最快的。</p>
+
+<p>综上所述，一个类里的方法经过排序之后，顺序可能会不一样，取决于方法名对应的Symbol对象的地址的先后顺序</p>
+
+<h3>JVM为什么要对方法排序</h3>
+
+<p>其实这个问题很简单，就是为了快速找到方法呢，当我们要找某个名字的方法的时候，根据对应的Symbol对象，能根据对象的地址使用二分排序的算法快速定位到具体的方法。</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[JVM源码分析之Metaspace解密]]></title>
@@ -611,294 +1111,6 @@
   return MetaspaceAux::committed_bytes(Metaspace::ClassType);
 }
 </code></pre>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[JVM源码分析之不可控的堆外内存]]></title>
-    <link href="http://nijiaben.github.io/blog/2016/06/29/ooc-offheap/"/>
-    <updated>2016-06-29T14:33:51+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2016/06/29/ooc-offheap</id>
-    <content type="html"><![CDATA[<h2>概述</h2>
-
-<p>之前写过篇文章，关于堆外内存的，<a href="http://mp.weixin.qq.com/s?__biz=MzIzNjI1ODc2OA==&amp;mid=403168235&amp;idx=1&amp;sn=ecc804ba7231996d43c05138566d074a&amp;scene=19#wechat_redirect">JVM源码分析之堆外内存完全解读</a>，里面重点讲了DirectByteBuffer的原理，但是今天碰到一个比较奇怪的问题，在设置了-XX:MaxDirectMemorySize=1G的前提下，然后统计所有DirectByteBuffer对象后面占用的内存达到了7G，远远超出阈值，这个问题很诡异，于是好好查了下原因，虽然最终发现是我们统计的问题，但是期间发现的其他一些问题还是值得分享一下的。</p>
-
-<!--more-->
-
-
-<h2>不得不提的DirectByteBuffer构造函数</h2>
-
-<p>打开DirectByteBuffer这个类，我们会发现有5个构造函数</p>
-
-<pre><code class="java">DirectByteBuffer(int cap);
-
-DirectByteBuffer(long addr, int cap, Object ob);
-
-private DirectByteBuffer(long addr, int cap);
-
-protected DirectByteBuffer(int cap, long addr,FileDescriptor fd,Runnable unmapper);
-
-DirectByteBuffer(DirectBuffer db, int mark, int pos, int lim, int cap,int off)
-</code></pre>
-
-<p>我们从java层面创建DirectByteBuffer对象，一般都是通过ByteBuffer的allocateDirect方法</p>
-
-<pre><code>public static ByteBuffer allocateDirect(int capacity) {
-        return new DirectByteBuffer(capacity);
-}
-</code></pre>
-
-<p>也就是会使用上面提到的第一个构造函数，即</p>
-
-<pre><code>DirectByteBuffer(int cap) {                   // package-private
-
-        super(-1, 0, cap, cap);
-        boolean pa = VM.isDirectMemoryPageAligned();
-        int ps = Bits.pageSize();
-        long size = Math.max(1L, (long)cap + (pa ? ps : 0));
-        Bits.reserveMemory(size, cap);
-
-        long base = 0;
-        try {
-            base = unsafe.allocateMemory(size);
-        } catch (OutOfMemoryError x) {
-            Bits.unreserveMemory(size, cap);
-            throw x;
-        }
-        unsafe.setMemory(base, size, (byte) 0);
-        if (pa &amp;&amp; (base % ps != 0)) {
-            // Round up to page boundary
-            address = base + ps - (base &amp; (ps - 1));
-        } else {
-            address = base;
-        }
-        cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
-        att = null;
-
-
-
-    }
-</code></pre>
-
-<p>而这个构造函数里的<code>Bits.reserveMemory(size, cap)</code>方法会做堆外内存的阈值check</p>
-
-<pre><code> static void reserveMemory(long size, int cap) {
-        synchronized (Bits.class) {
-            if (!memoryLimitSet &amp;&amp; VM.isBooted()) {
-                maxMemory = VM.maxDirectMemory();
-                memoryLimitSet = true;
-            }
-            // -XX:MaxDirectMemorySize limits the total capacity rather than the
-            // actual memory usage, which will differ when buffers are page
-            // aligned.
-            if (cap &lt;= maxMemory - totalCapacity) {
-                reservedMemory += size;
-                totalCapacity += cap;
-                count++;
-                return;
-            }
-        }
-
-        System.gc();
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException x) {
-            // Restore interrupt status
-            Thread.currentThread().interrupt();
-        }
-        synchronized (Bits.class) {
-            if (totalCapacity + cap &gt; maxMemory)
-                throw new OutOfMemoryError("Direct buffer memory");
-            reservedMemory += size;
-            totalCapacity += cap;
-            count++;
-        }
-
-    }
-</code></pre>
-
-<p>因此当我们已经分配的内存超过阈值的时候会触发一次gc动作，并重新做一次分配，如果还是超过阈值，那将会抛出OOM，因此分配动作会失败。</p>
-
-<p>所以从这一切看来，只要设置了<code>-XX:MaxDirectMemorySize=1G</code>是不会出现超过这个阈值的情况的，会看到不断的做GC。</p>
-
-<h2>构造函数再探</h2>
-
-<p>那其他的构造函数主要是用在什么情况下的呢？</p>
-
-<p>我们知道DirectByteBuffer回收靠的是里面有个cleaner的属性，但是我们发现有几个构造函数里cleaner这个属性却是null，那这种情况下他们怎么被回收呢？</p>
-
-<p>那下面请大家先看下DirectByteBuffer里的这两个函数：</p>
-
-<pre><code>  public ByteBuffer slice() {
-        int pos = this.position();
-        int lim = this.limit();
-        assert (pos &lt;= lim);
-        int rem = (pos &lt;= lim ? lim - pos : 0);
-        int off = (pos &lt;&lt; 0);
-        assert (off &gt;= 0);
-        return new DirectByteBuffer(this, -1, 0, rem, rem, off);
-    }
-
-    public ByteBuffer duplicate() {
-        return new DirectByteBuffer(this,
-                                              this.markValue(),
-                                              this.position(),
-                                              this.limit(),
-                                              this.capacity(),
-                                              0);
-    }
-</code></pre>
-
-<p>从名字和实现上基本都能猜出是干什么的了，slice其实是从一块已知的内存里取出剩下的一部分，用一个新的DirectByteBuffer对象指向它，而duplicate就是创建一个现有DirectByteBuffer的全新副本，各种指针都一样。</p>
-
-<p>因此从这个实现来看，后面关联的堆外内存其实是同一块，所以如果我们做统计的时候如果仅仅将所有DirectByteBuffer对象的capacity加起来，那可能会导致算出来的结果偏大不少，这其实也是我查的那个问题，本来设置了阈值1G，但是发现达到了7G的效果。所以这种情况下使用的构造函数，可以让cleaner为null，回收靠原来的那个DirectByteBuffer对象被回收。</p>
-
-<h2>被遗忘的检查</h2>
-
-<p>但是还有种情况，也是本文要讲的重点，在jvm里可以通过jni方法回调上面的DirectByteBuffer构造函数，这个构造函数是</p>
-
-<pre><code>    private DirectByteBuffer(long addr, int cap) {
-        super(-1, 0, cap, cap);
-        address = addr;
-        cleaner = null;
-        att = null;
-    }
-</code></pre>
-
-<p>而调用这个构造函数的jni方法是<code>jni_NewDirectByteBuffer</code></p>
-
-<pre><code>extern "C" jobject JNICALL jni_NewDirectByteBuffer(JNIEnv *env, void* address, jlong capacity)
-{
-  // thread_from_jni_environment() will block if VM is gone.
-  JavaThread* thread = JavaThread::thread_from_jni_environment(env);
-
-  JNIWrapper("jni_NewDirectByteBuffer");
-#ifndef USDT2
-  DTRACE_PROBE3(hotspot_jni, NewDirectByteBuffer__entry, env, address, capacity);
-#else /* USDT2 */
- HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_ENTRY(
-                                       env, address, capacity);
-#endif /* USDT2 */
-
-  if (!directBufferSupportInitializeEnded) {
-    if (!initializeDirectBufferSupport(env, thread)) {
-#ifndef USDT2
-      DTRACE_PROBE1(hotspot_jni, NewDirectByteBuffer__return, NULL);
-#else /* USDT2 */
-      HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN(
-                                             NULL);
-#endif /* USDT2 */
-      return NULL;
-    }
-  }
-
-  // Being paranoid about accidental sign extension on address
-  jlong addr = (jlong) ((uintptr_t) address);
-  // NOTE that package-private DirectByteBuffer constructor currently
-  // takes int capacity
-  jint  cap  = (jint)  capacity;
-  jobject ret = env-&gt;NewObject(directByteBufferClass, directByteBufferConstructor, addr, cap);
-#ifndef USDT2
-  DTRACE_PROBE1(hotspot_jni, NewDirectByteBuffer__return, ret);
-#else /* USDT2 */
-  HOTSPOT_JNI_NEWDIRECTBYTEBUFFER_RETURN(
-                                         ret);
-#endif /* USDT2 */
-  return ret;
-}
-</code></pre>
-
-<p>想象这么种情况，我们写了一个native方法，里面分配了一块内存，同时通过上面这个方法和一个DirectByteBuffer对象关联起来，那从java层面来看这个DirectByteBuffer确实是一个有效的占有不少native内存的对象，但是这个对象后面关联的内存完全绕过了MaxDirectMemorySize的check，所以也可能给你造成这种现象，明明设置了MaxDirectMemorySize，但是发现DirectByteBuffer关联的堆外内存其实是大于它的。</p>
-
-<h2>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h2>
-
-<p><img src="/images/gzh.jpg" width="200" height="200"></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[YGC前后新生代变大？]]></title>
-    <link href="http://nijiaben.github.io/blog/2016/05/18/ygc-worse/"/>
-    <updated>2016-05-18T18:59:44+08:00</updated>
-    <id>http://nijiaben.github.io/blog/2016/05/18/ygc-worse</id>
-    <content type="html"><![CDATA[<h2>问题描述</h2>
-
-<p>我们都知道gc是为了释放内存，但是你是否碰到过ygc前后新生代反增不减的情况呢？gc日志效果类似下面的：</p>
-
-<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="mi">2016</span><span class="o">-</span><span class="mo">05</span><span class="o">-</span><span class="mi">18</span><span class="nl">T15</span><span class="p">:</span><span class="mo">06</span><span class="o">:</span><span class="mf">13.011</span><span class="o">+</span><span class="mi">0800</span><span class="o">:</span> <span class="p">[</span><span class="n">GC</span> <span class="p">[</span><span class="n">ParNew</span> <span class="p">(</span><span class="n">promotion</span> <span class="n">failed</span><span class="p">)</span><span class="o">:</span> <span class="mi">636088</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">690555</span><span class="n">K</span><span class="p">(</span><span class="mi">707840</span><span class="n">K</span><span class="p">),</span> <span class="mf">0.2958900</span> <span class="n">secs</span><span class="p">][</span><span class="nl">CMS</span><span class="p">:</span> <span class="mi">1019739</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1019733</span><span class="n">K</span><span class="p">(</span><span class="mi">1310720</span><span class="n">K</span><span class="p">),</span> <span class="mf">2.6208600</span> <span class="n">secs</span><span class="p">]</span> <span class="mi">1655820</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">1655820</span><span class="n">K</span><span class="p">(</span><span class="mi">2018560</span><span class="n">K</span><span class="p">),</span> <span class="p">[</span><span class="n">CMS</span> <span class="nl">Perm</span> <span class="p">:</span> <span class="mi">205486</span><span class="n">K</span><span class="o">-&gt;</span><span class="mi">205486</span><span class="n">K</span><span class="p">(</span><span class="mi">262144</span><span class="n">K</span><span class="p">)],</span> <span class="mf">2.9174390</span> <span class="n">secs</span><span class="p">]</span> <span class="p">[</span><span class="nl">Times</span><span class="p">:</span> <span class="n">user</span><span class="o">=</span><span class="mf">3.74</span> <span class="n">sys</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">real</span><span class="o">=</span><span class="mf">2.91</span> <span class="n">secs</span><span class="p">]</span>
-</span></code></pre></td></tr></table></div></figure></p>
-
-<p>从上面的gc日志来看，我们新生代使用的是ParNew，而老生代用的是CMS GC，我们注意到ParNew的效果是新生代从636088K新增到了690555K，这是什么情况？</p>
-
-<!--more-->
-
-
-<h2>原理分析</h2>
-
-<p>要解释这个问题，我们先要弄清楚YGC的过程，parNew是新生代的gc算法，简单来说从gc roots开始扫描对象，当扫到一个只要是属于新生代的对象就将其挪到to space，但是老的对象还不会做释放，直到gc完成之后再看是否释放老的对象(比如说上面我们看到了<code>promotion failed</code>的关键字，意味着晋升失败了，也就是说to和old都装不下新生代晋升来的对象，那么在这种情况下其实是不会对eden和from里的老对象做释放的，尽管to space里已经可能存在一份副本了)，但是在gc前后不管是否晋升成功，都会对from space和to space做一个对换，也就是原来的from变成to，原来的to变成from，再来看看打印gc前后内存变化的代码</p>
-
-<p><figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">void</span> <span class="n">GenCollectedHeap</span><span class="o">::</span><span class="n">print_heap_change</span><span class="p">(</span><span class="kt">size_t</span> <span class="n">prev_used</span><span class="p">)</span> <span class="k">const</span> <span class="p">{</span>
-</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="n">PrintGCDetails</span> <span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span><span class="o">&amp;</span><span class="n">amp</span><span class="p">;</span> <span class="n">Verbose</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">gclog_or_tty</span><span class="o">-&gt;</span><span class="n">print</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span> <span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>  <span class="n">SIZE_FORMAT</span>
-</span><span class='line'>                        <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="o">-&gt;&amp;</span><span class="n">rdquo</span><span class="p">;</span> <span class="n">SIZE_FORMAT</span>
-</span><span class='line'>                        <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;(</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>  <span class="n">SIZE_FORMAT</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;)</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;,</span>
-</span><span class='line'>                        <span class="n">prev_used</span><span class="p">,</span> <span class="n">used</span><span class="p">(),</span> <span class="n">capacity</span><span class="p">());</span>
-</span><span class='line'>  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">gclog_or_tty</span><span class="o">-&gt;</span><span class="n">print</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span> <span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>  <span class="n">SIZE_FORMAT</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">K</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>
-</span><span class='line'>                        <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="o">-&gt;&amp;</span><span class="n">rdquo</span><span class="p">;</span> <span class="n">SIZE_FORMAT</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">K</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>
-</span><span class='line'>                        <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;(</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;</span>  <span class="n">SIZE_FORMAT</span> <span class="o">&amp;</span><span class="n">ldquo</span><span class="p">;</span><span class="n">K</span><span class="p">)</span><span class="o">&amp;</span><span class="n">rdquo</span><span class="p">;,</span>
-</span><span class='line'>                        <span class="n">prev_used</span> <span class="o">/</span> <span class="n">K</span><span class="p">,</span> <span class="n">used</span><span class="p">()</span> <span class="o">/</span> <span class="n">K</span><span class="p">,</span> <span class="n">capacity</span><span class="p">()</span> <span class="o">/</span> <span class="n">K</span><span class="p">);</span>
-</span><span class='line'>  <span class="p">}</span>
-</span><span class='line'><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
-</span><span class='line'>
-</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="kt">size_t</span> <span class="n">GenCollectedHeap</span><span class="o">::</span><span class="n">used</span><span class="p">()</span> <span class="k">const</span> <span class="p">{</span>
-</span><span class='line'>  <span class="kt">size_t</span> <span class="n">res</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>  <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span> <span class="o">&lt;</span><span class="n">em</span><span class="o">&gt;</span><span class="n">n_gens</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">res</span> <span class="o">+=</span> <span class="o">&lt;/</span><span class="n">em</span><span class="o">&gt;</span><span class="n">gens</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">-&gt;</span><span class="n">used</span><span class="p">();</span>
-</span><span class='line'>  <span class="p">}</span>
-</span><span class='line'>  <span class="k">return</span> <span class="n">res</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span><span class="o">&lt;/</span><span class="n">p</span><span class="o">&gt;</span>
-</span><span class='line'>
-</span><span class='line'><span class="o">&lt;</span><span class="n">p</span><span class="o">&gt;</span><span class="kt">size_t</span> <span class="n">DefNewGeneration</span><span class="o">::</span><span class="n">used</span><span class="p">()</span> <span class="k">const</span> <span class="p">{</span>
-</span><span class='line'>  <span class="k">return</span> <span class="n">eden</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">used</span><span class="p">()</span>
-</span><span class='line'>       <span class="o">+</span> <span class="n">from</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">used</span><span class="p">();</span>      <span class="c1">// to() is only used during scavenge</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure></p>
-
-<p>从上面代码我们知道，gc之后的内存情况是used()方法返回的，其中新生代的used方法返回的是eden+from的内存，同样的上面的prev_used也是这么计算的，只是发生在gc之前，这样一来，根据我上面提到的情况，在gc之后不管是否成功都会做一次from和to的swap，那么gc之前新生代的使用大小，其实是gc之前eden+from的使用大小，而gc之后的新生代的使用大小，其实是eden+原来的to现在是使用的大小，原来的to现在使用的大小其实就是在gc过程中将eden和from拷贝过来的对象所占的大小。</p>
-
-<p>综上分析你应该知道为什么会出现这种情况了，其实是一种特殊情况，只有在出现<code>promotion failed</code>的情况下才会发生这样的情况，因为在这个情况下存在to里新增对象，而from和eden不会变化的情况</p>
-
-<h1>欢迎各位关注个人微信公众号，主要围绕JVM写一系列的原理性，性能调优的文章</h1>
-
-<p><img src="/images/gzh.jpg" width="200" height="200"></p>
 ]]></content>
   </entry>
   

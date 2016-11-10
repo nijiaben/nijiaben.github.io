@@ -9,7 +9,7 @@
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="classloader, deadlock, jvm JDK的sql设计不合理导致的驱动类初始化死锁问题 问题描述 &#8195;&#8195;当我们一个系统既需要mysql驱动，也需要oracle驱动的时候，在并发加载初始化这些驱动类的过程中产生死锁的可能性非常大，下面是一个模拟的例子， &hellip;">
+	<meta name="description" content="jvm, thread JVM Bug:多个线程持有一把锁? 注:文章首发于InfoQ，http://www.infoq.com/cn/articles/jvm-bug-thread JVM线程dump Bug描述 &#8195;&#8195;在JAVA语言中，当同步块(Synchronized &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -92,6 +92,82 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner">
 <div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-07-24T14:10:26+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/thread/'>thread</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/24/jvm-thread-dump-bug/" itemprop="url">JVM Bug:多个线程持有一把锁?</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
+
+<h2>JVM线程dump Bug描述</h2>
+
+<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
+
+
+		
+		<a href="/blog/2014/07/24/jvm-thread-dump-bug/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-07-19T09:58:49+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/debug/'>debug</a>, <a class='category' href='/blog/categories/jdwp/'>jdwp</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2014/07/19/java-debug-log/" itemprop="url">从日志上理解JAVA调试机制</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>&#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。</p>
+
+
+		
+		<a href="/blog/2014/07/19/java-debug-log/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
     <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">

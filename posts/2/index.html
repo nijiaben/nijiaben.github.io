@@ -9,7 +9,7 @@
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="jvm JVM源码分析之Object.wait/notify(All)完全解读 概述 本文其实一直都想写，因为各种原因一直拖着没写，直到开公众号的第一天，有朋友再次问到这个问题，这次让我静心下来准备写下这篇文章，本文有些东西是我自己的理解，比如为什么JDK一开始要这么设计，初衷是什么， &hellip;">
+	<meta name="description" content="class, jvm 不可逆的类初始化过程 类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题， &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -92,6 +92,78 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner">
 <div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-03-31T22:11:56+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/class/'>class</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/" itemprop="url">不可逆的类初始化过程</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
+
+
+		
+		<a href="/blog/2016/03/31/class-init/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-03-31T18:27:35+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/cpu/'>cpu</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/cpu-thread/" itemprop="url">如何定位消耗CPU最多的线程</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<p>之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。</p>
+
+
+		
+		<a href="/blog/2016/03/31/cpu-thread/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
     <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
@@ -403,82 +475,6 @@
 
 		
 		<a href="/blog/2015/05/07/system-gc/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-07-24T14:10:26+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/thread/'>thread</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2014/07/24/jvm-thread-dump-bug/" itemprop="url">JVM Bug:多个线程持有一把锁?</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<p><code>注:文章首发于InfoQ，</code><a href="http://www.infoq.com/cn/articles/jvm-bug-thread">http://www.infoq.com/cn/articles/jvm-bug-thread</a></p>
-
-<h2>JVM线程dump Bug描述</h2>
-
-<p>&#8195;&#8195;在JAVA语言中，当同步块(<code>Synchronized</code>)被多个线程并发访问时，JVM中会采用基于互斥实现的重量级锁。JVM最多只允许一个线程持有这把锁，如果其它线程想要获得这把锁就必须处于等待状态，也就是说在同步块被并发访问时，最多只会有一个处于<code>RUNNABLE</code>状态的线程持有某把锁，而另外的线程因为竞争不到这把锁而都处于<code>BLOCKED</code>状态。然而有些时候我们会发现处于<code>BLOCKED</code>状态的线程，它的最上面那一帧在打印其正在等待的锁对象时，居然也会出现-locked的信息，这个信息和持有该锁的线程打印出来的结果是一样的(请看下图)，但是对比其他<code>BLOCKED</code>态的线程却并没有都出现这种情况。当我们再次dump线程时又可能出现不一样的结果。测试表明这可能是一个偶发的情况，本文就是针对这种情况对JVM内部的实现做了一个研究以寻找其根源。</p>
-
-
-		
-		<a href="/blog/2014/07/24/jvm-thread-dump-bug/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-07-19T09:58:49+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/debug/'>debug</a>, <a class='category' href='/blog/categories/jdwp/'>jdwp</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2014/07/19/java-debug-log/" itemprop="url">从日志上理解JAVA调试机制</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<p>&#8195;&#8195;JAVA调试我想大家都玩过，或许因为非常完美地集成到了我们日常的IDE里，比如eclipse，netbeans，可是大家有没有想过它是怎么实现的呢，接下来我会从vm中打印的调试日志来跟大家认识下这个调试体系。</p>
-
-
-		
-		<a href="/blog/2014/07/19/java-debug-log/" class="more-link">Read on &rarr;</a>
 	</div>
 
 </article>

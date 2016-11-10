@@ -9,7 +9,8 @@
 	<meta name="author" content="你假笨">
 
 	
-	<meta name="description" content="jvm, metaspace JVM源码分析之Metaspace解密 概述 metaspace，顾名思义，元数据空间，专门用来存元数据的，它是jdk8里特有的数据结构用来替代perm，这块空间很有自己的特点，前段时间公司这块的问题太多了，主要是因为升级了中间件所致，看到大家讨论来讨论去， &hellip;">
+	<meta name="description" content="jvm, string, ygc JVM源码分析之String.intern()导致的YGC不断变长 概述 之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志 1
+[GC ( &hellip;">
 	
 
   <!-- http://t.co/dKP3o1e -->
@@ -92,6 +93,101 @@
 			<div class="mid-col-container">
 				<div id="content" class="inner">
 <div itemscope itemtype="http://schema.org/Blog">
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-11-06T09:37:18+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>, <a class='category' href='/blog/categories/string/'>string</a>, <a class='category' href='/blog/categories/ygc/'>ygc</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/11/06/string-intern/" itemprop="url">JVM源码分析之String.intern()导致的YGC不断变长</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>之所以想写这篇文章，是因为YGC过程对我们来说太过于黑盒，如果对YGC过程不是很熟悉，这类问题基本很难定位，我们就算开了GC日志，也最多能看到类似下面的日志</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[GC (Allocation Failure) [ParNew: 91807K-&gt;10240K(92160K), 0.0538384 secs] 91807K-&gt;21262K(2086912K), 0.0538680 secs] [Times: user=0.16 sys=0.06, real=0.06 secs] 
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>只知道耗了多长时间，但是具体耗在了哪个阶段，是基本看不出来的，所以要么就是靠经验来定位，要么就是对代码相当熟悉，脑袋里过一遍整个过程，看哪个阶段最可能，今天要讲的这个大家可以当做今后排查这类问题的一个经验来使，这个当然不是唯一导致YGC过长的一个原因，但却是最近我帮忙定位碰到的发生相对来说比较多的一个场景</p>
+
+
+		
+		<a href="/blog/2016/11/06/string-intern/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
+
+
+    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
+	<div class="meta">
+		<div class="date">
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-11-02T09:39:29+08:00" data-updated="true" itemprop="datePublished"></time></div>
+		<div class="tags">
+
+
+	<a class='category' href='/blog/categories/jvm/'>jvm</a>
+
+
+</div>
+		
+	</div>
+	<h1 class="title" itemprop="name"><a href="/blog/2016/11/02/class-getmethods/" itemprop="url">JVM源码分析之不保证顺序的Class.getMethods</a></h1>
+	<div class="entry-content" itemprop="articleBody">
+		<h2>概述</h2>
+
+<p>本文要说的内容是今天公司有个线上系统踩了一个坑，并且貌似还造成了一定的影响，后来系统相关的人定位到了是<code>java.lang.Class.getMethods</code>返回的顺序可能不同机器不一样，有问题的机器和没问题的机器这个返回的方法列表是不一样的，后面他们就来找到我求证是否jdk里有这潜规则</p>
+
+<p>本来这个问题简单一句话就可以说明白，所以在晚上推送的消息里也将这个事实告诉了大家，大家知道就好，以后不要再掉到坑里去了，但是这个要细说起来其实也值得一说，于是在消息就附加了征求大家意见的内容，看大家是否有兴趣或者是否踩到过此坑，没想到有这么多人响应，表示对这个话题很感兴趣，并且总结了大家问得最多的两个问题是</p>
+
+<ul>
+<li>为什么有代码需要依赖这个顺序</li>
+<li>jvm里为什么不保证顺序</li>
+</ul>
+
+
+<p>那这篇文章主要就针对这两个问题展开说一下，另外以后针对此类可写可不写的文章先征求下大家的意见再来写可能效果会更好点，一来可以回答大家的一些疑问（当然有些问题我也可能回答不上来，不过我尽量去通读代码回答好大家），二来希望对我公众号里的文章继续保持<code>不求最多，只求最精</code>的态度。</p>
+
+<p>为了不辜负大家的热情，我连夜赶写了这篇文章，如果大家觉得我写的这些文章对大家有帮助，希望您能将文章分享出去，同时将我的公众号<code>你假笨</code>推荐给您身边更多的技术人，能帮助到更多的人去了解更多的细节，在下在此先谢过。</p>
+
+
+		
+		<a href="/blog/2016/11/02/class-getmethods/" class="more-link">Read on &rarr;</a>
+	</div>
+
+</article>
 
 
     <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
@@ -455,78 +551,6 @@
 
 		
 		<a href="/blog/2016/04/03/type-inference/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2016-03-31T22:11:56+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/class/'>class</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/class-init/" itemprop="url">不可逆的类初始化过程</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<p>类的加载过程说复杂很复杂，说简单也简单，说复杂是因为细节很多，比如说今天要说的这个，可能很多人都不了解；说简单，大致都知道类加载有这么几个阶段，loaded->linked->initialized，为了让大家能更轻松地知道我今天说的这个话题，我不详细说类加载的整个过程，改天有时间有精力了我将整个类加载的过程和大家好好说说（PS：我对类加载过程慢慢清晰起来得益于当初在支付宝做cloudengine容器开发的时候，当时引入了标准的osgi，解决类加载的问题几乎是每天的家常便饭，相信大家如果还在使用OSGI，那估计能体会我当时的那种痛，哈哈）。</p>
-
-
-		
-		<a href="/blog/2016/03/31/class-init/" class="more-link">Read on &rarr;</a>
-	</div>
-
-</article>
-
-
-    <article class="post" itemprop="blogPost" itemscope itemtype="http://schema.org/BlogPosting">
-	<div class="meta">
-		<div class="date">
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2016-03-31T18:27:35+08:00" data-updated="true" itemprop="datePublished"></time></div>
-		<div class="tags">
-
-
-	<a class='category' href='/blog/categories/cpu/'>cpu</a>, <a class='category' href='/blog/categories/jvm/'>jvm</a>
-
-
-</div>
-		
-	</div>
-	<h1 class="title" itemprop="name"><a href="/blog/2016/03/31/cpu-thread/" itemprop="url">如何定位消耗CPU最多的线程</a></h1>
-	<div class="entry-content" itemprop="articleBody">
-		<p>之前有朋友反馈说发的内容希望有个梯度，逐步加深，前面发了几篇关于jvm源码分析的文章，可能我觉得我已经把内容写得浅显易懂了，但是对于某些没怎么接触的同学来说还是比较难理解，这个我以后慢慢改进吧，今天发篇轻松点的文章，可能大家在工作过程中也会可能碰到类似的问题，或许有经验的同学看到这个题目就知道我要说什么了，也有自己的定位方法。</p>
-
-
-		
-		<a href="/blog/2016/03/31/cpu-thread/" class="more-link">Read on &rarr;</a>
 	</div>
 
 </article>

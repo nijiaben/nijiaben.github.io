@@ -1,0 +1,626 @@
+
+<!DOCTYPE HTML>
+
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>JVM源码分析之不保证顺序的Class.getMethods - 你假笨</title>
+	<meta name="author" content="你假笨">
+
+	
+	<meta name="description" content="JVM源码分析之不保证顺序的Class.getMethods 概述 本文要说的内容是今天公司有个线上系统踩了一个坑，并且貌似还造成了一定的影响，后来系统相关的人定位到了是java.lang.Class.getMethods返回的顺序可能不同机器不一样， &hellip;">
+	
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<link href="/atom.xml" rel="alternate" title="你假笨" type="application/atom+xml">
+	
+	<link rel="canonical" href="http://nijiaben.github.io/blog/2016/11/02/class-getmethods/">
+	<link href="/images/favicon.ico" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<link href="/stylesheets/font-awesome.min.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<link href='http://fonts.googleapis.com/css?family=Nunito:400,300,700' rel='stylesheet' type='text/css'>
+	<script src="/javascripts/jquery-3.1.1.min.js"></script>
+	
+  
+
+</head>
+
+
+<body>
+	<div class="container">
+		<div class="left-col">
+			<div class="intrude-less">
+			<header id="header" class="inner"><div class="profilepic">
+	
+	<script src="/javascripts/md5.js"></script>
+	<script type="text/javascript">
+		$(function(){
+			$('.profilepic').append("<a href='/'><img src='/images/header/header.jpg' alt='Profile Picture' style='width: 160px;' /></a>");
+		});
+	</script>
+	
+</div>
+
+<nav id="main-nav"><ul class="main">
+	<li><font size="5" color="#ef7522">【你假笨@JVM】</font></li>
+    <li><a href="/">文章</a></li>
+    <li><a href="/blog/archives">归档</a></li>
+    <li><a href="/comments/latest.html">最新评论</a></li>
+    <li><a href="/about/index.html">关于你假笨</a></li><br/>
+    <li><font color="#ef7522">文章一般会在博客和个人微信公众号同步，欢迎各位关注本人微信公众号<br/>【你假笨】</font></li><br/><img src="/images/gzh.jpg" height="200" width="200"/></li>
+</ul>
+
+</nav>
+<nav id="sub-nav">
+	<div class="social">
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+    	
+    	
+			<a class="rss" href="/atom.xml" title="RSS">RSS</a>
+		
+		
+                        <a class="weibo" href="http://weibo.com/nijiaben" title="weibo">新浪微博</a>
+                
+	</div>
+</nav>
+</header>				
+			</div>
+		</div>	
+		<div class="mid-col">
+			
+				
+			
+			<div class="mid-col-container">
+				<div id="content" class="inner"><article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<h1 class="title" itemprop="name">JVM源码分析之不保证顺序的Class.getMethods</h1>
+	<div class="entry-content" itemprop="articleBody"><h2>概述</h2>
+
+<p>本文要说的内容是今天公司有个线上系统踩了一个坑，并且貌似还造成了一定的影响，后来系统相关的人定位到了是<code>java.lang.Class.getMethods</code>返回的顺序可能不同机器不一样，有问题的机器和没问题的机器这个返回的方法列表是不一样的，后面他们就来找到我求证是否jdk里有这潜规则</p>
+
+<p>本来这个问题简单一句话就可以说明白，所以在晚上推送的消息里也将这个事实告诉了大家，大家知道就好，以后不要再掉到坑里去了，但是这个要细说起来其实也值得一说，于是在消息就附加了征求大家意见的内容，看大家是否有兴趣或者是否踩到过此坑，没想到有这么多人响应，表示对这个话题很感兴趣，并且总结了大家问得最多的两个问题是</p>
+
+<ul>
+<li>为什么有代码需要依赖这个顺序</li>
+<li>jvm里为什么不保证顺序</li>
+</ul>
+
+
+<p>那这篇文章主要就针对这两个问题展开说一下，另外以后针对此类可写可不写的文章先征求下大家的意见再来写可能效果会更好点，一来可以回答大家的一些疑问（当然有些问题我也可能回答不上来，不过我尽量去通读代码回答好大家），二来希望对我公众号里的文章继续保持<code>不求最多，只求最精</code>的态度。</p>
+
+<p>为了不辜负大家的热情，我连夜赶写了这篇文章，如果大家觉得我写的这些文章对大家有帮助，希望您能将文章分享出去，同时将我的公众号<code>你假笨</code>推荐给您身边更多的技术人，能帮助到更多的人去了解更多的细节，在下在此先谢过。</p>
+
+<!--more-->
+
+
+<h2>依赖顺序的场景</h2>
+
+<p>如果大家看过或者实现过序列化反序列化的代码，这个问题就不难回答了，今天碰到的这个问题其实是发生在大家可能最常用的<code>fastjson</code>库里的，所以如果大家在使用这个库，请务必检查下你的代码，以免踩到此坑</p>
+
+<h3>对象序列化</h3>
+
+<p>大家都知道当我们序列化好一个对象之后，要反序列回来，那问题就来了，就拿这个json序列化来说吧，我们要将对象序列化成json串，那意味着我们要先取出这个对象的属性，然后写成键值对的形式，那取值就意味着我们要遵循java bean的规范通过getter方法来取，那其实getter方法有两种，一种是boolean类型的，一种是其他类型的，如果是boolean类型的，那我们通常是<code>isXXX()</code>这样的方法，如果是其他类型的，一般是<code>getXXX()</code>这样的方法。那假如说我们的类里针对某个属性a，同时存在两个方法<code>isA()</code>和<code>getA()</code>，那究竟我们会调用哪个来取值？这个就取决于具体的序列化框架实现了，比如导致我们这篇文章诞生的<code>fastjson</code>，就是利用我们这篇文章的主角<code>java.lang.Class.getMethods</code>返回的数组，然后挨个遍历，先找到哪个就是哪个，如果我们的这个数组正好因为jvm本身实现没有保证顺序，那么可能先找到<code>isA()</code>，也可能先找到<code>getA()</code>，如果两个方法都是返回a这个属性其实问题也不大，假如正好是这两个方法返回不同的内容呢？</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private A a;
+</span><span class='line'>
+</span><span class='line'>public A getA(){
+</span><span class='line'>  return a;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public boolean isA(){
+</span><span class='line'>  return false;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void setA(A a){
+</span><span class='line'>  this.a=a;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>如果是上面的内容，那可能就会悲剧了，如果选了<code>isA()</code>，那其实是返回一个boolean类型的，将这个boolean写入到json串里，如果是选了<code>getA()</code>，那就是将A这个类型的对象写到json串里</p>
+
+<h3>对象反序列化</h3>
+
+<p>在完成了序列化过程之后，需要将这个字符串进行反序列化了，于是就会去找json串里对应字段的setter方法，比如上面的<code>setA(A a)</code>，假如我们之前选了<code>isA()</code>序列化好内容，那我们此时的值是一个boolean值false，那就无法通过<code>setA</code>来赋值还原对象了。</p>
+
+<h3>解决方案</h3>
+
+<p>相信大家看完我上面的描述，知道这个问题所在了，要避免类似的问题，方案其实也挺多，比如对方法进行先排序，又比如说优先使用<code>isXXX()</code>方法，不过这种需要和开发者达成共识，和setter要对应得起来</p>
+
+<h2>jvm里为什么不保证顺序</h2>
+
+<p>JDK层面的代码我就暂时不说了，大家都能看到代码，从<code>java.lang.Class.getMethods</code>一层层走下去，相信大家细心点还是能抓住整个脉络的，我这里主要想说大家可能比较难看到的一些实现，比如JVM里的具体实现</p>
+
+<p>正常情况下大家跟代码能跟到调用了<code>java.lang.Class.getDeclaredMethods0</code>这个native方法，其具体实现如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>JVM_ENTRY(jobjectArray, JVM_GetClassDeclaredMethods(JNIEnv *env, jclass ofClass, jboolean publicOnly))
+</span><span class='line'>{
+</span><span class='line'>  JVMWrapper("JVM_GetClassDeclaredMethods");
+</span><span class='line'>  return get_class_declared_methods_helper(env, ofClass, publicOnly,
+</span><span class='line'>                                           /*want_constructor*/ false,
+</span><span class='line'>                                           SystemDictionary::reflect_Method_klass(), THREAD);
+</span><span class='line'>}
+</span><span class='line'>JVM_END</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其主要调用了<code>get_class_declared_methods_helper</code>方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>static jobjectArray get_class_declared_methods_helper(
+</span><span class='line'>                                  JNIEnv *env,
+</span><span class='line'>                                  jclass ofClass, jboolean publicOnly,
+</span><span class='line'>                                  bool want_constructor,
+</span><span class='line'>                                  Klass* klass, TRAPS) {
+</span><span class='line'>
+</span><span class='line'>  JvmtiVMObjectAllocEventCollector oam;
+</span><span class='line'>
+</span><span class='line'>  // Exclude primitive types and array types
+</span><span class='line'>  if (java_lang_Class::is_primitive(JNIHandles::resolve_non_null(ofClass))
+</span><span class='line'>      || java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass))-&gt;oop_is_array()) {
+</span><span class='line'>    // Return empty array
+</span><span class='line'>    oop res = oopFactory::new_objArray(klass, 0, CHECK_NULL);
+</span><span class='line'>    return (jobjectArray) JNIHandles::make_local(env, res);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  instanceKlassHandle k(THREAD, java_lang_Class::as_Klass(JNIHandles::resolve_non_null(ofClass)));
+</span><span class='line'>
+</span><span class='line'>  // Ensure class is linked
+</span><span class='line'>  k-&gt;link_class(CHECK_NULL);
+</span><span class='line'>
+</span><span class='line'>  Array&lt;Method*&gt;* methods = k-&gt;methods();
+</span><span class='line'>  int methods_length = methods-&gt;length();
+</span><span class='line'>
+</span><span class='line'>  // Save original method_idnum in case of redefinition, which can change
+</span><span class='line'>  // the idnum of obsolete methods.  The new method will have the same idnum
+</span><span class='line'>  // but if we refresh the methods array, the counts will be wrong.
+</span><span class='line'>  ResourceMark rm(THREAD);
+</span><span class='line'>  GrowableArray&lt;int&gt;* idnums = new GrowableArray&lt;int&gt;(methods_length);
+</span><span class='line'>  int num_methods = 0;
+</span><span class='line'>
+</span><span class='line'>  for (int i = 0; i &lt; methods_length; i++) {
+</span><span class='line'>    methodHandle method(THREAD, methods-&gt;at(i));
+</span><span class='line'>    if (select_method(method, want_constructor)) {
+</span><span class='line'>      if (!publicOnly || method-&gt;is_public()) {
+</span><span class='line'>        idnums-&gt;push(method-&gt;method_idnum());
+</span><span class='line'>        ++num_methods;
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // Allocate result
+</span><span class='line'>  objArrayOop r = oopFactory::new_objArray(klass, num_methods, CHECK_NULL);
+</span><span class='line'>  objArrayHandle result (THREAD, r);
+</span><span class='line'>
+</span><span class='line'>  // Now just put the methods that we selected above, but go by their idnum
+</span><span class='line'>  // in case of redefinition.  The methods can be redefined at any safepoint,
+</span><span class='line'>  // so above when allocating the oop array and below when creating reflect
+</span><span class='line'>  // objects.
+</span><span class='line'>  for (int i = 0; i &lt; num_methods; i++) {
+</span><span class='line'>    methodHandle method(THREAD, k-&gt;method_with_idnum(idnums-&gt;at(i)));
+</span><span class='line'>    if (method.is_null()) {
+</span><span class='line'>      // Method may have been deleted and seems this API can handle null
+</span><span class='line'>      // Otherwise should probably put a method that throws NSME
+</span><span class='line'>      result-&gt;obj_at_put(i, NULL);
+</span><span class='line'>    } else {
+</span><span class='line'>      oop m;
+</span><span class='line'>      if (want_constructor) {
+</span><span class='line'>        m = Reflection::new_constructor(method, CHECK_NULL);
+</span><span class='line'>      } else {
+</span><span class='line'>        m = Reflection::new_method(method, UseNewReflection, false, CHECK_NULL);
+</span><span class='line'>      }
+</span><span class='line'>      result-&gt;obj_at_put(i, m);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  return (jobjectArray) JNIHandles::make_local(env, result());
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的<code>k-&gt;method_with_idnum(idnums-&gt;at(i))</code>,我们基本知道方法主要是从klass里来的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Method* InstanceKlass::method_with_idnum(int idnum) {
+</span><span class='line'>  Method* m = NULL;
+</span><span class='line'>  if (idnum &lt; methods()-&gt;length()) {
+</span><span class='line'>    m = methods()-&gt;at(idnum);
+</span><span class='line'>  }
+</span><span class='line'>  if (m == NULL || m-&gt;method_idnum() != idnum) {
+</span><span class='line'>    for (int index = 0; index &lt; methods()-&gt;length(); ++index) {
+</span><span class='line'>      m = methods()-&gt;at(index);
+</span><span class='line'>      if (m-&gt;method_idnum() == idnum) {
+</span><span class='line'>        return m;
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>    // None found, return null for the caller to handle.
+</span><span class='line'>    return NULL;
+</span><span class='line'>  }
+</span><span class='line'>  return m;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此InstanceKlass里的methods是关键，而这个methods的创建是在类解析的时候发生的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>instanceKlassHandle ClassFileParser::parseClassFile(Symbol* name,
+</span><span class='line'>                                                    ClassLoaderData* loader_data,
+</span><span class='line'>                                                    Handle protection_domain,
+</span><span class='line'>                                                    KlassHandle host_klass,
+</span><span class='line'>                                                    GrowableArray&lt;Handle&gt;* cp_patches,
+</span><span class='line'>                                                    TempNewSymbol& parsed_name,
+</span><span class='line'>                                                    bool verify,
+</span><span class='line'>                                                    TRAPS) {
+</span><span class='line'>                                                    
+</span><span class='line'>                                                    
+</span><span class='line'>...
+</span><span class='line'> Array&lt;Method*&gt;* methods = parse_methods(access_flags.is_interface(),
+</span><span class='line'>                                            &promoted_flags,
+</span><span class='line'>                                            &has_final_method,
+</span><span class='line'>                                            &declares_default_methods,
+</span><span class='line'>
+</span><span class='line'>...                                            CHECK_(nullHandle));
+</span><span class='line'>// sort methods
+</span><span class='line'>intArray* method_ordering = sort_methods(methods); 
+</span><span class='line'>...
+</span><span class='line'>this_klass-&gt;set_methods(_methods);
+</span><span class='line'>...
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>上面的<code>parse_methods</code>就是从class文件里挨个解析出method，并存到_methods字段里，但是接下来做了一次<code>sort_methods</code>的动作，这个动作会对解析出来的方法做排序</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>intArray* ClassFileParser::sort_methods(Array&lt;Method*&gt;* methods) {
+</span><span class='line'>  int length = methods-&gt;length();
+</span><span class='line'>  // If JVMTI original method ordering or sharing is enabled we have to
+</span><span class='line'>  // remember the original class file ordering.
+</span><span class='line'>  // We temporarily use the vtable_index field in the Method* to store the
+</span><span class='line'>  // class file index, so we can read in after calling qsort.
+</span><span class='line'>  // Put the method ordering in the shared archive.
+</span><span class='line'>  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+</span><span class='line'>    for (int index = 0; index &lt; length; index++) {
+</span><span class='line'>      Method* m = methods-&gt;at(index);
+</span><span class='line'>      assert(!m-&gt;valid_vtable_index(), "vtable index should not be set");
+</span><span class='line'>      m-&gt;set_vtable_index(index);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>  // Sort method array by ascending method name (for faster lookups & vtable construction)
+</span><span class='line'>  // Note that the ordering is not alphabetical, see Symbol::fast_compare
+</span><span class='line'>  Method::sort_methods(methods);
+</span><span class='line'>
+</span><span class='line'>  intArray* method_ordering = NULL;
+</span><span class='line'>  // If JVMTI original method ordering or sharing is enabled construct int
+</span><span class='line'>  // array remembering the original ordering
+</span><span class='line'>  if (JvmtiExport::can_maintain_original_method_order() || DumpSharedSpaces) {
+</span><span class='line'>    method_ordering = new intArray(length);
+</span><span class='line'>    for (int index = 0; index &lt; length; index++) {
+</span><span class='line'>      Method* m = methods-&gt;at(index);
+</span><span class='line'>      int old_index = m-&gt;vtable_index();
+</span><span class='line'>      assert(old_index &gt;= 0 && old_index &lt; length, "invalid method index");
+</span><span class='line'>      method_ordering-&gt;at_put(index, old_index);
+</span><span class='line'>      m-&gt;set_vtable_index(Method::invalid_vtable_index);
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>  return method_ordering;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>// This is only done during class loading, so it is OK to assume method_idnum matches the methods() array
+</span><span class='line'>// default_methods also uses this without the ordering for fast find_method
+</span><span class='line'>void Method::sort_methods(Array&lt;Method*&gt;* methods, bool idempotent, bool set_idnums) {
+</span><span class='line'>  int length = methods-&gt;length();
+</span><span class='line'>  if (length &gt; 1) {
+</span><span class='line'>    {
+</span><span class='line'>      No_Safepoint_Verifier nsv;
+</span><span class='line'>      QuickSort::sort&lt;Method*&gt;(methods-&gt;data(), length, method_comparator, idempotent);
+</span><span class='line'>    }
+</span><span class='line'>    // Reset method ordering
+</span><span class='line'>    if (set_idnums) {
+</span><span class='line'>      for (int i = 0; i &lt; length; i++) {
+</span><span class='line'>        Method* m = methods-&gt;at(i);
+</span><span class='line'>        m-&gt;set_method_idnum(i);
+</span><span class='line'>        m-&gt;set_orig_method_idnum(i);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的<code>Method::sort_methods</code>可以看出其实具体的排序算法是<code>method_comparator</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Comparer for sorting an object array containing
+</span><span class='line'>// Method*s.
+</span><span class='line'>static int method_comparator(Method* a, Method* b) {
+</span><span class='line'>  return a-&gt;name()-&gt;fast_compare(b-&gt;name());
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>比较的是两个方法的名字，但是这个名字不是一个字符串，而是一个Symbol对象，每个类或者方法名字都会对应一个Symbol对象，在这个名字第一次使用的时候构建，并且不是在java heap里分配的，比如jdk7里就是在c heap里通过malloc来分配的，jdk8里会在metaspace里分配</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Note: this comparison is used for vtable sorting only; it doesn't matter
+</span><span class='line'>// what order it defines, as long as it is a total, time-invariant order
+</span><span class='line'>// Since Symbol*s are in C_HEAP, their relative order in memory never changes,
+</span><span class='line'>// so use address comparison for speed
+</span><span class='line'>int Symbol::fast_compare(Symbol* other) const {
+</span><span class='line'> return (((uintptr_t)this &lt; (uintptr_t)other) ? -1
+</span><span class='line'>   : ((uintptr_t)this == (uintptr_t) other) ? 0 : 1);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的fast_compare方法知道，其实对比的是地址的大小，因为Symbol对象是通过malloc来分配的，因此新分配的Symbol对象的地址就不一定比后分配的Symbol对象地址小，也不一定大，因为期间存在内存free的动作，那地址是不会一直线性变化的，之所以不按照字母排序，主要还是为了速度考虑，根据地址排序是最快的。</p>
+
+<p>综上所述，一个类里的方法经过排序之后，顺序可能会不一样，取决于方法名对应的Symbol对象的地址的先后顺序</p>
+
+<h3>JVM为什么要对方法排序</h3>
+
+<p>其实这个问题很简单，就是为了快速找到方法呢，当我们要找某个名字的方法的时候，根据对应的Symbol对象，能根据对象的地址使用二分排序的算法快速定位到具体的方法。</p>
+</div>
+
+</article>
+
+	<div class="share">
+	<div class="addthis_toolbox addthis_default_style ">
+	
+	
+	
+	<a class="addthis_counter addthis_pill_style"></a>
+	</div>
+  <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid="></script>
+</div>
+
+
+
+
+  <section>
+    <h1>Comments</h1>
+    <div id="comments" aria-live="polite"]]><div class="ds-thread" data-title=""></div>
+<script type="text/javascript"]]>
+  var duoshuoQuery={short_name:"nijiaben"};
+  (function(){ 
+   var ds=document.createElement('script');
+   ds.type='text/javascript';
+   ds.async=true;
+   ds.src='http://static.duoshuo.com/embed.js';
+   ds.charset='UTF-8'; 
+   (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(ds); 
+  })();
+</script>
+
+
+</div>
+  </section>
+
+</div>
+
+</div>
+			</div>
+			<footer id="footer" class="inner">Copyright &copy; 2016
+
+    你假笨
+
+
+Design credit: <a href="http://shashankmehta.in/archive/2012/greyshade.html">Shashank Mehta</a></footer>
+		</div>
+	</div>
+	
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>
